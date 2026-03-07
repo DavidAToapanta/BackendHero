@@ -28,27 +28,30 @@ export class ClienteService {
     const skip = (currentPage - 1) * take;
 
     const trimmedSearch = search?.trim();
-    const where: Prisma.ClienteWhereInput = trimmedSearch
-      ? {
-          OR: [
-            {
-              usuario: {
-                nombres: { contains: trimmedSearch, mode: 'insensitive' },
+    const where: Prisma.ClienteWhereInput = {
+      activo: true,
+      ...(trimmedSearch
+        ? {
+            OR: [
+              {
+                usuario: {
+                  nombres: { contains: trimmedSearch, mode: 'insensitive' },
+                },
               },
-            },
-            {
-              usuario: {
-                apellidos: { contains: trimmedSearch, mode: 'insensitive' },
+              {
+                usuario: {
+                  apellidos: { contains: trimmedSearch, mode: 'insensitive' },
+                },
               },
-            },
-            {
-              usuario: {
-                cedula: { contains: trimmedSearch, mode: 'insensitive' },
+              {
+                usuario: {
+                  cedula: { contains: trimmedSearch, mode: 'insensitive' },
+                },
               },
-            },
-          ],
-        }
-      : {};
+            ],
+          }
+        : {}),
+    };
 
     // Ejecutamos count y fetch en paralelo para mejor rendimiento
     const [totalItems, clientes] = await Promise.all([
@@ -65,6 +68,7 @@ export class ClienteService {
           objetivos: true,
           tiempoEntrenar: true,
           observaciones: true,
+          activo: true,
           usuario: {
             select: {
               id: true,
@@ -100,10 +104,11 @@ export class ClienteService {
     ]);
 
     // Debug: ver qué deudas se están devolviendo
-    clientes.forEach(c => {
+    clientes.forEach((c) => {
       if (c.planes?.[0]?.deudas?.length > 0) {
-        console.log(`[ClienteService] Cliente ${c.usuario?.nombres} tiene deudas:`, 
-          c.planes[0].deudas.map(d => ({ id: d.id, monto: d.monto }))
+        console.log(
+          `[ClienteService] Cliente ${c.usuario?.nombres} tiene deudas:`,
+          c.planes[0].deudas.map((d) => ({ id: d.id, monto: d.monto })),
         );
       }
     });
@@ -192,7 +197,8 @@ export class ClienteService {
         },
       },
     });
-    if (!cliente) throw new NotFoundException('Cliente no encontrado para este usuario');
+    if (!cliente)
+      throw new NotFoundException('Cliente no encontrado para este usuario');
     return cliente;
   }
 
@@ -206,76 +212,19 @@ export class ClienteService {
   async remove(id: number) {
     const cliente = await this.prisma.cliente.findUnique({
       where: { id },
-      select: { usuarioId: true },
     });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    await this.prisma.$transaction(async (tx) => {
-      // ClientePlan dependencias: pagos y deudas
-      const cps = await tx.clientePlan.findMany({
-        where: { clienteId: id },
-        select: { id: true },
-      });
-      const cpIds = cps.map((x) => x.id);
-      if (cpIds.length) {
-        await tx.pago.deleteMany({ where: { clientePlanId: { in: cpIds } } });
-        await tx.deuda.deleteMany({ where: { clientePlanId: { in: cpIds } } });
-      }
-      await tx.clientePlan.deleteMany({ where: { clienteId: id } });
-
-      // Otras dependencias directas
-      await tx.compra.deleteMany({ where: { clienteId: id } });
-      await tx.novedad.deleteMany({ where: { clienteId: id } });
-      await tx.clienteMedida.deleteMany({ where: { clienteId: id } });
-
-      // Rutinas y árbol asociado (entrenamiento -> semanas -> semanaEjercicio -> series)
-      const rutinas = await tx.rutina.findMany({
-        where: { clienteId: id },
-        select: { id: true },
-      });
-      for (const rutina of rutinas) {
-        const entrenamiento = await tx.entrenamiento.findUnique({
-          where: { rutinaId: rutina.id },
-        });
-        if (entrenamiento) {
-          const semanas = await tx.semana.findMany({
-            where: { entrenamientoId: entrenamiento.id },
-            select: { id: true },
-          });
-          for (const semana of semanas) {
-            const semanaEjercicios = await tx.semanaEjercicio.findMany({
-              where: { semanaId: semana.id },
-              select: { id: true },
-            });
-            for (const se of semanaEjercicios) {
-              await tx.serieRep.deleteMany({
-                where: { semanaEjercicioId: se.id },
-              });
-              await tx.serieTiempo.deleteMany({
-                where: { semanaEjercicioId: se.id },
-              });
-            }
-            await tx.semanaEjercicio.deleteMany({ where: { semanaId: semana.id } });
-          }
-          await tx.semana.deleteMany({ where: { entrenamientoId: entrenamiento.id } });
-          await tx.entrenamiento.delete({ where: { id: entrenamiento.id } });
-        }
-      }
-      await tx.rutina.deleteMany({ where: { clienteId: id } });
-
-      await tx.cliente.delete({ where: { id } });
-
-      // Limpia gastos (si existieran) y finalmente elimina el usuario
-      await tx.gasto.deleteMany({ where: { usuarioId: cliente.usuarioId } });
-      await tx.usuario.delete({ where: { id: cliente.usuarioId } });
+    return this.prisma.cliente.update({
+      where: { id },
+      data: { activo: false },
     });
-
-    return { ok: true };
   }
 
   async findRecientes(limit = 10) {
     // Trae clientes más recientes por id (si no hay createdAt)
     const clientes = await this.prisma.cliente.findMany({
+      where: { activo: true },
       orderBy: { id: 'desc' },
       take: limit,
       include: {

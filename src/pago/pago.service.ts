@@ -102,22 +102,57 @@ export class PagoService {
         });
       }
 
-      async findAll() {
-        return this.prisma.pago.findMany({
-          orderBy: { id: 'asc' },
-          include: {
-            clientePlan: {
-              include: {
-                cliente: {
-                  include: {
-                    usuario: { select: { nombres: true, apellidos: true } },
+      async findAll(page = 1, limit = 10, search?: string) {
+        const take = Math.max(1, Math.min(limit, 50));
+        const currentPage = Math.max(1, page);
+        const skip = (currentPage - 1) * take;
+
+        const where: any = search
+            ? {
+                OR: [
+                    { clientePlan: { cliente: { usuario: { nombres: { contains: search, mode: 'insensitive' } } } } },
+                    { clientePlan: { cliente: { usuario: { apellidos: { contains: search, mode: 'insensitive' } } } } },
+                    { clientePlan: { cliente: { usuario: { cedula: { contains: search, mode: 'insensitive' } } } } },
+                    { clientePlan: { plan: { nombre: { contains: search, mode: 'insensitive' } } } },
+                ]
+            }
+            : undefined;
+
+        const [totalItems, pagos] = await Promise.all([
+          this.prisma.pago.count({ where }),
+          this.prisma.pago.findMany({
+            where,
+            skip,
+            take,
+            orderBy: { id: 'desc' },
+            select: {
+              id: true,
+              monto: true,
+              fecha: true,
+              clientePlan: {
+                select: {
+                  plan: { select: { nombre: true } },
+                  cliente: {
+                    select: {
+                      usuario: { select: { nombres: true, apellidos: true } },
+                    },
                   },
                 },
-                plan: { select: { nombre: true } },
               },
             },
+          }),
+        ]);
+
+        return {
+          data: pagos,
+          meta: {
+            totalItems,
+            itemCount: pagos.length,
+            perPage: take,
+            totalPages: Math.ceil(totalItems / take),
+            currentPage,
           },
-        });
+        };
       }
 
       async findOne(id: number) {
@@ -141,8 +176,78 @@ export class PagoService {
       }
 
       async remove(id: number) {
-        await this.findOne(id);
-        return this.prisma.pago.delete({ where: { id } });
+        return this.prisma.$transaction(async (tx) => {
+          // 1. Obtener el pago antes de eliminarlo para saber monto y plan
+          const pago = await tx.pago.findUnique({
+            where: { id },
+            include: { clientePlan: { include: { plan: true } } },
+          });
+
+          if (!pago) throw new NotFoundException('Pago no encontrado');
+
+          const montoEliminado = Number(pago.monto);
+          const clientePlanId = pago.clientePlanId;
+
+          // 2. Eliminar el pago
+          await tx.pago.delete({ where: { id } });
+
+          // 3. Buscar la factura asociada al plan
+          const factura = await tx.factura.findFirst({
+            where: { clientePlanId, estado: { not: 'ANULADA' } },
+          });
+
+          if (factura) {
+            // 4. Actualizar la factura
+            // Se resta el monto pagado (porque se eliminó el pago) -> El saldo aumenta
+            const nuevoTotalPagado = Number(
+              (factura.totalPagado - montoEliminado).toFixed(2),
+            );
+            const nuevoSaldo = Number(
+              (factura.saldo + montoEliminado).toFixed(2),
+            );
+
+            // Si el saldo es > 0, pasa a PENDIENTE
+            const nuevoEstado = nuevoSaldo > 0.01 ? 'PENDIENTE' : 'PAGADA';
+
+            console.log(
+              `[PagoService] Rollback pago ${id}: Restando $${montoEliminado} a pagado. Nuevo saldo: $${nuevoSaldo}`,
+            );
+
+            await tx.factura.update({
+              where: { id: factura.id },
+              data: {
+                totalPagado: nuevoTotalPagado,
+                saldo: nuevoSaldo,
+                estado: nuevoEstado,
+              },
+            });
+
+            // 5. Regenerar la deuda
+            // Eliminamos cualquier deuda pendiente "residual" que pudiera haber
+            await tx.deuda.deleteMany({
+              where: {
+                clientePlanId,
+                solventada: false,
+              },
+            });
+
+            // Si queda saldo por pagar, se crea UNA deuda unificada por ese valor
+            if (nuevoSaldo > 0.01) {
+              console.log(
+                `[PagoService] Regenerando deuda por rollback: $${nuevoSaldo}`,
+              );
+              await tx.deuda.create({
+                data: {
+                  clientePlanId,
+                  monto: nuevoSaldo,
+                  solventada: false,
+                },
+              });
+            }
+          }
+
+          return pago;
+        });
       }
 
       async obtenerIngresoDelMes(): Promise<number>{

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { PagoService } from './pago.service';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
@@ -14,8 +14,8 @@ export class PagoController {
 
   
   @Get()
-  findAll() {
-    return this.pagoService.findAll();
+  findAll(@Query('page') page = '1', @Query('limit') limit = '10', @Query('search') search = '') {
+    return this.pagoService.findAll(+page, +limit, search);
   }
 
   @Get('Ingresos-mes')

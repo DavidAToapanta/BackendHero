@@ -13,8 +13,8 @@ export class ProductoController {
     }
 
     @Get()
-    findAll(@Query('search') search?: string){
-        return this.productoService.findAll(search);
+    findAll(@Query('page') page = '1', @Query('limit') limit = '10', @Query('search') search = ''){
+        return this.productoService.findAll(+page, +limit, search);
     }
 
     @Get(':id')

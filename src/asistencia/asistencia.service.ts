@@ -1,46 +1,40 @@
-<<<<<<< HEAD
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
-=======
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
 
 @Injectable()
 export class AsistenciaService {
   constructor(private prisma: PrismaService) {}
 
-<<<<<<< HEAD
   async registrarAsistencia(clienteId: number) {
     const hoy = new Date();
 
     // Normalizar la fecha para evitar problemas de timestamps
     const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
 
-    try{
+    try {
       return await this.prisma.asistencia.create({
         data: {
           clienteId,
           fecha,
           horaEntrada: new Date(),
-        }
-      })
-    }catch(e){
+        },
+      });
+    } catch (e) {
       // Si ya existe una asistencia para esa fecha devuelve esa asistencia
       return await this.prisma.asistencia.findFirst({
         where: {
           clienteId,
           fecha,
-        }
+        },
       });
     }
   }
 
-  async historial(clienteId: number){
+  async historial(clienteId: number) {
     return await this.prisma.asistencia.findMany({
       where: { clienteId },
       orderBy: {
@@ -49,7 +43,7 @@ export class AsistenciaService {
     });
   }
 
-  async todas(){
+  async todas() {
     return this.prisma.asistencia.findMany({
       orderBy: {
         fecha: 'desc',
@@ -58,8 +52,8 @@ export class AsistenciaService {
         cliente: {
           include: {
             usuario: true,
-          }
-        }
+          },
+        },
       },
     });
   }
@@ -90,32 +84,20 @@ export class AsistenciaService {
         fecha: {
           gte: planActivo.fechaInicio,
           lte: planActivo.fechaFin,
-=======
-  async marcarAsistencia(usuarioId: number) {
-    // Buscar el cliente relacionado con este usuario
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { usuarioId },
-      include: {
-        planes: {
-          where: { activado: true },
-          include: { plan: true },
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
         },
       },
     });
 
-<<<<<<< HEAD
     // Calcular días totales del plan
     const fechaInicio = new Date(planActivo.fechaInicio);
     const fechaFin = new Date(planActivo.fechaFin);
     const diasTotales = Math.ceil(
-      (fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24)
+      (fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24),
     );
 
     // Calcular porcentaje
-    const porcentajeAsistencia = diasTotales > 0 
-      ? Math.round((asistencias / diasTotales) * 100) 
-      : 0;
+    const porcentajeAsistencia =
+      diasTotales > 0 ? Math.round((asistencias / diasTotales) * 100) : 0;
 
     return {
       tienePlanActivo: true,
@@ -127,7 +109,20 @@ export class AsistenciaService {
       nombrePlan: planActivo.plan.nombre,
       precioPlan: planActivo.plan.precio,
     };
-=======
+  }
+
+  async marcarAsistencia(usuarioId: number) {
+    // Buscar el cliente relacionado con este usuario
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { usuarioId },
+      include: {
+        planes: {
+          where: { activado: true },
+          include: { plan: true },
+        },
+      },
+    });
+
     if (!cliente) {
       throw new NotFoundException(
         'No existe un cliente con este ID de usuario',
@@ -189,6 +184,5 @@ export class AsistenciaService {
       where: { clienteId },
       orderBy: { fecha: 'desc' },
     });
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
   }
 }

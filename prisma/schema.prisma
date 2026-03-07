@@ -60,8 +60,8 @@ model Cliente {
   observaciones  String
   objetivos      String
   tiempoEntrenar Int
+  activo         Boolean @default(true)
 
-<<<<<<< HEAD
   usuario        Usuario         @relation(fields: [usuarioId], references: [id])
   clienteMedidas ClienteMedida[]
   novedades      Novedad[]
@@ -69,23 +69,6 @@ model Cliente {
   planes         ClientePlan[]
   rutinas        Rutina[]
   asistencias    Asistencia[]
-=======
-  usuario         Usuario           @relation(fields: [usuarioId], references: [id])
-  clienteMedidas  ClienteMedida[]
-  novedades        Novedad[]
-  compras          Compra[]
-  planes           ClientePlan[]
-  rutinas          Rutina[]
-  asistencias      Asistencia[]
-}
-
-model Asistencia {
-  id          Int      @id @default(autoincrement())
-  clienteId   Int
-  fecha       DateTime
-
-  cliente     Cliente  @relation(fields: [clienteId], references: [id])
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
 }
 
 model Medida {
@@ -142,6 +125,7 @@ model Plan {
   precio          Float
   duracion        Int
   unidadDuracion  UnidadDuracion  @default(MESES)
+  activo          Boolean         @default(true)
   clientePlan     ClientePlan[]
 }
 
@@ -168,6 +152,9 @@ model Pago {
   fecha         DateTime
 
   clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
+
+  @@index([clientePlanId])
+  @@index([fecha])
 }
 
 model Deuda {
@@ -201,56 +188,37 @@ model Entrenamiento {
 }
 
 model Semana {
-<<<<<<< HEAD
-  id              Int @id @default(autoincrement())
+  id              Int             @id @default(autoincrement())
   numero          Int
-  musculoId       Int
   entrenamientoId Int
-
-  musculo          Musculo           @relation(fields: [musculoId], references: [id])
-  entrenamiento    Entrenamiento     @relation(fields: [entrenamientoId], references: [id])
-  semanaEjercicios SemanaEjercicio[]
-}
-
-model Musculo {
-  id     Int    @id @default(autoincrement())
-  nombre String
-=======
-  id               Int               @id @default(autoincrement())
-  numero           Int
-  entrenamientoId  Int
-
-  entrenamiento    Entrenamiento     @relation(fields: [entrenamientoId], references: [id])
-  musculosSemana   MusculoSemana[]
+  entrenamiento   Entrenamiento   @relation(fields: [entrenamientoId], references: [id])
+  musculosSemana  MusculoSemana[]
 }
 
 model MusculoSemana {
-  id               Int                  @id @default(autoincrement())
-  semanaId         Int
-  musculoId        Int
-  orden            Int // Orden en que se entrena este músculo en la semana
+  id        Int @id @default(autoincrement())
+  semanaId  Int
+  musculoId Int
+  orden     Int // Orden en que se entrena este músculo en la semana
 
-  semana           Semana               @relation(fields: [semanaId], references: [id])
-  musculo          Musculo              @relation(fields: [musculoId], references: [id])
+  semana            Semana             @relation(fields: [semanaId], references: [id])
+  musculo           Musculo            @relation(fields: [musculoId], references: [id])
   ejerciciosMusculo EjercicioMusculo[]
 }
 
 model Musculo {
-  id               Int               @id @default(autoincrement())
-  nombre           String            @unique
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
-
-  musculosSemana   MusculoSemana[]
+  id             Int             @id @default(autoincrement())
+  nombre         String          @unique
+  musculosSemana MusculoSemana[]
 }
 
-<<<<<<< HEAD
-model SemanaEjercicio {
-  id          Int @id @default(autoincrement())
-  ejercicioId Int
-  semanaId    Int
-  orden       Int
+model EjercicioMusculo {
+  id              Int @id @default(autoincrement())
+  musculoSemanaId Int
+  ejercicioId     Int
+  orden           Int // Orden en que se hace este ejercicio para el músculo
 
-  semana        Semana        @relation(fields: [semanaId], references: [id])
+  musculoSemana MusculoSemana @relation(fields: [musculoSemanaId], references: [id])
   ejercicio     Ejercicio     @relation(fields: [ejercicioId], references: [id])
   seriesReps    SerieRep[]
   seriesTiempos SerieTiempo[]
@@ -258,73 +226,32 @@ model SemanaEjercicio {
 
 model Ejercicio {
   id     Int    @id @default(autoincrement())
-  nombre String
-  foto   Bytes
+  nombre String @unique
+  foto   Bytes? // Keeping foto from HEAD just in case
 
-  semanasEjercicios SemanaEjercicio[]
+  ejerciciosMusculo EjercicioMusculo[]
 }
 
 model SerieRep {
-  id                Int    @id @default(autoincrement())
-  semanaEjercicioId Int
-  orden             Int
-  peso              Float
-  repeticiones      Int
-  unidadMedida      String
+  id                 Int    @id @default(autoincrement())
+  ejercicioMusculoId Int
+  orden              Int
+  peso               Float
+  repeticiones       Int
+  unidadMedida       String
 
-  semanaEjercicio SemanaEjercicio @relation(fields: [semanaEjercicioId], references: [id])
+  ejercicioMusculo EjercicioMusculo @relation(fields: [ejercicioMusculoId], references: [id])
 }
 
 model SerieTiempo {
-  id                Int    @id @default(autoincrement())
-  semanaEjercicioId Int
-  orden             Int
-  peso              Float
-  tiempo            Int
-  unidadMedida      String
+  id                 Int    @id @default(autoincrement())
+  ejercicioMusculoId Int
+  orden              Int
+  peso               Float
+  tiempo             Int
+  unidadMedida       String
 
-  semanaEjercicio SemanaEjercicio @relation(fields: [semanaEjercicioId], references: [id])
-=======
-model EjercicioMusculo {
-  id                Int              @id @default(autoincrement())
-  musculoSemanaId   Int
-  ejercicioId       Int
-  orden             Int // Orden en que se hace este ejercicio para el músculo
-
-  musculoSemana     MusculoSemana    @relation(fields: [musculoSemanaId], references: [id])
-  ejercicio         Ejercicio        @relation(fields: [ejercicioId], references: [id])
-  seriesReps        SerieRep[]
-  seriesTiempos     SerieTiempo[]
-}
-
-model Ejercicio {
-  id                  Int                  @id @default(autoincrement())
-  nombre              String               @unique
-
-  ejerciciosMusculo   EjercicioMusculo[]
-}
-
-model SerieRep {
-  id                    Int                @id @default(autoincrement())
-  ejercicioMusculoId    Int
-  orden                 Int
-  peso                  Float
-  repeticiones          Int
-  unidadMedida          String
-
-  ejercicioMusculo      EjercicioMusculo   @relation(fields: [ejercicioMusculoId], references: [id])
-}
-
-model SerieTiempo {
-  id                    Int                @id @default(autoincrement())
-  ejercicioMusculoId    Int
-  orden                 Int
-  peso                  Float
-  tiempo                Int
-  unidadMedida          String
-
-  ejercicioMusculo      EjercicioMusculo   @relation(fields: [ejercicioMusculoId], references: [id])
->>>>>>> f4c8f7a667d26b5932ed43786374cafb6b9aee78
+  ejercicioMusculo EjercicioMusculo @relation(fields: [ejercicioMusculoId], references: [id])
 }
 
 model Gasto {

@@ -93,13 +93,17 @@ export class FacturaService {
   });
 }
 
-    async findAll(filters?: {
+    async findAll(
+      filters?: {
         estado?: string;
         clienteId?: number;
         cedula?: string;
         desde?: string;
         hasta?: string;
-      }) {
+      },
+      page = 1,
+      limit = 10,
+    ) {
         const where: any = {};
       
         // Filtro por estado
@@ -116,13 +120,12 @@ export class FacturaService {
 
         // Filtro por cédula (buscando en la relación)
         if (filters?.cedula) {
-            // Si ya existe where.clientePlan lo enriquecemos, si no lo creamos
             where.clientePlan = {
                 ...(where.clientePlan || {}),
                 cliente: {
                     usuario: {
                         cedula: {
-                            contains: filters.cedula // o equals, según preferencia. Contains es más flexible.
+                            contains: filters.cedula
                         }
                     }
                 }
@@ -136,26 +139,91 @@ export class FacturaService {
             where.fechaEmision.gte = new Date(filters.desde);
           }
           if (filters.hasta) {
+            // Ajustar hasta el final del día si es necesario, o asumir que viene correcto
             where.fechaEmision.lte = new Date(filters.hasta);
           }
         }
-      
-        return this.prisma.factura.findMany({
-          where,
-          orderBy: { fechaEmision: 'desc' },
-          include: {
-            clientePlan: {
-              include: {
-                cliente: {
-                  include: {
-                    usuario: { select: { nombres: true, apellidos: true, cedula: true } },
+
+        const take = Math.max(1, Math.min(limit, 50));
+        const currentPage = Math.max(1, page);
+        const skip = (currentPage - 1) * take;
+
+        const [totalItems, facturas] = await Promise.all([
+          this.prisma.factura.count({ where }),
+          this.prisma.factura.findMany({
+            where,
+            skip,
+            take,
+            orderBy: { fechaEmision: 'desc' },
+            include: {
+              clientePlan: {
+                include: {
+                  cliente: {
+                    include: {
+                      usuario: { select: { nombres: true, apellidos: true, cedula: true } },
+                    },
                   },
+                  plan: { select: { nombre: true, precio: true } },
                 },
-                plan: { select: { nombre: true, precio: true } },
               },
+            },
+          }),
+        ]);
+      
+        return {
+          data: facturas,
+          meta: {
+            totalItems,
+            itemCount: facturas.length,
+            perPage: take,
+            totalPages: Math.ceil(totalItems / take),
+            currentPage,
+          },
+        };
+      }
+
+      async getResumen() {
+        // Total Facturas
+        const totalFacturas = await this.prisma.factura.count();
+
+        // Facturas Pagadas
+        const facturasPagadas = await this.prisma.factura.count({
+          where: { estado: 'PAGADA' },
+        });
+
+        // Personas Pendientes (Unique clients with PENDIENTE invoices)
+        // Prisma doesn't support distinct count easily on relations in a single call,
+        // so we can group by clientePlanId inside factura where estado is PENDIENTE
+        const pendientesGroup = await this.prisma.factura.groupBy({
+          by: ['clientePlanId'],
+          where: { estado: 'PENDIENTE' },
+        });
+        const personasPendientes = pendientesGroup.length;
+
+        // Ingreso del Mes (Sum totalPagado of invoices emitted this month)
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const ingresoMesResult = await this.prisma.factura.aggregate({
+          _sum: {
+            totalPagado: true,
+          },
+          where: {
+            fechaEmision: {
+              gte: startOfMonth,
+              lte: endOfMonth,
             },
           },
         });
+        const ingresoMes = ingresoMesResult._sum.totalPagado || 0;
+
+        return {
+          totalFacturas,
+          facturasPagadas,
+          personasPendientes,
+          ingresoMes,
+        };
       }
 
 
