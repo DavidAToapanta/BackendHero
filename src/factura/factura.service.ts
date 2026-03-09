@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
+
+type PrismaTx = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
 
 @Injectable()
 export class FacturaService {
@@ -8,90 +14,112 @@ export class FacturaService {
         private prisma: PrismaService
     ){}
 
-    async crearFactura(clientePlanId: number) {
-  // TODO: aquí después metemos la lógica real (subtotal, iva, total, etc.)
-    const clientePlan = await this.prisma.clientePlan.findUnique({
-      where: { id: clientePlanId },
-        include: {
-        plan: true,
-      },
-    });
+    async crearFactura(
+      clientePlanId: number,
+      options?: { creditoAplicado?: number },
+      tx?: PrismaTx,
+    ) {
+      const db = tx ?? this.prisma;
 
-    if (!clientePlan) {
-      throw new Error('ClientePlan no encontrado');
+      const clientePlan = await db.clientePlan.findUnique({
+        where: { id: clientePlanId },
+          include: {
+          plan: true,
+        },
+      });
+
+      if (!clientePlan) {
+        throw new Error('ClientePlan no encontrado');
+      }
+    
+      const IVA = 0.12;
+
+      // TOTAL ES EL PRECIO DEL PLAN (YA INCLUYE IVA)
+      const total = clientePlan.plan.precio;
+
+      // Subtotal = precio sin IVA
+      const subtotal = Number((total / (1 + IVA)).toFixed(2));
+
+      // IVA = la diferencia
+      const iva = Number((total - subtotal).toFixed(2));
+
+      // Crédito aplicado del plan anterior (si hay)
+      const creditoAplicado = Number((options?.creditoAplicado ?? 0).toFixed(2));
+
+      // Al inicio no ha pagado nada con dinero real
+      const totalPagado = 0;
+      const saldo = Number(Math.max(total - creditoAplicado, 0).toFixed(2));
+      
+      // Generar número de factura
+      const fecha = new Date();
+      const yyyy = fecha.getFullYear();
+      const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+      const dd = String(fecha.getDate()).padStart(2, '0');
+      const random = Math.floor(1000 + Math.random() * 9000);
+      const numeroFactura = `FAC-${yyyy}${mm}${dd}-${random}`;
+
+      const factura = await db.factura.create({
+        data: {
+          numero: numeroFactura,
+          clientePlanId: clientePlan.id,
+          subtotal,
+          iva,
+          total,
+          totalPagado,
+          creditoAplicado,
+          saldo,
+          estado: saldo <= 0.01 ? 'PAGADA' : 'PENDIENTE',
+        },
+      });
+
+      return factura;
     }
-  
-    const IVA = 0.12;
 
-    //rOTAL ES EL PRECIO DEL PLAN (YA INCLUYE IVA)
-    const total = clientePlan.plan.precio;
+    /**
+     * Marca la factura activa de un plan como ANULADA.
+     * Retorna la factura anulada, o null si no existe ninguna.
+     */
+    async anularFactura(clientePlanId: number, tx?: PrismaTx) {
+      const db = tx ?? this.prisma;
 
-    //Subtotal = precio sin IVA
-    const subtotal = Number((total / (1 + IVA)).toFixed(2));
+      const factura = await db.factura.findFirst({
+        where: { clientePlanId, estado: { not: 'ANULADA' } },
+      });
 
-    //IVA = la diferencia
-    const iva = Number((total - subtotal).toFixed(2));
+      if (!factura) return null;
 
-    //Al inicio no ha pagado nada
-    const totalPagado = 0;
-    const saldo = total;
-    
-    // Generar número de factura (simple y seguro)
-    const fecha = new Date();
-    const yyyy = fecha.getFullYear();
-    const mm = String(fecha.getMonth() + 1).padStart(2, '0');
-    const dd = String(fecha.getDate()).padStart(2, '0');
-
-    // contador simple por ahora (luego se puede mejorar)
-    const random = Math.floor(1000 + Math.random() * 9000);
-
-    const numeroFactura = `FAC-${yyyy}${mm}${dd}-${random}`;
-
-      // Crear la factura
-    const factura = await this.prisma.factura.create({
-    data: {
-      numero: numeroFactura,
-      clientePlanId: clientePlan.id,
-      subtotal,
-      iva,
-      total,
-      totalPagado,
-      saldo,
-      estado: 'PENDIENTE',
-    },
-  });
-
-    return factura;
-
-    
-  }
+      return db.factura.update({
+        where: { id: factura.id },
+        data: { estado: 'ANULADA' },
+      });
+    }
 
     async aplicarPago(clientePlanId: number, monto: number) {
-  const factura = await this.prisma.factura.findFirst({
-    where: { clientePlanId, estado: { not: 'ANULADA' } },
-  });
-  if (!factura) throw new Error('Factura no encontrada para este plan');
+      const factura = await this.prisma.factura.findFirst({
+        where: { clientePlanId, estado: { not: 'ANULADA' } },
+      });
+      if (!factura) throw new Error('Factura no encontrada para este plan');
 
-  // Validar que el monto no exceda el saldo pendiente
-  if (monto > factura.saldo) {
-    throw new Error(
-      `El monto a pagar ($${monto}) excede el saldo pendiente ($${factura.saldo}). No se puede pagar de más.`
-    );
-  }
+      // Validar que el monto no exceda el saldo pendiente
+      if (monto > factura.saldo) {
+        throw new Error(
+          `El monto a pagar ($${monto}) excede el saldo pendiente ($${factura.saldo}). No se puede pagar de más.`
+        );
+      }
 
-  const nuevoTotalPagado = Number((factura.totalPagado + monto).toFixed(2));
-  const nuevoSaldo = Number((factura.total - nuevoTotalPagado).toFixed(2));
+      const nuevoTotalPagado = Number((factura.totalPagado + monto).toFixed(2));
+      const nuevoSaldo = Number((factura.total - factura.creditoAplicado - nuevoTotalPagado).toFixed(2));
       const nuevoEstado = nuevoSaldo <= 0.01 ? 'PAGADA' : 'PENDIENTE';
 
-  await this.prisma.factura.update({
-    where: { id: factura.id },
-    data: {
-      totalPagado: nuevoTotalPagado,
-      saldo: Math.max(nuevoSaldo, 0),
-      estado: nuevoEstado,
-    },
-  });
-}
+      await this.prisma.factura.update({
+        where: { id: factura.id },
+        data: {
+          totalPagado: nuevoTotalPagado,
+          saldo: Math.max(nuevoSaldo, 0),
+          estado: nuevoEstado,
+        },
+      });
+    }
 
     async findAll(
       filters?: {
@@ -106,19 +134,16 @@ export class FacturaService {
     ) {
         const where: any = {};
       
-        // Filtro por estado
         if (filters?.estado) {
           where.estado = filters.estado;
         }
       
-        // Filtro por cliente (ID directo)
         if (filters?.clienteId) {
           where.clientePlan = {
             clienteId: filters.clienteId,
           };
         }
 
-        // Filtro por cédula (buscando en la relación)
         if (filters?.cedula) {
             where.clientePlan = {
                 ...(where.clientePlan || {}),
@@ -132,14 +157,12 @@ export class FacturaService {
             };
         }
       
-        // Filtro por rango de fechas
         if (filters?.desde || filters?.hasta) {
           where.fechaEmision = {};
           if (filters.desde) {
             where.fechaEmision.gte = new Date(filters.desde);
           }
           if (filters.hasta) {
-            // Ajustar hasta el final del día si es necesario, o asumir que viene correcto
             where.fechaEmision.lte = new Date(filters.hasta);
           }
         }
@@ -183,24 +206,18 @@ export class FacturaService {
       }
 
       async getResumen() {
-        // Total Facturas
         const totalFacturas = await this.prisma.factura.count();
 
-        // Facturas Pagadas
         const facturasPagadas = await this.prisma.factura.count({
           where: { estado: 'PAGADA' },
         });
 
-        // Personas Pendientes (Unique clients with PENDIENTE invoices)
-        // Prisma doesn't support distinct count easily on relations in a single call,
-        // so we can group by clientePlanId inside factura where estado is PENDIENTE
         const pendientesGroup = await this.prisma.factura.groupBy({
           by: ['clientePlanId'],
           where: { estado: 'PENDIENTE' },
         });
         const personasPendientes = pendientesGroup.length;
 
-        // Ingreso del Mes (Sum totalPagado of invoices emitted this month)
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -251,7 +268,5 @@ async findOne(id: number) {
   return factura;
 }
 
-
     
-
 }

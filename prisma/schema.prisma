@@ -69,6 +69,7 @@ model Cliente {
   planes         ClientePlan[]
   rutinas        Rutina[]
   asistencias    Asistencia[]
+  cambiosPlan    CambioPlan[]
 }
 
 model Medida {
@@ -130,19 +131,22 @@ model Plan {
 }
 
 model ClientePlan {
-  id          Int      @id @default(autoincrement())
+  id          Int                @id @default(autoincrement())
   clienteId   Int
   planId      Int
   fechaInicio DateTime
   fechaFin    DateTime
   diaPago     Int
   activado    Boolean
+  estado      EstadoClientePlan  @default(ACTIVO)
 
-  cliente  Cliente   @relation(fields: [clienteId], references: [id])
-  plan     Plan      @relation(fields: [planId], references: [id])
-  pago     Pago[]
-  deudas   Deuda[]
-  facturas Factura[]
+  cliente         Cliente      @relation(fields: [clienteId], references: [id])
+  plan            Plan         @relation(fields: [planId], references: [id])
+  pago            Pago[]
+  deudas          Deuda[]
+  facturas        Factura[]
+  cambiosComoAnterior CambioPlan[] @relation("PlanAnterior")
+  cambiosComoNuevo    CambioPlan[] @relation("PlanNuevo")
 }
 
 model Pago {
@@ -284,8 +288,9 @@ model Factura {
   iva      Float
   total    Float
 
-  totalPagado Float @default(0)
-  saldo       Float
+  totalPagado     Float @default(0)
+  creditoAplicado Float @default(0)
+  saldo           Float
 
   estado       EstadoFactura
   fechaEmision DateTime      @default(now())
@@ -299,7 +304,36 @@ enum EstadoFactura {
   ANULADA
 }
 
+enum EstadoClientePlan {
+  ACTIVO
+  CAMBIADO
+  FINALIZADO
+  CANCELADO
+}
+
 enum UnidadDuracion {
   MESES
   DIAS
+}
+
+enum EstadoDevolucion {
+  PENDIENTE
+  COMPLETADO
+  NO_APLICA
+}
+
+model CambioPlan {
+  id                     Int              @id @default(autoincrement())
+  clienteId              Int
+  clientePlanAnteriorId  Int
+  clientePlanNuevoId     Int
+  montoPagadoTransferido Float
+  montoDevuelto          Float            @default(0)
+  fecha                  DateTime         @default(now())
+  estadoDevolucion       EstadoDevolucion @default(PENDIENTE)
+  motivo                 String?
+
+  cliente             Cliente     @relation(fields: [clienteId], references: [id])
+  clientePlanAnterior ClientePlan @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
+  clientePlanNuevo    ClientePlan @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
 }

@@ -15,6 +15,7 @@ export class NotificationsService {
     const proximasMembresias = await this.prisma.clientePlan.count({
       where: {
         activado: true,
+        estado: 'ACTIVO',
         fechaFin: {
           gte: hoy,
           lte: addDays(hoy, 7),

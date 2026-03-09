@@ -64,6 +64,7 @@ export class AsistenciaService {
       where: {
         clienteId,
         activado: true,
+        estado: 'ACTIVO',
       },
       include: {
         plan: true,
@@ -117,7 +118,7 @@ export class AsistenciaService {
       where: { usuarioId },
       include: {
         planes: {
-          where: { activado: true },
+          where: { activado: true, estado: 'ACTIVO' },
           include: { plan: true },
         },
       },

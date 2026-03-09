@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/commo
 import { ClientePlanService } from './cliente-plan.service';
 import { CreateClientePlanDto } from './dto/create-cliente-plan.dto';
 import { UpdateClientePlanDto } from './dto/update-cliente-plan.dto';
+import { CambiarPlanDto } from './dto/cambiar-plan.dto';
 
 @Controller('cliente-plan')
 export class ClientePlanController {
@@ -18,15 +19,21 @@ export class ClientePlanController {
     }
 
     @Get('activos')
-async obtenerClientesActivos() {
-  console.log('→ Llamando a contarClientesActivos');
-  const cantidad = await this.clientePlanService.contarClientesActivos();
-  return { activos: cantidad };
-}
+    async obtenerClientesActivos() {
+      console.log('→ Llamando a contarClientesActivos');
+      const cantidad = await this.clientePlanService.contarClientesActivos();
+      return { activos: cantidad };
+    }
 
-@Get(':id')
-findOne(@Param('id') id: string) {
-  return this.clientePlanService.findOne(+id);
+    // IMPORTANTE: ruta estática antes de :id para evitar conflictos
+    @Post(':id/cambiar-plan')
+    cambiarPlan(@Param('id') id: string, @Body() dto: CambiarPlanDto) {
+      return this.clientePlanService.cambiarPlan(+id, dto);
+    }
+
+    @Get(':id')
+    findOne(@Param('id') id: string) {
+      return this.clientePlanService.findOne(+id);
 }
 
 
