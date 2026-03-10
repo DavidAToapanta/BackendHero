@@ -28,6 +28,7 @@ model Usuario {
   recepcionista Recepcionista[]
   cliente       Cliente[]
   gastos        Gasto[]
+  devolucionMovimientos DevolucionMovimiento[]
 }
 
 model Administrador {
@@ -296,6 +297,7 @@ model Factura {
   fechaEmision DateTime      @default(now())
 
   clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
+  devoluciones DevolucionMovimiento[]
 }
 
 enum EstadoFactura {
@@ -318,6 +320,7 @@ enum UnidadDuracion {
 
 enum EstadoDevolucion {
   PENDIENTE
+  PARCIAL
   COMPLETADO
   NO_APLICA
 }
@@ -329,6 +332,8 @@ model CambioPlan {
   clientePlanNuevoId     Int
   montoPagadoTransferido Float
   montoDevuelto          Float            @default(0)
+  devolucionPendiente    Float            @default(0)
+  devolucionDevueltaAcumulada Float       @default(0)
   fecha                  DateTime         @default(now())
   estadoDevolucion       EstadoDevolucion @default(PENDIENTE)
   motivo                 String?
@@ -336,4 +341,23 @@ model CambioPlan {
   cliente             Cliente     @relation(fields: [clienteId], references: [id])
   clientePlanAnterior ClientePlan @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
   clientePlanNuevo    ClientePlan @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
+  devoluciones        DevolucionMovimiento[]
+}
+
+model DevolucionMovimiento {
+  id           Int       @id @default(autoincrement())
+  cambioPlanId Int
+  facturaId    Int
+  monto        Float
+  fecha        DateTime  @default(now())
+  motivo       String?
+  usuarioId    Int?
+
+  cambioPlan CambioPlan @relation(fields: [cambioPlanId], references: [id])
+  factura    Factura    @relation(fields: [facturaId], references: [id])
+  usuario    Usuario?   @relation(fields: [usuarioId], references: [id])
+
+  @@index([cambioPlanId])
+  @@index([facturaId])
+  @@index([fecha])
 }

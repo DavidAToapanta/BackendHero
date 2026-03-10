@@ -8,6 +8,33 @@ import { UpdateClienteDto } from './dto/update-cliente.dto';
 export class ClienteService {
   constructor(private prisma: PrismaService) {}
 
+  private async findClienteOrThrow(id: number) {
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    return cliente;
+  }
+
+  private sumarDevolucionPendiente(
+    cambiosPlan: Array<{ devolucionPendiente: number }>,
+  ): number {
+    if (!cambiosPlan?.length) {
+      return 0;
+    }
+
+    const total = cambiosPlan.reduce(
+      (acumulado, cambio) => acumulado + (cambio.devolucionPendiente ?? 0),
+      0,
+    );
+
+    return Number(total.toFixed(2));
+  }
+
   create(dto: CreateClienteDto) {
     return this.prisma.cliente.create({
       data: {
@@ -22,14 +49,28 @@ export class ClienteService {
     });
   }
 
-  async findAll(page = 1, limit = 10, search?: string) {
+  async findAll(
+    page = 1,
+    limit = 10,
+    search?: string,
+    filters?: {
+      activo?: boolean;
+      incluirInactivos?: boolean;
+    },
+  ) {
     const take = Math.max(1, Math.min(limit, 50));
     const currentPage = Math.max(1, page);
     const skip = (currentPage - 1) * take;
+    const incluirInactivos = filters?.incluirInactivos ?? false;
+    const activo = filters?.activo;
 
     const trimmedSearch = search?.trim();
     const where: Prisma.ClienteWhereInput = {
-      activo: true,
+      ...(activo !== undefined
+        ? { activo }
+        : incluirInactivos
+          ? {}
+          : { activo: true }),
       ...(trimmedSearch
         ? {
             OR: [
@@ -79,8 +120,12 @@ export class ClienteService {
             },
           },
           planes: {
-            orderBy: { fechaFin: 'desc' },
+            where: {
+              activado: true,
+              estado: 'ACTIVO',
+            },
             take: 1,
+            orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
             select: {
               id: true,
               fechaInicio: true,
@@ -99,12 +144,32 @@ export class ClienteService {
               },
             },
           },
+          cambiosPlan: {
+            where: {
+              devolucionPendiente: { gt: 0 },
+            },
+            select: {
+              devolucionPendiente: true,
+            },
+          },
         },
       }),
     ]);
 
+    const data = clientes.map((cliente) => {
+      const devolucionPendiente = this.sumarDevolucionPendiente(
+        cliente.cambiosPlan,
+      );
+      const { cambiosPlan, ...clienteSinCambiosPlan } = cliente;
+
+      return {
+        ...clienteSinCambiosPlan,
+        devolucionPendiente,
+      };
+    });
+
     // Debug: ver qué deudas se están devolviendo
-    clientes.forEach((c) => {
+    data.forEach((c) => {
       if (c.planes?.[0]?.deudas?.length > 0) {
         console.log(
           `[ClienteService] Cliente ${c.usuario?.nombres} tiene deudas:`,
@@ -114,10 +179,10 @@ export class ClienteService {
     });
 
     return {
-      data: clientes,
+      data,
       meta: {
         totalItems,
-        itemCount: clientes.length,
+        itemCount: data.length,
         perPage: take,
         totalPages: Math.ceil(totalItems / take),
         currentPage,
@@ -138,8 +203,12 @@ export class ClienteService {
           },
         },
         planes: {
-          orderBy: { fechaFin: 'desc' },
+          where: {
+            activado: true,
+            estado: 'ACTIVO',
+          },
           take: 1,
+          orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
           include: {
             plan: {
               select: {
@@ -157,10 +226,26 @@ export class ClienteService {
             },
           },
         },
+        cambiosPlan: {
+          where: {
+            devolucionPendiente: { gt: 0 },
+          },
+          select: {
+            devolucionPendiente: true,
+          },
+        },
       },
     });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
-    return cliente;
+    const devolucionPendiente = this.sumarDevolucionPendiente(
+      cliente.cambiosPlan,
+    );
+    const { cambiosPlan, ...clienteSinCambiosPlan } = cliente;
+
+    return {
+      ...clienteSinCambiosPlan,
+      devolucionPendiente,
+    };
   }
 
   async findByUsuarioId(usuarioId: number) {
@@ -176,8 +261,12 @@ export class ClienteService {
           },
         },
         planes: {
-          orderBy: { fechaFin: 'desc' },
+          where: {
+            activado: true,
+            estado: 'ACTIVO',
+          },
           take: 1,
+          orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
           include: {
             plan: {
               select: {
@@ -195,11 +284,27 @@ export class ClienteService {
             },
           },
         },
+        cambiosPlan: {
+          where: {
+            devolucionPendiente: { gt: 0 },
+          },
+          select: {
+            devolucionPendiente: true,
+          },
+        },
       },
     });
     if (!cliente)
       throw new NotFoundException('Cliente no encontrado para este usuario');
-    return cliente;
+    const devolucionPendiente = this.sumarDevolucionPendiente(
+      cliente.cambiosPlan,
+    );
+    const { cambiosPlan, ...clienteSinCambiosPlan } = cliente;
+
+    return {
+      ...clienteSinCambiosPlan,
+      devolucionPendiente,
+    };
   }
 
   async update(id: number, dto: UpdateClienteDto) {
@@ -210,14 +315,22 @@ export class ClienteService {
   }
 
   async remove(id: number) {
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { id },
-    });
-    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+    return this.desactivar(id);
+  }
 
+  async desactivar(id: number) {
+    await this.findClienteOrThrow(id);
     return this.prisma.cliente.update({
       where: { id },
       data: { activo: false },
+    });
+  }
+
+  async reactivar(id: number) {
+    await this.findClienteOrThrow(id);
+    return this.prisma.cliente.update({
+      where: { id },
+      data: { activo: true },
     });
   }
 
@@ -233,9 +346,21 @@ export class ClienteService {
         },
         // Último plan del cliente
         planes: {
-          orderBy: { fechaFin: 'desc' },
+          where: {
+            activado: true,
+            estado: 'ACTIVO',
+          },
           take: 1,
+          orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
           include: { plan: { select: { nombre: true } } },
+        },
+        cambiosPlan: {
+          where: {
+            devolucionPendiente: { gt: 0 },
+          },
+          select: {
+            devolucionPendiente: true,
+          },
         },
       },
     });
@@ -252,11 +377,15 @@ export class ClienteService {
       }
       // Usar fechaFin en el mapeo
       const fechaRegistro = cp?.fechaFin ?? null;
+      const devolucionPendiente = this.sumarDevolucionPendiente(
+        c.cambiosPlan ?? [],
+      );
       return {
         usuario: c.usuario,
         planNombre,
         estadoPlan,
         fechaRegistro,
+        devolucionPendiente,
       };
     });
   }

@@ -1,5 +1,14 @@
 import { FacturaService } from './factura.service';
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { DevolverFacturaDto } from './dto/devolver-factura.dto';
 
 @Controller('facturas')
 export class FacturaController {
@@ -38,6 +47,14 @@ export class FacturaController {
     @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.facturaService.findOne(id);
+  }
+
+  @Post(':id/devolver')
+  devolver(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: DevolverFacturaDto,
+  ) {
+    return this.facturaService.devolver(id, dto);
   }
 
 }

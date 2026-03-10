@@ -48,18 +48,11 @@ export class PagoService {
               },
             });
     
-            // Llamar al servicio de factura (nota: esto requiere actualizar FacturaService para que acepte tx opcional o manejarlo fuera)
-            // Como FacturaService usa this.prisma, no participará en la tx a menos que refactoricemos FacturaService.
-            // SOLUCIÓN RAPIDA: Llamamos a facturaService aquí, si falla, la tx se revierte.
-            // Aunque facturaService escribirá en DB fuera de ESTA tx especificamente (si no soporta inyección de cliente),
-            // Prisma Client genérico no comparte contexto automáticamente.
-            // PERO: Si facturaService falla, se lanza excepción y el $transaction hace rollback de lo que hizo 'tx'.
-            // Lo ideal sería pasarle 'tx' a facturaService.aplicarPago, pero implicaría cambiar firma.
-            // Dado que el error del usuario es "pagó y no se actualizó", asumimos que FacturaService NO falló, pero tal vez 
-            // hubo una inconsistencia.
-            // Al envolver en try/catch podemos asegurar coherencia.
-            
-            await this.facturaService.aplicarPago(dto.clientePlanId, montoPagado);
+            const facturaActualizada = await this.facturaService.aplicarPago(
+              dto.clientePlanId,
+              montoPagado,
+              tx,
+            );
         
             // 4. Eliminar todas las deudas anteriores no solventadas de este plan
             console.log(`[Pago] Buscando deudas para clientePlanId: ${dto.clientePlanId}`);
@@ -81,21 +74,20 @@ export class PagoService {
             });
             console.log(`[Pago] Deudas eliminadas: ${deleteResult.count}`);
         
-            // 5. Si el total pagado es menor al precio del plan, crear nueva deuda con el saldo restante
-            if (totalPagadoDespues < precioPlan) {
-              const montoDeuda = precioPlan - totalPagadoDespues;
-              
-              console.log(`[Pago] Creando nueva deuda: $${montoDeuda}`);
-              
+            const saldoPendiente = Number(facturaActualizada.saldo ?? 0);
+
+            if (saldoPendiente > 0.01) {
+              console.log(`[Pago] Creando nueva deuda por saldo de factura: $${saldoPendiente}`);
+
               await tx.deuda.create({
                 data: {
                   clientePlanId: dto.clientePlanId,
-                  monto: montoDeuda,
+                  monto: saldoPendiente,
                   solventada: false,
                 },
               });
             } else {
-              console.log(`[Pago] Plan completamente pagado. Total: $${totalPagadoDespues}`);
+              console.log(`[Pago] Plan completamente pagado. Saldo de factura: $${saldoPendiente}`);
             }
         
             return pago;

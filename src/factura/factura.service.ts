@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PrismaClient } from '@prisma/client';
+import { DevolverFacturaDto } from './dto/devolver-factura.dto';
 
 type PrismaTx = Omit<
   PrismaClient,
@@ -13,6 +14,28 @@ export class FacturaService {
     constructor(
         private prisma: PrismaService
     ){}
+
+    private mapFacturaConDevolucion(factura: any) {
+      const cambioPlan = factura?.clientePlan?.cambiosComoNuevo?.[0];
+      const devolucionPendiente = Number(
+        (cambioPlan?.devolucionPendiente ?? 0).toFixed(2),
+      );
+      const devolucionDevueltaAcumulada = Number(
+        (cambioPlan?.devolucionDevueltaAcumulada ?? 0).toFixed(2),
+      );
+      const estadoDevolucion = cambioPlan?.estadoDevolucion ?? 'NO_APLICA';
+
+      const { clientePlan, ...facturaBase } = factura;
+      const { cambiosComoNuevo, ...clientePlanSinCambios } = clientePlan;
+
+      return {
+        ...facturaBase,
+        clientePlan: clientePlanSinCambios,
+        devolucionPendiente,
+        devolucionDevueltaAcumulada,
+        estadoDevolucion,
+      };
+    }
 
     async crearFactura(
       clientePlanId: number,
@@ -94,8 +117,10 @@ export class FacturaService {
       });
     }
 
-    async aplicarPago(clientePlanId: number, monto: number) {
-      const factura = await this.prisma.factura.findFirst({
+    async aplicarPago(clientePlanId: number, monto: number, tx?: PrismaTx) {
+      const db = tx ?? this.prisma;
+
+      const factura = await db.factura.findFirst({
         where: { clientePlanId, estado: { not: 'ANULADA' } },
       });
       if (!factura) throw new Error('Factura no encontrada para este plan');
@@ -111,7 +136,7 @@ export class FacturaService {
       const nuevoSaldo = Number((factura.total - factura.creditoAplicado - nuevoTotalPagado).toFixed(2));
       const nuevoEstado = nuevoSaldo <= 0.01 ? 'PAGADA' : 'PENDIENTE';
 
-      await this.prisma.factura.update({
+      const facturaActualizada = await db.factura.update({
         where: { id: factura.id },
         data: {
           totalPagado: nuevoTotalPagado,
@@ -119,6 +144,8 @@ export class FacturaService {
           estado: nuevoEstado,
         },
       });
+
+      return facturaActualizada;
     }
 
     async findAll(
@@ -187,22 +214,124 @@ export class FacturaService {
                     },
                   },
                   plan: { select: { nombre: true, precio: true } },
+                  cambiosComoNuevo: {
+                    take: 1,
+                    orderBy: { id: 'desc' },
+                    select: {
+                      devolucionPendiente: true,
+                      devolucionDevueltaAcumulada: true,
+                      estadoDevolucion: true,
+                    },
+                  },
                 },
               },
             },
           }),
         ]);
+
+        const data = facturas.map((factura) =>
+          this.mapFacturaConDevolucion(factura),
+        );
       
         return {
-          data: facturas,
+          data,
           meta: {
             totalItems,
-            itemCount: facturas.length,
+            itemCount: data.length,
             perPage: take,
             totalPages: Math.ceil(totalItems / take),
             currentPage,
           },
         };
+      }
+
+      async devolver(facturaId: number, dto: DevolverFacturaDto) {
+        const monto = Number(dto.monto);
+
+        if (!Number.isFinite(monto) || monto <= 0) {
+          throw new BadRequestException('El monto a devolver debe ser mayor a 0');
+        }
+
+        const montoADevolver = Number(monto.toFixed(2));
+
+        return this.prisma.$transaction(async (tx) => {
+          const factura = await tx.factura.findUnique({
+            where: { id: facturaId },
+            select: { id: true, clientePlanId: true },
+          });
+
+          if (!factura) {
+            throw new NotFoundException('Factura no encontrada');
+          }
+
+          const cambioPlan = await tx.cambioPlan.findFirst({
+            where: { clientePlanNuevoId: factura.clientePlanId },
+            orderBy: { id: 'desc' },
+            select: {
+              id: true,
+              devolucionPendiente: true,
+              devolucionDevueltaAcumulada: true,
+              estadoDevolucion: true,
+            },
+          });
+
+          if (!cambioPlan) {
+            throw new BadRequestException(
+              'La factura no tiene una devolucion asociada por cambio de plan',
+            );
+          }
+
+          if (
+            !['PENDIENTE', 'PARCIAL'].includes(cambioPlan.estadoDevolucion) ||
+            cambioPlan.devolucionPendiente <= 0
+          ) {
+            throw new BadRequestException('No existe devolucion pendiente para esta factura');
+          }
+
+          if (montoADevolver > cambioPlan.devolucionPendiente) {
+            throw new BadRequestException(
+              `El monto a devolver ($${montoADevolver}) excede la devolucion pendiente ($${cambioPlan.devolucionPendiente})`,
+            );
+          }
+
+          await tx.devolucionMovimiento.create({
+            data: {
+              cambioPlanId: cambioPlan.id,
+              facturaId: factura.id,
+              monto: montoADevolver,
+              motivo: dto.motivo ?? null,
+            },
+          });
+
+          const pendienteCalculado = Number(
+            (cambioPlan.devolucionPendiente - montoADevolver).toFixed(2),
+          );
+          const devolucionPendiente =
+            pendienteCalculado <= 0.009 ? 0 : pendienteCalculado;
+          const devolucionDevueltaAcumulada = Number(
+            (cambioPlan.devolucionDevueltaAcumulada + montoADevolver).toFixed(2),
+          );
+          const estadoDevolucion =
+            devolucionPendiente === 0 ? 'COMPLETADO' : 'PARCIAL';
+
+          const cambioActualizado = await tx.cambioPlan.update({
+            where: { id: cambioPlan.id },
+            data: {
+              devolucionPendiente,
+              devolucionDevueltaAcumulada,
+              estadoDevolucion,
+            },
+          });
+
+          return {
+            facturaId: factura.id,
+            cambioPlanId: cambioActualizado.id,
+            devolucionPendiente: cambioActualizado.devolucionPendiente,
+            devolucionDevueltaAcumulada:
+              cambioActualizado.devolucionDevueltaAcumulada,
+            estadoDevolucion: cambioActualizado.estadoDevolucion,
+          };
+        });
       }
 
       async getResumen() {
@@ -256,16 +385,25 @@ async findOne(id: number) {
             },
           },
           plan: { select: { nombre: true, precio: true } },
+          cambiosComoNuevo: {
+            take: 1,
+            orderBy: { id: 'desc' },
+            select: {
+              devolucionPendiente: true,
+              devolucionDevueltaAcumulada: true,
+              estadoDevolucion: true,
+            },
+          },
         },
       },
     },
   });
 
   if (!factura) {
-    throw new Error('Factura no encontrada');
+    throw new NotFoundException('Factura no encontrada');
   }
 
-  return factura;
+  return this.mapFacturaConDevolucion(factura);
 }
 
     

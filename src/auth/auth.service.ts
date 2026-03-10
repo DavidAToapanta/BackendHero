@@ -39,12 +39,17 @@ export class AuthService {
     });
     const cliente = await this.prisma.cliente.findFirst({
       where: { usuarioId: usuario.id },
+      select: { id: true, activo: true },
     });
 
     if (admin) rol = 'ADMIN';
     else if (recep) rol = 'RECEPCIONISTA';
     else if (entrenador) rol = 'ENTRENADOR';
     else if (cliente) rol = 'CLIENTE';
+
+    if (rol === 'CLIENTE' && cliente && !cliente.activo) {
+      throw new UnauthorizedException('Cliente inactivo');
+    }
 
     // const payload = { sub: usuario.id, userName: usuario.userName, cedula: usuario.cedula, role: rol };
     

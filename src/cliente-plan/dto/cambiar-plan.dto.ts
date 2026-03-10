@@ -19,10 +19,6 @@ export class CambiarPlanDto {
   @IsDateString()
   fechaFin: string;
 
-  @IsNotEmpty()
-  @IsInt()
-  diaPago: number;
-
   @IsOptional()
   @IsString()
   motivo?: string;

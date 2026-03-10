@@ -12,6 +12,16 @@ export class ClientePlanService {
       private facturaService: FacturaService
     ){}
 
+    private calcularDiaPago(fechaInicio: string | Date): number {
+      const fecha = fechaInicio instanceof Date ? fechaInicio : new Date(fechaInicio);
+
+      if (isNaN(fecha.getTime())) {
+        throw new BadRequestException('fechaInicio no es una fecha valida');
+      }
+
+      return fecha.getUTCDate();
+    }
+
     async create(dto: CreateClientePlanDto) {
     const hoy = new Date();
     const planVigente = await this.prisma.clientePlan.findFirst({
@@ -70,13 +80,14 @@ export class ClientePlanService {
     }
 
     console.log(`[ClientePlan] Creando plan con deuda inicial de: $${plan.precio}`);
+    const diaPago = this.calcularDiaPago(dto.fechaInicio);
 
     // 3. Crear el nuevo plan con la deuda inicial
     const clientePlan = await this.prisma.clientePlan.create({
       data: {
         fechaInicio: new Date(dto.fechaInicio),
         fechaFin: new Date(dto.fechaFin),
-        diaPago: dto.diaPago,
+        diaPago,
         activado: dto.activado,
         estado: 'ACTIVO',
         cliente: { connect: { id: dto.clienteId } },
@@ -122,12 +133,16 @@ export class ClientePlanService {
 
     async update(id: number, dto: UpdateClientePlanDto) {
         await this.findOne(id);
+        const diaPago = dto.fechaInicio
+          ? this.calcularDiaPago(dto.fechaInicio)
+          : undefined;
+
         return this.prisma.clientePlan.update({
           where: { id },
           data: {
             fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
             fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
-            diaPago: dto.diaPago,
+            diaPago,
             activado: dto.activado,
             cliente: dto.clienteId ? { connect: { id: dto.clienteId } } : undefined,
             plan: dto.planId ? { connect: { id: dto.planId } } : undefined,
@@ -136,9 +151,53 @@ export class ClientePlanService {
       }
 
     async remove(id: number) {
-        await this.findOne(id);
-        return this.prisma.clientePlan.delete({ where: { id } });
+      if (!id || Number.isNaN(id)) {
+        throw new BadRequestException('ID no valido');
       }
+
+      const planActual = await this.prisma.clientePlan.findUnique({
+        where: { id },
+      });
+
+      if (!planActual) {
+        throw new NotFoundException(`ClientePlan con id ${id} no encontrado`);
+      }
+
+      if (!planActual.activado || planActual.estado !== 'ACTIVO') {
+        throw new BadRequestException(
+          'Solo se puede quitar un plan activo',
+        );
+      }
+
+      const ahora = new Date();
+      const fechaFinCancelada =
+        planActual.fechaFin > ahora ? ahora : planActual.fechaFin;
+
+      const planCancelado = await this.prisma.$transaction(async (tx) => {
+        await this.facturaService.anularFactura(id, tx);
+
+        await tx.deuda.deleteMany({
+          where: {
+            clientePlanId: id,
+            solventada: false,
+          },
+        });
+
+        return tx.clientePlan.update({
+          where: { id },
+          data: {
+            activado: false,
+            estado: 'CANCELADO',
+            fechaFin: fechaFinCancelada,
+          },
+        });
+      });
+
+      return {
+        mensaje: 'Plan quitado correctamente',
+        clientePlan: planCancelado,
+      };
+    }
 
       async contarClientesActivos(): Promise<number> {
         const ahora = new Date();
@@ -166,7 +225,7 @@ export class ClientePlanService {
      * 1. Validar que el plan existe y está ACTIVO
      * 2. Validar que han pasado menos de 72h desde el inicio
      * 3. Validar que no es el mismo plan
-     * 4. Calcular crédito (suma de pagos del plan actual)
+     * 4. Calcular crédito desde la factura activa del plan actual
      * 5. En transacción:
      *    - Marcar plan viejo como CAMBIADO
      *    - Anular factura vieja
@@ -177,12 +236,11 @@ export class ClientePlanService {
      *    - Registrar auditoría en CambioPlan
      */
     async cambiarPlan(clientePlanId: number, dto: CambiarPlanDto) {
-      // --- PASO 1: Buscar el plan actual con sus pagos ---
+      // --- PASO 1: Buscar el plan actual ---
       const planActual = await this.prisma.clientePlan.findUnique({
         where: { id: clientePlanId },
         include: {
           plan: true,
-          pago: true,
         },
       });
 
@@ -213,10 +271,28 @@ export class ClientePlanService {
         );
       }
 
-      // --- PASO 5: Calcular crédito (suma de todos los pagos del plan) ---
-      const creditoTotal = Number(
-        planActual.pago.reduce((sum, p) => sum + p.monto, 0).toFixed(2),
+      // --- PASO 5: Calcular crédito desde la factura activa del plan actual ---
+      const facturaActiva = await this.prisma.factura.findFirst({
+        where: {
+          clientePlanId,
+          estado: { not: 'ANULADA' },
+        },
+      });
+
+      if (!facturaActiva) {
+        throw new NotFoundException(
+          `No se encontro factura activa para el ClientePlan ${clientePlanId}`,
+        );
+      }
+
+      const montoCubiertoActual = Number(
+        (
+          Number(facturaActiva.creditoAplicado ?? 0) +
+          Number(facturaActiva.totalPagado ?? 0)
+        ).toFixed(2),
       );
+
+      const creditoTotal = montoCubiertoActual;
 
       // --- PASO 6: Obtener precio del nuevo plan ---
       const nuevoPlan = await this.prisma.plan.findUnique({
@@ -231,6 +307,16 @@ export class ClientePlanService {
       const creditoAplicado = Number(Math.min(creditoTotal, precioNuevo).toFixed(2));
       const devolucionPendiente = Number(Math.max(creditoTotal - precioNuevo, 0).toFixed(2));
       const faltante = Number(Math.max(precioNuevo - creditoAplicado, 0).toFixed(2));
+      const diaPago = this.calcularDiaPago(dto.fechaInicio);
+      const tieneDevolucionPendiente = devolucionPendiente > 0;
+      const tieneFaltante = faltante > 0;
+
+      // Regla de negocio: nunca pueden coexistir faltante y devolución pendiente.
+      if (tieneDevolucionPendiente && tieneFaltante) {
+        throw new BadRequestException(
+          'No puede existir faltante y devolucion pendiente al mismo tiempo',
+        );
+      }
 
       // --- PASO 7: Transacción atómica ---
       const resultado = await this.prisma.$transaction(async (tx) => {
@@ -259,7 +345,7 @@ export class ClientePlanService {
           data: {
             fechaInicio: new Date(dto.fechaInicio),
             fechaFin: new Date(dto.fechaFin),
-            diaPago: dto.diaPago,
+            diaPago,
             activado: true,
             estado: 'ACTIVO',
             cliente: { connect: { id: planActual.clienteId } },
@@ -275,7 +361,7 @@ export class ClientePlanService {
         );
 
         // 7.6 Si hay faltante, crear deuda nueva
-        if (faltante > 0) {
+        if (tieneFaltante) {
           await tx.deuda.create({
             data: {
               clientePlanId: nuevoClientePlan.id,
@@ -286,7 +372,9 @@ export class ClientePlanService {
         }
 
         // 7.7 Registrar auditoría
-        const estadoDevolucion = devolucionPendiente > 0 ? 'PENDIENTE' : 'NO_APLICA';
+        const estadoDevolucion = tieneDevolucionPendiente
+          ? 'PENDIENTE'
+          : 'NO_APLICA';
 
         await tx.cambioPlan.create({
           data: {
@@ -294,7 +382,10 @@ export class ClientePlanService {
             clientePlanAnteriorId: clientePlanId,
             clientePlanNuevoId: nuevoClientePlan.id,
             montoPagadoTransferido: creditoAplicado,
-            montoDevuelto: devolucionPendiente,
+            devolucionPendiente: tieneDevolucionPendiente
+              ? devolucionPendiente
+              : 0,
+            devolucionDevueltaAcumulada: 0,
             estadoDevolucion,
             motivo: dto.motivo ?? null,
           },

@@ -8,20 +8,29 @@ import {
   Post,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Role, Roles } from '../auth/decorators/roles.decorator';
 import { ClienteService } from './cliente.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
-import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles, Role } from '../auth/decorators/roles.decorator';
 
 @Controller('cliente')
 @UseGuards(JwtAuthGuard)
 export class ClienteController {
   constructor(private readonly clienteService: ClienteService) {}
+
+  private parseOptionalBoolean(value?: string): boolean | undefined {
+    if (value === undefined) return undefined;
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+
+    return undefined;
+  }
 
   @Post()
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
@@ -35,19 +44,29 @@ export class ClienteController {
     @Query('page') page = '1',
     @Query('limit') limit = '10',
     @Query('search') search = '',
+    @Query('activo') activo?: string,
+    @Query('incluirInactivos') incluirInactivos?: string,
   ) {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
+    const activoFilter = this.parseOptionalBoolean(activo);
+    const incluirInactivosFilter =
+      this.parseOptionalBoolean(incluirInactivos) ?? false;
+
     try {
       const startTime = Date.now();
       const result = await this.clienteService.findAll(
         pageNumber,
         limitNumber,
         search,
+        {
+          activo: activoFilter,
+          incluirInactivos: incluirInactivosFilter,
+        },
       );
       const duration = Date.now() - startTime;
       console.log(
-        `[Clientes] findAll completado en ${duration}ms - Página: ${pageNumber}, Límite: ${limitNumber}, Búsqueda: "${search}"`,
+        `[Clientes] findAll completado en ${duration}ms - Pagina: ${pageNumber}, Limite: ${limitNumber}, Busqueda: "${search}", activo: ${activoFilter ?? 'default'}, incluirInactivos: ${incluirInactivosFilter}`,
       );
       return result;
     } catch (error) {
@@ -62,11 +81,9 @@ export class ClienteController {
     return this.clienteService.findRecientes(Number(limit) || 10);
   }
 
-  // Endpoint para que los clientes accedan a su propia información
   @Get('mi-perfil')
   @Roles(Role.CLIENTE)
   async getMiPerfil(@Request() req) {
-    // El usuarioId viene del JWT token
     const usuarioId = req.user.sub;
     return this.clienteService.findByUsuarioId(usuarioId);
   }
@@ -83,9 +100,21 @@ export class ClienteController {
     return this.clienteService.update(+id, dto);
   }
 
+  @Patch(':id/desactivar')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  desactivar(@Param('id') id: string) {
+    return this.clienteService.desactivar(+id);
+  }
+
+  @Patch(':id/reactivar')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  reactivar(@Param('id') id: string) {
+    return this.clienteService.reactivar(+id);
+  }
+
   @Delete(':id')
   @Roles(Role.ADMIN)
   remove(@Param('id') id: string) {
-    return this.clienteService.remove(+id);
+    return this.clienteService.desactivar(+id);
   }
 }

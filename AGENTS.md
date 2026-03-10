@@ -34,6 +34,10 @@ If those files are added later, update this section and follow them.
 - Open Prisma Studio: `npx prisma studio`
 - Run API (watch mode): `npm run start:dev`
 
+Notes:
+
+- In PowerShell environments with execution policy restrictions, use `npx.cmd` instead of `npx` (example: `npx.cmd prisma generate`).
+
 ## Build / Lint / Format Commands
 
 - Build app: `npm run build`
@@ -60,6 +64,10 @@ Notes:
 
 - Unit test file by path:
   `npm run test -- --runTestsByPath src/cliente/cliente.service.spec.ts`
+- Factura service file:
+  `npm run test -- --runTestsByPath src/factura/factura.service.spec.ts`
+- Cliente-plan service file:
+  `npm run test -- --runTestsByPath src/cliente-plan/cliente-plan.service.spec.ts`
 - Unit test file (short form):
   `npm run test -- src/cliente/cliente.service.spec.ts`
 - E2E single file:
@@ -80,6 +88,25 @@ Notes:
 - Entities (when used) live in `src/<domain>/entities/`.
 - Prisma access goes through injected `PrismaService`.
 - Cross-module service use should be wired through module imports/exports.
+
+## Facturacion y Devoluciones
+
+- `CambioPlan.montoDevuelto` is legacy/backfill-only. New logic must use:
+  - `devolucionPendiente`
+  - `devolucionDevueltaAcumulada`
+- `EstadoDevolucion` includes: `PENDIENTE`, `PARCIAL`, `COMPLETADO`, `NO_APLICA`.
+- Partial refund audit lives in `DevolucionMovimiento`.
+- Endpoint `POST /facturas/:id/devolver` receives:
+  - `monto` (required, `> 0`)
+  - `motivo` (optional)
+- `GET /facturas` and `GET /facturas/:id` return refund fields flat per row:
+  - `devolucionPendiente`
+  - `devolucionDevueltaAcumulada`
+  - `estadoDevolucion`
+- `GET /cliente*` returns top-level `devolucionPendiente` (sum of pending amounts for the client).
+- Business rule on plan change:
+  - Either there is `faltante` or there is `devolucionPendiente`.
+  - Never both at the same time.
 
 ## Code Style Rules
 
