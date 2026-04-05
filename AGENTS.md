@@ -108,6 +108,60 @@ Notes:
   - Either there is `faltante` or there is `devolucionPendiente`.
   - Never both at the same time.
 
+## Cliente and Plan Behavior
+
+- `Cliente.activo` is a soft-delete flag; client records are reactivated with `PATCH /cliente/:id/reactivar`.
+- `DELETE /cliente/:id` now delegates to soft deactivation instead of physical deletion.
+- `GET /cliente` defaults to active clients only.
+- `GET /cliente?activo=false` lists only inactive clients.
+- `GET /cliente?incluirInactivos=true` includes both active and inactive clients.
+- Client login must be blocked when `cliente.activo === false`.
+- In client payloads, `planes[0]` is expected to represent the active current plan only.
+- Queries that feed client lists/details should filter plans by:
+  - `activado: true`
+  - `estado: 'ACTIVO'`
+- `diaPago` is not provided by frontend requests; calculate it from `fechaInicio`.
+- Use UTC day extraction for that calculation to avoid timezone drift.
+
+## Multi-tenant / SaaS Transition
+
+- Fase 1 SaaS base already exists in Prisma:
+  - `Tenant`
+  - `UserTenant`
+  - `TenantModule`
+- Legacy default tenant slug is `gym-principal`.
+- `Usuario.email` is transitional; login still uses `cedula`.
+- `cedula` should remain required for new users while auth still depends on it.
+- JWT payloads may include:
+  - `tenantId`
+  - `tenantRole`
+- If a legacy client has no `UserTenant`, auth may fall back to `cliente.tenantId`.
+- Temporary fallback helpers exist for the legacy tenant during migration; avoid expanding that pattern unnecessarily.
+
+### Tenantized Core Already Implemented
+
+- The current tenantized core tables are:
+  - `Cliente`
+  - `Plan`
+  - `ClientePlan`
+  - `Pago`
+  - `Deuda`
+  - `Factura`
+- These tables must always persist and query `tenantId`.
+- Service methods for tenantized modules should validate records by `id + tenantId`, not by `id` alone.
+- Controllers for tenantized modules should resolve tenant from `req.user.tenantId`.
+- Do not add new reads/writes to these modules without tenant filtering.
+- Backfill strategy for existing records uses the legacy tenant `gym-principal`.
+
+### Remaining Modules To Tenantize Later
+
+- `Asistencia`
+- `Rutina`
+- `Entrenamiento`
+- `Notifications`
+- `Estadisticas`
+- Other secondary gym modules should follow after the financial/core flow is validated.
+
 ## Code Style Rules
 
 ### Formatting
@@ -145,6 +199,7 @@ Notes:
 - Apply guards/roles at controller or route level as needed.
 - Reuse existing auth patterns (`JwtAuthGuard`, `RolesGuard`, `@Roles`).
 - Prefer `ParseIntPipe` or explicit numeric conversion for `:id` params.
+- For boolean query params, parse explicit string values (`true`/`false`, `1`/`0`) before passing to services.
 
 ### Services and Prisma
 
@@ -153,6 +208,10 @@ Notes:
 - Use `$transaction` for multi-step writes that must stay consistent.
 - Clamp pagination inputs (existing pattern: page >= 1, limit <= 50).
 - Use `select`/`include` deliberately to control payload size.
+- When payment flows update invoices and debts together, use invoice `saldo` as the source of truth for regenerated debt.
+- When a service helper writes inside a larger transaction, allow passing Prisma `tx` through helper methods.
+- In tenantized modules, scope reads/writes by `tenantId` and prefer helper methods that resolve tenant consistently.
+- During migration phases, backfill before making new foreign keys/columns non-nullable.
 
 ### Error Handling
 
@@ -181,6 +240,7 @@ Notes:
 - Database URL comes from `DATABASE_URL`.
 - Passwords must be hashed with `bcrypt` before persistence.
 - Role checks use `rol` claim + `Role` enum semantics.
+- `POST /usuarios` is currently public in code; if exposing production endpoints, protect or gate bootstrap user creation.
 
 ## Agent Workflow Checklist
 

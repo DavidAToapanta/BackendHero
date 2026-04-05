@@ -1,4 +1,3 @@
-import { FacturaService } from './factura.service';
 import {
   Body,
   Controller,
@@ -7,24 +6,32 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Role, Roles } from '../auth/decorators/roles.decorator';
+import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
+import { FacturaService } from './factura.service';
 import { DevolverFacturaDto } from './dto/devolver-factura.dto';
 
 @Controller('facturas')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class FacturaController {
-    constructor(
-        private facturaService: FacturaService
-    ){}
+  constructor(private facturaService: FacturaService) {}
 
   @Get()
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
   findAll(
-    @Query('estado') estado?: string,
-    @Query('clienteId') clienteId?: string,
-    @Query('cedula') cedula?: string,
-    @Query('desde') desde?: string,
-    @Query('hasta') hasta?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('estado') estado: string | undefined,
+    @Query('clienteId') clienteId: string | undefined,
+    @Query('cedula') cedula: string | undefined,
+    @Query('desde') desde: string | undefined,
+    @Query('hasta') hasta: string | undefined,
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Request() req,
   ) {
     return this.facturaService.findAll(
       {
@@ -34,27 +41,31 @@ export class FacturaController {
         desde,
         hasta,
       },
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 10,
+      Number(page) || 1,
+      Number(limit) || 10,
+      getTenantIdOrThrow(req.user),
     );
   }
 
   @Get('resumen')
-  getResumen() {
-    return this.facturaService.getResumen();
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  getResumen(@Request() req) {
+    return this.facturaService.getResumen(getTenantIdOrThrow(req.user));
   }
 
-    @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.facturaService.findOne(id);
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findOne(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    return this.facturaService.findOne(id, getTenantIdOrThrow(req.user));
   }
 
   @Post(':id/devolver')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
   devolver(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: DevolverFacturaDto,
+    @Request() req,
   ) {
-    return this.facturaService.devolver(id, dto);
+    return this.facturaService.devolver(id, dto, getTenantIdOrThrow(req.user));
   }
-
 }

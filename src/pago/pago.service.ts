@@ -1,265 +1,345 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { FacturaService } from 'src/factura/factura.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
-import { FacturaService } from 'src/factura/factura.service';
+
+type PrismaTx = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
 
 @Injectable()
 export class PagoService {
-    constructor(
-      private prisma: PrismaService,
-      private facturaService: FacturaService,
-    
-    ){}
+  constructor(
+    private prisma: PrismaService,
+    private facturaService: FacturaService,
+  ) {}
 
-    async create(dto: CreatePagoDto) {
-        return this.prisma.$transaction(async (tx) => {
-            // 1. Obtener ClientePlan con el plan asociado para conocer el precio
-            const clientePlan = await tx.clientePlan.findUnique({
-              where: { id: dto.clientePlanId },
-              include: { 
-                plan: true,
-                pago: true, // Obtener todos los pagos previos
-              },
-            });
-        
-            if (!clientePlan) {
-              throw new NotFoundException('ClientePlan no encontrado');
-            }
-        
-            const precioPlan = Number(clientePlan.plan.precio);
-            const montoPagado = Number(dto.monto);
-        
-            // 2. Calcular el total pagado hasta ahora (incluyendo este pago)
-            const totalPagadoAntes = clientePlan.pago.reduce((sum, pago) => sum + Number(pago.monto), 0);
-            const totalPagadoDespues = totalPagadoAntes + montoPagado;
-        
-            console.log(`[Pago] Precio del plan: $${precioPlan}`);
-            console.log(`[Pago] Total pagado antes: $${totalPagadoAntes}`);
-            console.log(`[Pago] Monto de este pago: $${montoPagado}`);
-            console.log(`[Pago] Total pagado después: $${totalPagadoDespues}`);
-        
-            // 3. Crear el pago
-            const pago = await tx.pago.create({
-              data: {
-                monto: montoPagado,
-                fecha: new Date(dto.fecha),
-                clientePlan: { connect: { id: dto.clientePlanId } },
-              },
-            });
-    
-            const facturaActualizada = await this.facturaService.aplicarPago(
-              dto.clientePlanId,
-              montoPagado,
-              tx,
-            );
-        
-            // 4. Eliminar todas las deudas anteriores no solventadas de este plan
-            console.log(`[Pago] Buscando deudas para clientePlanId: ${dto.clientePlanId}`);
-            
-            const deudasAEliminar = await tx.deuda.findMany({
-              where: {
-                clientePlanId: dto.clientePlanId,
-                solventada: false,
-              },
-            });
-            
-            console.log(`[Pago] Deudas encontradas para eliminar:`, deudasAEliminar.map(d => ({ id: d.id, monto: d.monto })));
-            
-            const deleteResult = await tx.deuda.deleteMany({
-              where: {
-                clientePlanId: dto.clientePlanId,
-                solventada: false,
-              },
-            });
-            console.log(`[Pago] Deudas eliminadas: ${deleteResult.count}`);
-        
-            const saldoPendiente = Number(facturaActualizada.saldo ?? 0);
+  private async getScopedTenantId(tenantId?: number) {
+    return resolveTenantIdOrDefault(this.prisma, tenantId);
+  }
 
-            if (saldoPendiente > 0.01) {
-              console.log(`[Pago] Creando nueva deuda por saldo de factura: $${saldoPendiente}`);
-
-              await tx.deuda.create({
-                data: {
-                  clientePlanId: dto.clientePlanId,
-                  monto: saldoPendiente,
-                  solventada: false,
+  private async findPagoOrThrow(id: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const pago = await this.prisma.pago.findFirst({
+      where: { id, tenantId: scopedTenantId },
+      include: {
+        clientePlan: {
+          include: {
+            plan: true,
+            cliente: {
+              include: {
+                usuario: {
+                  select: { nombres: true, apellidos: true, cedula: true },
                 },
-              });
-            } else {
-              console.log(`[Pago] Plan completamente pagado. Saldo de factura: $${saldoPendiente}`);
-            }
-        
-            return pago;
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!pago) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    return { pago, tenantId: scopedTenantId };
+  }
+
+  async create(dto: CreatePagoDto, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const clientePlan = await tx.clientePlan.findFirst({
+        where: { id: dto.clientePlanId, tenantId: scopedTenantId },
+        include: {
+          plan: true,
+          pago: {
+            where: { tenantId: scopedTenantId },
+          },
+        },
+      });
+
+      if (!clientePlan) {
+        throw new NotFoundException('ClientePlan no encontrado');
+      }
+
+      const montoPagado = Number(dto.monto);
+
+      const pago = await tx.pago.create({
+        data: {
+          tenantId: scopedTenantId,
+          clientePlanId: dto.clientePlanId,
+          monto: montoPagado,
+          fecha: new Date(dto.fecha),
+        },
+      });
+
+      const facturaActualizada = await this.facturaService.aplicarPago(
+        dto.clientePlanId,
+        montoPagado,
+        tx,
+        scopedTenantId,
+      );
+
+      await tx.deuda.deleteMany({
+        where: {
+          tenantId: scopedTenantId,
+          clientePlanId: dto.clientePlanId,
+          solventada: false,
+        },
+      });
+
+      const saldoPendiente = Number(facturaActualizada.saldo ?? 0);
+
+      if (saldoPendiente > 0.01) {
+        await tx.deuda.create({
+          data: {
+            tenantId: scopedTenantId,
+            clientePlanId: dto.clientePlanId,
+            monto: saldoPendiente,
+            solventada: false,
+          },
         });
       }
 
-      async findAll(page = 1, limit = 10, search?: string) {
-        const take = Math.max(1, Math.min(limit, 50));
-        const currentPage = Math.max(1, page);
-        const skip = (currentPage - 1) * take;
+      return pago;
+    });
+  }
 
-        const where: any = search
-            ? {
-                OR: [
-                    { clientePlan: { cliente: { usuario: { nombres: { contains: search, mode: 'insensitive' } } } } },
-                    { clientePlan: { cliente: { usuario: { apellidos: { contains: search, mode: 'insensitive' } } } } },
-                    { clientePlan: { cliente: { usuario: { cedula: { contains: search, mode: 'insensitive' } } } } },
-                    { clientePlan: { plan: { nombre: { contains: search, mode: 'insensitive' } } } },
-                ]
-            }
-            : undefined;
+  async findAll(page = 1, limit = 10, search?: string, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const take = Math.max(1, Math.min(limit, 50));
+    const currentPage = Math.max(1, page);
+    const skip = (currentPage - 1) * take;
+    const trimmedSearch = search?.trim();
 
-        const [totalItems, pagos] = await Promise.all([
-          this.prisma.pago.count({ where }),
-          this.prisma.pago.findMany({
-            where,
-            skip,
-            take,
-            orderBy: { id: 'desc' },
-            select: {
-              id: true,
-              monto: true,
-              fecha: true,
-              clientePlan: {
-                select: {
-                  plan: { select: { nombre: true } },
+    const where: Prisma.PagoWhereInput = {
+      tenantId: scopedTenantId,
+      ...(trimmedSearch
+        ? {
+            OR: [
+              {
+                clientePlan: {
                   cliente: {
-                    select: {
-                      usuario: { select: { nombres: true, apellidos: true } },
+                    usuario: {
+                      nombres: {
+                        contains: trimmedSearch,
+                        mode: 'insensitive',
+                      },
                     },
                   },
                 },
               },
-            },
-          }),
-        ]);
+              {
+                clientePlan: {
+                  cliente: {
+                    usuario: {
+                      apellidos: {
+                        contains: trimmedSearch,
+                        mode: 'insensitive',
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                clientePlan: {
+                  cliente: {
+                    usuario: {
+                      cedula: {
+                        contains: trimmedSearch,
+                        mode: 'insensitive',
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                clientePlan: {
+                  plan: {
+                    nombre: {
+                      contains: trimmedSearch,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
 
-        return {
-          data: pagos,
-          meta: {
-            totalItems,
-            itemCount: pagos.length,
-            perPage: take,
-            totalPages: Math.ceil(totalItems / take),
-            currentPage,
+    const [totalItems, pagos] = await Promise.all([
+      this.prisma.pago.count({ where }),
+      this.prisma.pago.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { id: 'desc' },
+        select: {
+          id: true,
+          tenantId: true,
+          monto: true,
+          fecha: true,
+          clientePlan: {
+            select: {
+              id: true,
+              clienteId: true,
+              plan: { select: { nombre: true } },
+              cliente: {
+                select: {
+                  usuario: { select: { nombres: true, apellidos: true } },
+                },
+              },
+            },
           },
-        };
+        },
+      }),
+    ]);
+
+    return {
+      data: pagos,
+      meta: {
+        totalItems,
+        itemCount: pagos.length,
+        perPage: take,
+        totalPages: Math.ceil(totalItems / take),
+        currentPage,
+      },
+    };
+  }
+
+  async findOne(id: number, tenantId?: number) {
+    const { pago } = await this.findPagoOrThrow(id, tenantId);
+    return pago;
+  }
+
+  async update(id: number, dto: UpdatePagoDto, tenantId?: number) {
+    const { pago, tenantId: scopedTenantId } = await this.findPagoOrThrow(
+      id,
+      tenantId,
+    );
+
+    if (dto.clientePlanId !== undefined && dto.clientePlanId !== pago.clientePlanId) {
+      const clientePlan = await this.prisma.clientePlan.findFirst({
+        where: { id: dto.clientePlanId, tenantId: scopedTenantId },
+        select: { id: true },
+      });
+
+      if (!clientePlan) {
+        throw new NotFoundException('ClientePlan no encontrado');
+      }
+    }
+
+    return this.prisma.pago.update({
+      where: { id },
+      data: {
+        ...(dto.monto !== undefined && { monto: dto.monto }),
+        ...(dto.fecha && { fecha: new Date(dto.fecha) }),
+        ...(dto.clientePlanId !== undefined && {
+          clientePlan: { connect: { id: dto.clientePlanId } },
+        }),
+      },
+    });
+  }
+
+  async remove(id: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const pago = await tx.pago.findFirst({
+        where: { id, tenantId: scopedTenantId },
+        include: {
+          clientePlan: {
+            include: {
+              plan: true,
+            },
+          },
+        },
+      });
+
+      if (!pago) {
+        throw new NotFoundException('Pago no encontrado');
       }
 
-      async findOne(id: number) {
-        const pago = await this.prisma.pago.findUnique({ where: { id } });
-        if (!pago) throw new NotFoundException('Pago no encontrado');
+      const montoEliminado = Number(pago.monto);
+      const clientePlanId = pago.clientePlanId;
+
+      await tx.pago.delete({ where: { id: pago.id } });
+
+      const factura = await tx.factura.findFirst({
+        where: {
+          tenantId: scopedTenantId,
+          clientePlanId,
+          estado: { not: 'ANULADA' },
+        },
+      });
+
+      if (!factura) {
         return pago;
       }
 
-      async update(id: number, dto: UpdatePagoDto) {
-        await this.findOne(id);
-        return this.prisma.pago.update({
-          where: { id },
+      const nuevoTotalPagado = Number(
+        (factura.totalPagado - montoEliminado).toFixed(2),
+      );
+      const nuevoSaldo = Number((factura.saldo + montoEliminado).toFixed(2));
+      const nuevoEstado = nuevoSaldo > 0.01 ? 'PENDIENTE' : 'PAGADA';
+
+      await tx.factura.update({
+        where: { id: factura.id },
+        data: {
+          totalPagado: nuevoTotalPagado,
+          saldo: nuevoSaldo,
+          estado: nuevoEstado,
+        },
+      });
+
+      await tx.deuda.deleteMany({
+        where: {
+          tenantId: scopedTenantId,
+          clientePlanId,
+          solventada: false,
+        },
+      });
+
+      if (nuevoSaldo > 0.01) {
+        await tx.deuda.create({
           data: {
-            ...(dto.monto !== undefined && { monto: dto.monto }),
-            ...(dto.fecha && { fecha: new Date(dto.fecha) }),
-            ...(dto.clientePlanId !== undefined && {
-              clientePlan: { connect: { id: dto.clientePlanId } },
-            }),
+            tenantId: scopedTenantId,
+            clientePlanId,
+            monto: nuevoSaldo,
+            solventada: false,
           },
         });
       }
 
-      async remove(id: number) {
-        return this.prisma.$transaction(async (tx) => {
-          // 1. Obtener el pago antes de eliminarlo para saber monto y plan
-          const pago = await tx.pago.findUnique({
-            where: { id },
-            include: { clientePlan: { include: { plan: true } } },
-          });
+      return pago;
+    });
+  }
 
-          if (!pago) throw new NotFoundException('Pago no encontrado');
+  async obtenerIngresoDelMes(tenantId?: number): Promise<number> {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const ahora = new Date();
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
 
-          const montoEliminado = Number(pago.monto);
-          const clientePlanId = pago.clientePlanId;
+    const resultado = await this.prisma.pago.aggregate({
+      _sum: {
+        monto: true,
+      },
+      where: {
+        tenantId: scopedTenantId,
+        fecha: {
+          gte: inicioMes,
+          lte: finMes,
+        },
+      },
+    });
 
-          // 2. Eliminar el pago
-          await tx.pago.delete({ where: { id } });
-
-          // 3. Buscar la factura asociada al plan
-          const factura = await tx.factura.findFirst({
-            where: { clientePlanId, estado: { not: 'ANULADA' } },
-          });
-
-          if (factura) {
-            // 4. Actualizar la factura
-            // Se resta el monto pagado (porque se eliminó el pago) -> El saldo aumenta
-            const nuevoTotalPagado = Number(
-              (factura.totalPagado - montoEliminado).toFixed(2),
-            );
-            const nuevoSaldo = Number(
-              (factura.saldo + montoEliminado).toFixed(2),
-            );
-
-            // Si el saldo es > 0, pasa a PENDIENTE
-            const nuevoEstado = nuevoSaldo > 0.01 ? 'PENDIENTE' : 'PAGADA';
-
-            console.log(
-              `[PagoService] Rollback pago ${id}: Restando $${montoEliminado} a pagado. Nuevo saldo: $${nuevoSaldo}`,
-            );
-
-            await tx.factura.update({
-              where: { id: factura.id },
-              data: {
-                totalPagado: nuevoTotalPagado,
-                saldo: nuevoSaldo,
-                estado: nuevoEstado,
-              },
-            });
-
-            // 5. Regenerar la deuda
-            // Eliminamos cualquier deuda pendiente "residual" que pudiera haber
-            await tx.deuda.deleteMany({
-              where: {
-                clientePlanId,
-                solventada: false,
-              },
-            });
-
-            // Si queda saldo por pagar, se crea UNA deuda unificada por ese valor
-            if (nuevoSaldo > 0.01) {
-              console.log(
-                `[PagoService] Regenerando deuda por rollback: $${nuevoSaldo}`,
-              );
-              await tx.deuda.create({
-                data: {
-                  clientePlanId,
-                  monto: nuevoSaldo,
-                  solventada: false,
-                },
-              });
-            }
-          }
-
-          return pago;
-        });
-      }
-
-      async obtenerIngresoDelMes(): Promise<number>{
-        const ahora = new Date();
-        const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-        const finMes  = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
-
-        const resultado = await this.prisma.pago.aggregate({
-          _sum: {
-            monto: true,
-          },
-          where: {
-            fecha: {
-              gte: inicioMes,
-              lte: finMes,
-            }
-          }
-        });
-
-        return resultado._sum.monto ?? 0;
-      }
-
+    return resultado._sum.monto ?? 0;
+  }
 }

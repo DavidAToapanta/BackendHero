@@ -1,88 +1,53 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateRutinaDto } from './dto/create-rutina.dto';
 import { UpdateRutinaDto } from './dto/update-rutina.dto';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RutinaService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateRutinaDto) {
-    // Verificar que el cliente existe
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { id: dto.clienteId },
+  private async getScopedTenantId(tenantId?: number) {
+    return resolveTenantIdOrDefault(this.prisma, tenantId);
+  }
+
+  private normalizeRutinaBase64(rutina: string) {
+    let base64Content = rutina;
+
+    if (base64Content.includes(',')) {
+      base64Content = base64Content.split(',')[1];
+    }
+
+    if (!base64Content) {
+      throw new BadRequestException('Formato de imagen base64 incorrecto');
+    }
+
+    return Buffer.from(base64Content, 'base64');
+  }
+
+  private async findClienteOrThrow(clienteId: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, tenantId: scopedTenantId },
+      select: { id: true, tenantId: true },
     });
 
     if (!cliente) {
       throw new NotFoundException('Cliente no encontrado');
     }
 
-    // 1. Extraer el base64 puro. Asumimos que el prefijo siempre está.
-    // Busca la coma (,) y toma la parte siguiente.
-    let base64Content = dto.rutina;
-
-    // Si la cadena contiene una coma (es decir, viene con el prefijo Data URL: data:image/jpeg;base64,...), la eliminamos.
-    if (base64Content.includes(',')) {
-      base64Content = base64Content.split(',')[1];
-    }
-
-    // 2. Convertir el string base64 puro a Buffer para almacenar como Bytes
-    // Si base64Content es undefined o nulo, esto podría fallar, se debe validar.
-    if (!base64Content) {
-      throw new Error('Formato de imagen base64 incorrecto.');
-    }
-    const rutinaBuffer = Buffer.from(base64Content, 'base64');
-
-    const response = await this.prisma.rutina.create({
-      data: {
-        clienteId: dto.clienteId,
-        rutina: rutinaBuffer,
-        fechaInicio: new Date(dto.fechaInicio),
-        fechaFin: new Date(dto.fechaFin),
-        observacion: dto.observacion || '',
-      },
-      include: {
-        cliente: {
-          include: {
-            usuario: {
-              select: {
-                nombres: true,
-                apellidos: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    await this.prisma.entrenamiento.create({
-      data: {
-        rutinaId: response.id,
-        finalizado: false,
-      },
-    });
-
-    return response;
+    return { cliente, tenantId: scopedTenantId };
   }
 
-  async findAll() {
-    return this.prisma.rutina.findMany({
-      select: {
-        id: true,
-        clienteId: true,
-        fechaInicio: true,
-        fechaFin: true,
-        observacion: true,
-      },
-      orderBy: {
-        fechaInicio: 'desc',
-      },
-    });
-  }
-
-  async findOne(id: number) {
-    const rutina = await this.prisma.rutina.findUnique({
-      where: { id },
+  private async findRutinaOrThrow(id: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const rutina = await this.prisma.rutina.findFirst({
+      where: { id, tenantId: scopedTenantId },
       include: {
         cliente: {
           include: {
@@ -128,33 +93,90 @@ export class RutinaService {
       throw new NotFoundException('Rutina no encontrada');
     }
 
-    // Convertir el Buffer a base64 (contenido puro)
-    const base64Pure = Buffer.from(rutina.rutina).toString('base64');
+    return { rutina, tenantId: scopedTenantId };
+  }
 
-    // **Re-ensamblar la cadena Data URL con el prefijo correcto**
-    // Asumiendo que sabes el tipo de archivo (e.g., image/jpeg)
+  async create(dto: CreateRutinaDto, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      dto.clienteId,
+      tenantId,
+    );
+    const rutinaBuffer = this.normalizeRutinaBase64(dto.rutina);
+
+    const response = await this.prisma.rutina.create({
+      data: {
+        tenantId: scopedTenantId,
+        clienteId: cliente.id,
+        rutina: rutinaBuffer,
+        fechaInicio: new Date(dto.fechaInicio),
+        fechaFin: new Date(dto.fechaFin),
+        observacion: dto.observacion || '',
+      },
+      include: {
+        cliente: {
+          include: {
+            usuario: {
+              select: {
+                nombres: true,
+                apellidos: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    await this.prisma.entrenamiento.create({
+      data: {
+        tenantId: scopedTenantId,
+        rutinaId: response.id,
+        finalizado: false,
+      },
+    });
+
+    return response;
+  }
+
+  async findAll(tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    return this.prisma.rutina.findMany({
+      where: { tenantId: scopedTenantId },
+      select: {
+        id: true,
+        tenantId: true,
+        clienteId: true,
+        fechaInicio: true,
+        fechaFin: true,
+        observacion: true,
+      },
+      orderBy: {
+        fechaInicio: 'desc',
+      },
+    });
+  }
+
+  async findOne(id: number, tenantId?: number) {
+    const { rutina } = await this.findRutinaOrThrow(id, tenantId);
+    const base64Pure = Buffer.from(rutina.rutina).toString('base64');
     const dataURL = `data:image/jpeg;base64,${base64Pure}`;
 
     return {
       ...rutina,
-      rutina: dataURL, // Esto es lo que envías al cliente
+      rutina: dataURL,
     };
   }
 
-  async findByCliente(clienteId: number) {
-    // Verificar que el cliente existe
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { id: clienteId },
-    });
-
-    if (!cliente) {
-      throw new NotFoundException('Cliente no encontrado');
-    }
+  async findByCliente(clienteId: number, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
 
     return this.prisma.rutina.findMany({
-      where: { clienteId },
+      where: { clienteId: cliente.id, tenantId: scopedTenantId },
       select: {
         id: true,
+        tenantId: true,
         clienteId: true,
         fechaInicio: true,
         fechaFin: true,
@@ -167,8 +189,8 @@ export class RutinaService {
     });
   }
 
-  async update(id: number, dto: UpdateRutinaDto) {
-    await this.findOne(id);
+  async update(id: number, dto: UpdateRutinaDto, tenantId?: number) {
+    await this.findRutinaOrThrow(id, tenantId);
 
     const updateData: {
       rutina?: Buffer;
@@ -178,7 +200,7 @@ export class RutinaService {
     } = {};
 
     if (dto.rutina) {
-      updateData.rutina = Buffer.from(dto.rutina, 'base64');
+      updateData.rutina = this.normalizeRutinaBase64(dto.rutina);
     }
     if (dto.fechaInicio) {
       updateData.fechaInicio = new Date(dto.fechaInicio);
@@ -208,8 +230,8 @@ export class RutinaService {
     });
   }
 
-  async remove(id: number) {
-    await this.findOne(id);
+  async remove(id: number, tenantId?: number) {
+    await this.findRutinaOrThrow(id, tenantId);
 
     return this.prisma.rutina.delete({
       where: { id },

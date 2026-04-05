@@ -6,44 +6,53 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
   Request,
+  UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { GastoService } from './gasto.service';
+import { Role, Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { CreateGastoDto } from './dto/create-gasto.dto';
 import { UpdateGastoDto } from './dto/update-gasto.dto';
+import { GastoService } from './gasto.service';
 
 @Controller('gasto')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class GastoController {
   constructor(private readonly gastoService: GastoService) {}
 
-  @UseGuards(AuthGuard('jwt'))
   @Post()
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
   create(@Body() dto: CreateGastoDto, @Request() req) {
-    console.log('💥 Llegó al controller');
-    console.log('🧠 Usuario:', req.user);
-
-    return this.gastoService.create(dto, req.user.sub);
+    return this.gastoService.create(
+      dto,
+      req.user.sub,
+      getTenantIdOrThrow(req.user),
+    );
   }
 
   @Get()
-  findAll() {
-    return this.gastoService.findAll();
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findAll(@Request() req) {
+    return this.gastoService.findAll(getTenantIdOrThrow(req.user));
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.gastoService.findOne(+id);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.gastoService.findOne(+id, getTenantIdOrThrow(req.user));
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateGastoDto) {
-    return this.gastoService.update(+id, dto);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  update(@Param('id') id: string, @Body() dto: UpdateGastoDto, @Request() req) {
+    return this.gastoService.update(+id, dto, getTenantIdOrThrow(req.user));
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.gastoService.remove(+id);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  remove(@Param('id') id: string, @Request() req) {
+    return this.gastoService.remove(+id, getTenantIdOrThrow(req.user));
   }
 }

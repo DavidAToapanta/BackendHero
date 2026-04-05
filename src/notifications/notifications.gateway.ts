@@ -1,12 +1,20 @@
+import { JwtService } from '@nestjs/jwt';
+import { OnModuleDestroy } from '@nestjs/common';
 import {
-  WebSocketGateway,
-  WebSocketServer,
-  OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { NotificationsService } from './notifications.service';
+
+type TenantAwareSocket = Socket & {
+  data: {
+    tenantId?: number;
+  };
+};
 
 @WebSocketGateway({
   namespace: 'notifications',
@@ -18,49 +26,169 @@ import { NotificationsService } from './notifications.service';
   transports: ['websocket', 'polling'],
 })
 export class NotificationsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
-  @WebSocketServer() server: Server;
-  private lastEmittedSnapshot: string | null = null;
+  @WebSocketServer() server: Namespace;
+  private readonly lastSnapshots = new Map<number, string>();
+  private intervalRef: NodeJS.Timeout | null = null;
 
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async afterInit() {
-    console.log('WebSocket Notifications Gateway inicializado');
-    this.emitNotificationsPeriodically();
+    if (this.intervalRef) {
+      return;
+    }
+
+    this.intervalRef = setInterval(() => {
+      void this.emitNotificationsCycle();
+    }, 10000);
   }
 
-  async handleConnection(client: Socket) {
-    console.log(`Cliente conectado: ${client.id}`);
-    try {
-      const notifications = await this.notificationsService.getCurrentNotifications();
-      client.emit('notificationsUpdate', notifications);
-    } catch (err) {
-      console.error('Error enviando notificaciones iniciales:', err);
+  onModuleDestroy() {
+    if (!this.intervalRef) {
+      return;
+    }
+
+    clearInterval(this.intervalRef);
+    this.intervalRef = null;
+  }
+
+  async handleConnection(client: TenantAwareSocket) {
+    const tenantId = this.resolveTenantId(client);
+    if (!tenantId) {
+      client.disconnect(true);
+      return;
+    }
+
+    client.data.tenantId = tenantId;
+    await client.join(this.getTenantRoom(tenantId));
+
+    const notifications =
+      await this.notificationsService.getCurrentNotifications(tenantId);
+    client.emit('notificationsUpdate', notifications);
+  }
+
+  handleDisconnect(client: TenantAwareSocket) {
+    const tenantId = client.data?.tenantId;
+    if (!tenantId) {
+      return;
+    }
+
+    const rooms = this.getRooms();
+    if (!rooms?.has(this.getTenantRoom(tenantId))) {
+      this.lastSnapshots.delete(tenantId);
     }
   }
 
-  handleDisconnect(client: Socket) {
-    console.log(`Cliente desconectado: ${client.id}`);
-  }
+  private async emitNotificationsCycle() {
+    const tenantIds = this.getActiveTenantIds();
+    if (!tenantIds.length) {
+      return;
+    }
 
-  // Emitir notificaciones cada cierto intervalo
-  private emitNotificationsPeriodically() {
-    setInterval(async () => {
+    for (const tenantId of tenantIds) {
       try {
-        const notifications = await this.notificationsService.getCurrentNotifications();
+        const notifications =
+          await this.notificationsService.getCurrentNotifications(tenantId);
         const snapshot = JSON.stringify(notifications);
 
-        if (this.lastEmittedSnapshot !== snapshot) {
-          this.lastEmittedSnapshot = snapshot;
-          console.log('📢 Enviando notificaciones actualizadas');
-          this.server.emit('notificationsUpdate', notifications);
-        } else {
-          console.log('🔇 Sin cambios en notificaciones; no se emite');
+        if (this.lastSnapshots.get(tenantId) === snapshot) {
+          continue;
         }
-      } catch (err) {
-        console.error('Error al obtener/enviar notificaciones:', err);
+
+        this.lastSnapshots.set(tenantId, snapshot);
+        this.server
+          .to(this.getTenantRoom(tenantId))
+          .emit('notificationsUpdate', notifications);
+      } catch {
+        continue;
       }
-    }, 10000); // cada 10 segundos
+    }
+  }
+
+  private getActiveTenantIds() {
+    const rooms = this.getRooms();
+    if (!rooms) {
+      return [];
+    }
+
+    const tenantIds = new Set<number>();
+
+    for (const roomName of rooms.keys()) {
+      const tenantId = this.getTenantIdFromRoom(roomName);
+      if (tenantId) {
+        tenantIds.add(tenantId);
+      }
+    }
+
+    return [...tenantIds];
+  }
+
+  private getRooms() {
+    return this.server?.adapter?.rooms;
+  }
+
+  private getTenantIdFromRoom(roomName: string) {
+    if (!roomName.startsWith('tenant:')) {
+      return null;
+    }
+
+    const tenantId = Number(roomName.slice('tenant:'.length));
+    return tenantId && !Number.isNaN(tenantId) ? tenantId : null;
+  }
+
+  private getTenantRoom(tenantId: number) {
+    return `tenant:${tenantId}`;
+  }
+
+  private resolveTenantId(client: TenantAwareSocket) {
+    const token = this.extractToken(client);
+    if (token) {
+      try {
+        const payload = this.jwtService.verify(token, {
+          secret: process.env.JWT_SECRET || 'supersecret',
+        }) as { tenantId?: number | string };
+        const verifiedTenantId = Number(payload?.tenantId);
+        if (verifiedTenantId && !Number.isNaN(verifiedTenantId)) {
+          return verifiedTenantId;
+        }
+      } catch {
+        // Fallback below for local/dev clients still sending tenantId directly.
+      }
+    }
+
+    const tenantId = Number(
+      client.handshake.auth?.tenantId ?? client.handshake.query?.tenantId,
+    );
+    return tenantId && !Number.isNaN(tenantId) ? tenantId : null;
+  }
+
+  private extractToken(client: TenantAwareSocket) {
+    const authToken =
+      typeof client.handshake.auth?.token === 'string'
+        ? client.handshake.auth.token
+        : null;
+
+    if (authToken?.startsWith('Bearer ')) {
+      return authToken.slice(7);
+    }
+
+    if (authToken) {
+      return authToken;
+    }
+
+    const header = client.handshake.headers.authorization;
+    if (typeof header === 'string' && header.startsWith('Bearer ')) {
+      return header.slice(7);
+    }
+
+    return null;
   }
 }

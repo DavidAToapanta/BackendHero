@@ -1,3 +1,74 @@
+-- Ensure historical base exists before applying partial refund changes.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EstadoDevolucion') THEN
+    CREATE TYPE "EstadoDevolucion" AS ENUM ('PENDIENTE', 'COMPLETADO', 'NO_APLICA');
+  END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS "CambioPlan" (
+  "id" SERIAL NOT NULL,
+  "clienteId" INTEGER NOT NULL,
+  "clientePlanAnteriorId" INTEGER NOT NULL,
+  "clientePlanNuevoId" INTEGER NOT NULL,
+  "montoPagadoTransferido" DOUBLE PRECISION NOT NULL,
+  "montoDevuelto" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "fecha" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "estadoDevolucion" "EstadoDevolucion" NOT NULL DEFAULT 'PENDIENTE',
+  "motivo" TEXT,
+  CONSTRAINT "CambioPlan_pkey" PRIMARY KEY ("id")
+);
+
+ALTER TABLE "CambioPlan"
+ADD COLUMN IF NOT EXISTS "montoDevuelto" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "estadoDevolucion" "EstadoDevolucion" NOT NULL DEFAULT 'PENDIENTE',
+ADD COLUMN IF NOT EXISTS "motivo" TEXT,
+ADD COLUMN IF NOT EXISTS "fecha" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN IF NOT EXISTS "montoPagadoTransferido" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "clienteId" INTEGER,
+ADD COLUMN IF NOT EXISTS "clientePlanAnteriorId" INTEGER,
+ADD COLUMN IF NOT EXISTS "clientePlanNuevoId" INTEGER;
+
+ALTER TABLE "CambioPlan"
+ALTER COLUMN "clienteId" SET NOT NULL,
+ALTER COLUMN "clientePlanAnteriorId" SET NOT NULL,
+ALTER COLUMN "clientePlanNuevoId" SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'CambioPlan_clienteId_fkey'
+  ) THEN
+    ALTER TABLE "CambioPlan"
+    ADD CONSTRAINT "CambioPlan_clienteId_fkey"
+    FOREIGN KEY ("clienteId") REFERENCES "Cliente"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'CambioPlan_clientePlanAnteriorId_fkey'
+  ) THEN
+    ALTER TABLE "CambioPlan"
+    ADD CONSTRAINT "CambioPlan_clientePlanAnteriorId_fkey"
+    FOREIGN KEY ("clientePlanAnteriorId") REFERENCES "ClientePlan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'CambioPlan_clientePlanNuevoId_fkey'
+  ) THEN
+    ALTER TABLE "CambioPlan"
+    ADD CONSTRAINT "CambioPlan_clientePlanNuevoId_fkey"
+    FOREIGN KEY ("clientePlanNuevoId") REFERENCES "ClientePlan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END
+$$;
+
 -- Add PARCIAL to EstadoDevolucion enum
 DO $$
 BEGIN

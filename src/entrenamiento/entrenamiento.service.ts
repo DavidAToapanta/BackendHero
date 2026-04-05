@@ -1,35 +1,77 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateEntrenamientoDto } from './dto/create-entrenamiento.dto';
 import { UpdateEntrenamientoDto } from './dto/update-entrenamiento.dto';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class EntrenamientoService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateEntrenamientoDto) {
-    // Verificar que el entrenamiento existe
-    const entrenamiento = await this.prisma.entrenamiento.findUnique({
-      where: { rutinaId: dto.rutinaId },
+  private async getScopedTenantId(tenantId?: number) {
+    return resolveTenantIdOrDefault(this.prisma, tenantId);
+  }
+
+  private async findEntrenamientoOrThrow(id: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const entrenamiento = await this.prisma.entrenamiento.findFirst({
+      where: { id, tenantId: scopedTenantId },
+      include: {
+        semanas: {
+          orderBy: { numero: 'asc' },
+          include: {
+            musculosSemana: {
+              orderBy: { orden: 'asc' },
+              include: {
+                musculo: true,
+                ejerciciosMusculo: {
+                  orderBy: { orden: 'asc' },
+                  include: {
+                    ejercicio: true,
+                    seriesReps: {
+                      orderBy: { orden: 'asc' },
+                    },
+                    seriesTiempos: {
+                      orderBy: { orden: 'asc' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!entrenamiento) {
+      throw new NotFoundException('Entrenamiento no encontrado');
+    }
+
+    return { entrenamiento, tenantId: scopedTenantId };
+  }
+
+  async create(dto: CreateEntrenamientoDto, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const entrenamiento = await this.prisma.entrenamiento.findFirst({
+      where: { rutinaId: dto.rutinaId, tenantId: scopedTenantId },
     });
 
     if (!entrenamiento) {
       throw new NotFoundException(
-        'No existe un entrenamiento para esta rutina. Primero crea la rutina.',
+        'No existe un entrenamiento para esta rutina en este tenant. Primero crea la rutina.',
       );
     }
 
-    // Agregar las semanas al entrenamiento existente
     await Promise.all(
       dto.semanas.map(async (semanaDto) => {
         await this.prisma.semana.create({
           data: {
+            tenantId: scopedTenantId,
             numero: semanaDto.numero,
             entrenamientoId: entrenamiento.id,
             musculosSemana: {
               create: await Promise.all(
                 semanaDto.musculos.map(async (musculoDto) => {
-                  // UPSERT del músculo
                   const musculo = await this.prisma.musculo.upsert({
                     where: { nombre: musculoDto.musculo },
                     update: {},
@@ -37,12 +79,12 @@ export class EntrenamientoService {
                   });
 
                   return {
+                    tenantId: scopedTenantId,
                     orden: musculoDto.orden,
                     musculoId: musculo.id,
                     ejerciciosMusculo: {
                       create: await Promise.all(
                         musculoDto.ejercicios.map(async (ejercicioDto) => {
-                          // UPSERT del ejercicio
                           const ejercicio = await this.prisma.ejercicio.upsert({
                             where: {
                               nombre: ejercicioDto.ejercicio.nombre,
@@ -54,6 +96,7 @@ export class EntrenamientoService {
                           });
 
                           return {
+                            tenantId: scopedTenantId,
                             orden: ejercicioDto.orden,
                             ejercicioId: ejercicio.id,
                             seriesReps: ejercicioDto.seriesReps
@@ -93,12 +136,13 @@ export class EntrenamientoService {
       }),
     );
 
-    // Retornar el entrenamiento actualizado con todas las semanas
-    return this.findOne(entrenamiento.id);
+    return this.findOne(entrenamiento.id, scopedTenantId);
   }
 
-  async findAll() {
+  async findAll(tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
     return this.prisma.entrenamiento.findMany({
+      where: { tenantId: scopedTenantId },
       include: {
         semanas: {
           orderBy: { numero: 'asc' },
@@ -127,46 +171,15 @@ export class EntrenamientoService {
     });
   }
 
-  async findOne(id: number) {
-    const entrenamiento = await this.prisma.entrenamiento.findUnique({
-      where: { id },
-      include: {
-        semanas: {
-          orderBy: { numero: 'asc' },
-          include: {
-            musculosSemana: {
-              orderBy: { orden: 'asc' },
-              include: {
-                musculo: true,
-                ejerciciosMusculo: {
-                  orderBy: { orden: 'asc' },
-                  include: {
-                    ejercicio: true,
-                    seriesReps: {
-                      orderBy: { orden: 'asc' },
-                    },
-                    seriesTiempos: {
-                      orderBy: { orden: 'asc' },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!entrenamiento) {
-      throw new NotFoundException('Entrenamiento no encontrado');
-    }
-
+  async findOne(id: number, tenantId?: number) {
+    const { entrenamiento } = await this.findEntrenamientoOrThrow(id, tenantId);
     return entrenamiento;
   }
 
-  async findByRutina(rutinaId: number) {
-    const entrenamiento = await this.prisma.entrenamiento.findUnique({
-      where: { rutinaId },
+  async findByRutina(rutinaId: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const entrenamiento = await this.prisma.entrenamiento.findFirst({
+      where: { rutinaId, tenantId: scopedTenantId },
       include: {
         semanas: {
           orderBy: { numero: 'asc' },
@@ -203,8 +216,8 @@ export class EntrenamientoService {
     return entrenamiento;
   }
 
-  async update(id: number, dto: UpdateEntrenamientoDto) {
-    await this.findOne(id);
+  async update(id: number, dto: UpdateEntrenamientoDto, tenantId?: number) {
+    await this.findEntrenamientoOrThrow(id, tenantId);
 
     return this.prisma.entrenamiento.update({
       where: { id },
@@ -214,10 +227,10 @@ export class EntrenamientoService {
     });
   }
 
-  async finalizarPorRutina(rutinaId: number) {
-    // Buscar el entrenamiento sin finalizar de esta rutina
-    const entrenamiento = await this.prisma.entrenamiento.findUnique({
-      where: { rutinaId },
+  async finalizarPorRutina(rutinaId: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const entrenamiento = await this.prisma.entrenamiento.findFirst({
+      where: { rutinaId, tenantId: scopedTenantId },
     });
 
     if (!entrenamiento) {
@@ -228,11 +241,10 @@ export class EntrenamientoService {
 
     if (entrenamiento.finalizado) {
       throw new NotFoundException(
-        'El entrenamiento de esta rutina ya está finalizado',
+        'El entrenamiento de esta rutina ya esta finalizado',
       );
     }
 
-    // Marcar como finalizado
     return this.prisma.entrenamiento.update({
       where: { id: entrenamiento.id },
       data: {
@@ -241,8 +253,8 @@ export class EntrenamientoService {
     });
   }
 
-  async remove(id: number) {
-    await this.findOne(id);
+  async remove(id: number, tenantId?: number) {
+    await this.findEntrenamientoOrThrow(id, tenantId);
 
     return this.prisma.entrenamiento.delete({
       where: { id },

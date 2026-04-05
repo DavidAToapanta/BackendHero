@@ -1,18 +1,27 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, GoneException, Header } from '@nestjs/common';
 import { UsuariosService } from '../usuarios/usuarios.service';
 
 @Controller('administradores')
 export class AdministradorController {
-  constructor(private usuariosService: UsuariosService) {}
+  constructor(private readonly usuariosService: UsuariosService) {
+    void this.usuariosService;
+  }
 
   @Get()
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
   listar() {
-    return this.usuariosService.findByRol('administrador');
+    throw new GoneException(
+      'GET /administradores fue retirado; use /staff?role=ADMIN',
+    );
   }
 
   @Get('count')
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
   conteo() {
-    return this.usuariosService.counts().then(c => ({ total: c.administradores }));
+    throw new GoneException(
+      'GET /administradores/count fue retirado; use /staff',
+    );
   }
 }
-

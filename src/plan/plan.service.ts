@@ -1,69 +1,95 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 
 @Injectable()
 export class PlanService {
-    constructor(private prisma: PrismaService){}
+  constructor(private prisma: PrismaService) {}
 
-    create(dto: CreatePlanDto){
-        return this.prisma.plan.create({ data: dto});
+  async create(dto: CreatePlanDto, tenantId?: number) {
+    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    return this.prisma.plan.create({
+      data: {
+        ...dto,
+        tenantId: scopedTenantId,
+      },
+    });
+  }
+
+  async findAll(page = 1, limit = 10, tenantId?: number) {
+    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const take = Math.max(1, Math.min(limit, 50));
+    const currentPage = Math.max(1, page);
+    const skip = (currentPage - 1) * take;
+
+    const [data, total] = await Promise.all([
+      this.prisma.plan.findMany({
+        where: {
+          tenantId: scopedTenantId,
+          activo: true,
+        },
+        skip,
+        take,
+        orderBy: { id: 'desc' },
+      }),
+      this.prisma.plan.count({
+        where: {
+          tenantId: scopedTenantId,
+          activo: true,
+        },
+      }),
+    ]);
+
+    return {
+      data,
+      total,
+      page: currentPage,
+      totalPages: Math.ceil(total / take),
+    };
+  }
+
+  async findOne(id: number, tenantId?: number) {
+    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const plan = await this.prisma.plan.findFirst({
+      where: { id, tenantId: scopedTenantId },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Plan no encontrado');
     }
 
-    async findAll(page: number = 1, limit: number = 10){
-        const skip = (page - 1) * limit;
-        
-        const [data, total] = await Promise.all([
-            this.prisma.plan.findMany({
-                take: limit,
-                where: { activo: true },
-                orderBy: { id: 'desc' }
-            }),
-            this.prisma.plan.count()
-        ]);
+    return plan;
+  }
 
-        return {
-            data,
-            total,
-            page,
-            totalPages: Math.ceil(total / limit)
-        };
-    }
+  async update(id: number, dto: UpdatePlanDto, tenantId?: number) {
+    await this.findOne(id, tenantId);
+    return this.prisma.plan.update({ where: { id }, data: dto });
+  }
 
-    async findOne(id: number){
-        const plan = await this.prisma.plan.findUnique({ where: { id }});
-        if(!plan) throw new NotFoundException('Plan no encontrado')
-            return plan;
-    }
+  async delete(id: number, tenantId?: number) {
+    await this.findOne(id, tenantId);
+    return this.prisma.plan.update({
+      where: { id },
+      data: { activo: false },
+    });
+  }
 
-    async update(id: number, dto: UpdatePlanDto ){
-        await this.findOne(id);
-        return this.prisma.plan.update({ where: {id}, data: dto})
+  async deleteWithCascade(id: number, tenantId?: number) {
+    await this.findOne(id, tenantId);
+    try {
+      return await this.prisma.plan.delete({
+        where: { id },
+      });
+    } catch {
+      throw new BadRequestException(
+        'No se puede eliminar el plan porque tiene registros asociados. Se requiere limpieza manual o implementacion de borrado en profundidad.',
+      );
     }
-
-    async delete(id: number){
-        await this.findOne(id);
-        
-        // Soft delete: cambiar estado a inactivo
-        return this.prisma.plan.update({
-            where: { id },
-            data: { activo: false }
-        });
-    }
-
-    async deleteWithCascade(id: number){
-        await this.findOne(id);
-        // Intentar eliminar físicamente el plan
-        try {
-            return await this.prisma.plan.delete({
-                where: { id }
-            });
-        } catch (error) {
-            // Si falla por foreign key (ej: tiene ClientePlan asociados), 
-            // aquí deberíamos implementar la lógica de borrado en cascada real
-            // Por ahora, lanzamos el error o lo notificamos
-            throw new BadRequestException('No se puede eliminar el plan porque tiene registros asociados. Se requiere limpieza manual o implementación de borrado en profundidad.');
-        }
-    }
+  }
 }

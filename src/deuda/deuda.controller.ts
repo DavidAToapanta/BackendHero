@@ -1,46 +1,66 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Role, Roles } from '../auth/decorators/roles.decorator';
+import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { DeudaService } from './deuda.service';
 import { CreateDeudaDto } from './dto/create-deuda.dto';
 import { UpdateDeudaDto } from './dto/update-deuda.dto';
 
 @Controller('deuda')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class DeudaController {
   constructor(private readonly deudaService: DeudaService) {}
 
   @Post()
-  create(@Body() dto: CreateDeudaDto) {
-    return this.deudaService.create(dto);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  create(@Body() dto: CreateDeudaDto, @Request() req) {
+    return this.deudaService.create(dto, getTenantIdOrThrow(req.user));
   }
 
   @Get()
-  findAll() {
-    return this.deudaService.findAll();
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findAll(@Request() req) {
+    return this.deudaService.findAll(getTenantIdOrThrow(req.user));
   }
 
   @Get('deudores')
-  deudoresList(){
-    return this.deudaService.getDeudoresUnicos();
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  deudoresList(@Request() req) {
+    return this.deudaService.getDeudoresUnicos(getTenantIdOrThrow(req.user));
+  }
+
+  @Get('deudores/count')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  deudoresCount(@Request() req) {
+    return this.deudaService.countDeudoresUnicos(getTenantIdOrThrow(req.user));
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.deudaService.findOne(+id);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.deudaService.findOne(+id, getTenantIdOrThrow(req.user));
   }
-
-
-  @Get('deudores/count')
-  deudoresCount(){
-    return this.deudaService.countDeudoresUnicos();
-  }
-
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateDeudaDto) {
-    return this.deudaService.update(+id, dto);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  update(@Param('id') id: string, @Body() dto: UpdateDeudaDto, @Request() req) {
+    return this.deudaService.update(+id, dto, getTenantIdOrThrow(req.user));
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.deudaService.remove(+id);
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  remove(@Param('id') id: string, @Request() req) {
+    return this.deudaService.remove(+id, getTenantIdOrThrow(req.user));
   }
 }

@@ -36,13 +36,16 @@ const makeTx = (): any => ({
 });
 
 const makePrisma = (): any => ({
-  clientePlan: {
+  tenant: {
     findUnique: jest.fn(),
+  },
+  clientePlan: {
+    findFirst: jest.fn(),
     update: jest.fn(),
     create: jest.fn(),
   },
   plan: {
-    findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   deuda: {
     deleteMany: jest.fn(),
@@ -85,6 +88,7 @@ describe('ClientePlanService - cambiarPlan', () => {
   beforeEach(async () => {
     prisma = makePrisma();
     facturaService = makeFacturaService();
+    prisma.tenant.findUnique.mockResolvedValue({ id: 1 });
     prisma.factura.findFirst.mockResolvedValue(makeFacturaActiva());
 
     const module: TestingModule = await Test.createTestingModule({
@@ -99,7 +103,7 @@ describe('ClientePlanService - cambiarPlan', () => {
   });
 
   it('lanza NotFoundException si el ClientePlan no existe', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(null);
+    prisma.clientePlan.findFirst.mockResolvedValue(null);
 
     await expect(service.cambiarPlan(999, dtoCambio)).rejects.toThrow(
       NotFoundException,
@@ -107,7 +111,7 @@ describe('ClientePlanService - cambiarPlan', () => {
   });
 
   it('lanza BadRequestException si el plan no esta ACTIVO', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(
+    prisma.clientePlan.findFirst.mockResolvedValue(
       makePlanActivo({ estado: 'CAMBIADO' }),
     );
 
@@ -117,7 +121,7 @@ describe('ClientePlanService - cambiarPlan', () => {
   });
 
   it('lanza BadRequestException si se intenta cambiar al mismo plan', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(makePlanActivo({ planId: 6 }));
+    prisma.clientePlan.findFirst.mockResolvedValue(makePlanActivo({ planId: 6 }));
 
     await expect(
       service.cambiarPlan(1, { ...dtoCambio, nuevoPlanId: 6 }),
@@ -126,7 +130,7 @@ describe('ClientePlanService - cambiarPlan', () => {
 
   it('lanza BadRequestException si han pasado mas de 72h desde el inicio', async () => {
     const fechaInicio = new Date(Date.now() - 73 * 60 * 60 * 1000);
-    prisma.clientePlan.findUnique.mockResolvedValue(
+    prisma.clientePlan.findFirst.mockResolvedValue(
       makePlanActivo({ fechaInicio }),
     );
 
@@ -136,8 +140,8 @@ describe('ClientePlanService - cambiarPlan', () => {
   });
 
   it('lanza NotFoundException si el nuevo plan no existe', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(makePlanActivo());
-    prisma.plan.findUnique.mockResolvedValue(null);
+    prisma.clientePlan.findFirst.mockResolvedValue(makePlanActivo());
+    prisma.plan.findFirst.mockResolvedValue(null);
 
     await expect(service.cambiarPlan(1, dtoCambio)).rejects.toThrow(
       NotFoundException,
@@ -154,8 +158,8 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
       const tx = makeTx();
@@ -182,11 +186,11 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({ clientePlanId: planActual.id, totalPagado: 100 }),
     );
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -224,11 +228,11 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({ clientePlanId: planActual.id, totalPagado: 30 }),
     );
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -276,7 +280,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({
         clientePlanId: planActual.id,
@@ -284,7 +288,7 @@ describe('ClientePlanService - cambiarPlan', () => {
         totalPagado: 20,
       }),
     );
-    prisma.plan.findUnique.mockResolvedValue(planBase);
+    prisma.plan.findFirst.mockResolvedValue(planBase);
 
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
       const tx = makeTx();
@@ -302,6 +306,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       nuevoClientePlan.id,
       { creditoAplicado: 10 },
       expect.anything(),
+      1,
     );
   });
 
@@ -325,7 +330,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({
         clientePlanId: planActual.id,
@@ -333,7 +338,7 @@ describe('ClientePlanService - cambiarPlan', () => {
         totalPagado: 0,
       }),
     );
-    prisma.plan.findUnique.mockResolvedValue(planBase);
+    prisma.plan.findFirst.mockResolvedValue(planBase);
 
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
       const tx = makeTx();
@@ -351,6 +356,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       nuevoClientePlan.id,
       { creditoAplicado: 10 },
       expect.anything(),
+      1,
     );
   });
 
@@ -374,7 +380,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({
         clientePlanId: planActual.id,
@@ -382,7 +388,7 @@ describe('ClientePlanService - cambiarPlan', () => {
         totalPagado: 5,
       }),
     );
-    prisma.plan.findUnique.mockResolvedValue(planBase);
+    prisma.plan.findFirst.mockResolvedValue(planBase);
 
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
       const tx = makeTx();
@@ -400,6 +406,7 @@ describe('ClientePlanService - cambiarPlan', () => {
       nuevoClientePlan.id,
       { creditoAplicado: 10 },
       expect.anything(),
+      1,
     );
   });
 
@@ -413,11 +420,11 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.factura.findFirst.mockResolvedValue(
       makeFacturaActiva({ clientePlanId: planActual.id, totalPagado: 50 }),
     );
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let captureTx: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -430,11 +437,12 @@ describe('ClientePlanService - cambiarPlan', () => {
 
     await service.cambiarPlan(1, dtoCambio);
 
-    expect(facturaService.anularFactura).toHaveBeenCalledWith(1, captureTx);
+    expect(facturaService.anularFactura).toHaveBeenCalledWith(1, captureTx, 1);
     expect(facturaService.crearFactura).toHaveBeenCalledWith(
       nuevoClientePlan.id,
       { creditoAplicado: 50 },
       captureTx,
+      1,
     );
   });
 
@@ -449,8 +457,8 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -482,8 +490,8 @@ describe('ClientePlanService - cambiarPlan', () => {
       fechaFin: new Date(),
     };
 
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
-    prisma.plan.findUnique.mockResolvedValue(nuevoPlanData);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
+    prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -511,6 +519,7 @@ describe('ClientePlanService - remove (quitar plan)', () => {
   beforeEach(async () => {
     prisma = makePrisma();
     facturaService = makeFacturaService();
+    prisma.tenant.findUnique.mockResolvedValue({ id: 1 });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -530,13 +539,13 @@ describe('ClientePlanService - remove (quitar plan)', () => {
   });
 
   it('lanza NotFoundException si el plan no existe', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(null);
+    prisma.clientePlan.findFirst.mockResolvedValue(null);
 
     await expect(service.remove(999)).rejects.toThrow(NotFoundException);
   });
 
   it('lanza BadRequestException si el plan no esta activo', async () => {
-    prisma.clientePlan.findUnique.mockResolvedValue(
+    prisma.clientePlan.findFirst.mockResolvedValue(
       makePlanActivo({ activado: false, estado: 'CANCELADO' }),
     );
 
@@ -547,7 +556,7 @@ describe('ClientePlanService - remove (quitar plan)', () => {
     const planActual = makePlanActivo({
       fechaFin: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
-    prisma.clientePlan.findUnique.mockResolvedValue(planActual);
+    prisma.clientePlan.findFirst.mockResolvedValue(planActual);
 
     let txMock: any;
     prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
@@ -565,9 +574,14 @@ describe('ClientePlanService - remove (quitar plan)', () => {
 
     const resultado = await service.remove(planActual.id);
 
-    expect(facturaService.anularFactura).toHaveBeenCalledWith(planActual.id, txMock);
+    expect(facturaService.anularFactura).toHaveBeenCalledWith(
+      planActual.id,
+      txMock,
+      1,
+    );
     expect(txMock.deuda.deleteMany).toHaveBeenCalledWith({
       where: {
+        tenantId: 1,
         clientePlanId: planActual.id,
         solventada: false,
       },

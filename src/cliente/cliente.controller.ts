@@ -12,13 +12,16 @@ import {
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { Role, Roles } from '../auth/decorators/roles.decorator';
+import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { ClienteService } from './cliente.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
+import { RegisterClienteDto } from './dto/register-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 
 @Controller('cliente')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ClienteController {
   constructor(private readonly clienteService: ClienteService) {}
 
@@ -34,8 +37,14 @@ export class ClienteController {
 
   @Post()
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  create(@Body() dto: CreateClienteDto) {
-    return this.clienteService.create(dto);
+  create(@Body() dto: CreateClienteDto, @Request() req) {
+    return this.clienteService.create(dto, getTenantIdOrThrow(req.user));
+  }
+
+  @Post('registro')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  registro(@Body() dto: RegisterClienteDto, @Request() req) {
+    return this.clienteService.registrar(dto, getTenantIdOrThrow(req.user));
   }
 
   @Get()
@@ -46,6 +55,7 @@ export class ClienteController {
     @Query('search') search = '',
     @Query('activo') activo?: string,
     @Query('incluirInactivos') incluirInactivos?: string,
+    @Request() req?,
   ) {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -63,6 +73,7 @@ export class ClienteController {
           activo: activoFilter,
           incluirInactivos: incluirInactivosFilter,
         },
+        getTenantIdOrThrow(req.user),
       );
       const duration = Date.now() - startTime;
       console.log(
@@ -77,44 +88,54 @@ export class ClienteController {
 
   @Get('recientes')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA, Role.ENTRENADOR)
-  findRecientes(@Query('limit') limit = '10') {
-    return this.clienteService.findRecientes(Number(limit) || 10);
+  findRecientes(@Query('limit') limit = '10', @Request() req) {
+    return this.clienteService.findRecientes(
+      Number(limit) || 10,
+      getTenantIdOrThrow(req.user),
+    );
   }
 
   @Get('mi-perfil')
   @Roles(Role.CLIENTE)
   async getMiPerfil(@Request() req) {
     const usuarioId = req.user.sub;
-    return this.clienteService.findByUsuarioId(usuarioId);
+    return this.clienteService.findByUsuarioId(
+      usuarioId,
+      getTenantIdOrThrow(req.user),
+    );
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA, Role.ENTRENADOR)
-  findOne(@Param('id') id: string) {
-    return this.clienteService.findOne(+id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.clienteService.findOne(+id, getTenantIdOrThrow(req.user));
   }
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  update(@Param('id') id: string, @Body() dto: UpdateClienteDto) {
-    return this.clienteService.update(+id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateClienteDto,
+    @Request() req,
+  ) {
+    return this.clienteService.update(+id, dto, getTenantIdOrThrow(req.user));
   }
 
   @Patch(':id/desactivar')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  desactivar(@Param('id') id: string) {
-    return this.clienteService.desactivar(+id);
+  desactivar(@Param('id') id: string, @Request() req) {
+    return this.clienteService.desactivar(+id, getTenantIdOrThrow(req.user));
   }
 
   @Patch(':id/reactivar')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  reactivar(@Param('id') id: string) {
-    return this.clienteService.reactivar(+id);
+  reactivar(@Param('id') id: string, @Request() req) {
+    return this.clienteService.reactivar(+id, getTenantIdOrThrow(req.user));
   }
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.clienteService.desactivar(+id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.clienteService.desactivar(+id, getTenantIdOrThrow(req.user));
   }
 }

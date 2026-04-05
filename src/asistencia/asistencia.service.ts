@@ -1,50 +1,152 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 
 @Injectable()
 export class AsistenciaService {
   constructor(private prisma: PrismaService) {}
 
-  async registrarAsistencia(clienteId: number) {
-    const hoy = new Date();
+  private async getScopedTenantId(tenantId?: number) {
+    return resolveTenantIdOrDefault(this.prisma, tenantId);
+  }
 
-    // Normalizar la fecha para evitar problemas de timestamps
-    const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  private normalizeAttendanceDate(referenceDate = new Date()) {
+    return new Date(
+      referenceDate.getFullYear(),
+      referenceDate.getMonth(),
+      referenceDate.getDate(),
+    );
+  }
 
+  private async findClienteOrThrow(clienteId: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, tenantId: scopedTenantId },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            nombres: true,
+            apellidos: true,
+            cedula: true,
+          },
+        },
+      },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    return { cliente, tenantId: scopedTenantId };
+  }
+
+  private async findPlanActivoOrThrow(
+    clienteId: number,
+    tenantId: number,
+    referenceDate = new Date(),
+  ) {
+    const planActivo = await this.prisma.clientePlan.findFirst({
+      where: {
+        tenantId,
+        clienteId,
+        activado: true,
+        estado: 'ACTIVO',
+        fechaInicio: { lte: referenceDate },
+        fechaFin: { gte: referenceDate },
+      },
+      include: {
+        plan: true,
+      },
+      orderBy: [{ fechaFin: 'desc' }, { id: 'desc' }],
+    });
+
+    if (!planActivo) {
+      throw new BadRequestException(
+        'El cliente no tiene ningun plan activo vigente en este tenant',
+      );
+    }
+
+    return planActivo;
+  }
+
+  private async createOrReuseAttendance(
+    clienteId: number,
+    tenantId: number,
+    fecha: Date,
+    horaEntrada = new Date(),
+  ) {
     try {
       return await this.prisma.asistencia.create({
         data: {
+          tenantId,
           clienteId,
           fecha,
-          horaEntrada: new Date(),
+          horaEntrada,
         },
       });
-    } catch (e) {
-      // Si ya existe una asistencia para esa fecha devuelve esa asistencia
-      return await this.prisma.asistencia.findFirst({
-        where: {
-          clienteId,
-          fecha,
-        },
-      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        return this.prisma.asistencia.findFirst({
+          where: {
+            tenantId,
+            clienteId,
+            fecha,
+          },
+        });
+      }
+
+      throw error;
     }
   }
 
-  async historial(clienteId: number) {
-    return await this.prisma.asistencia.findMany({
-      where: { clienteId },
+  async registrarAsistencia(clienteId: number, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
+
+    if (!cliente.activo) {
+      throw new BadRequestException('El cliente esta inactivo');
+    }
+
+    await this.findPlanActivoOrThrow(cliente.id, scopedTenantId);
+
+    const fecha = this.normalizeAttendanceDate();
+    return this.createOrReuseAttendance(
+      cliente.id,
+      scopedTenantId,
+      fecha,
+      new Date(),
+    );
+  }
+
+  async historial(clienteId: number, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
+
+    return this.prisma.asistencia.findMany({
+      where: { tenantId: scopedTenantId, clienteId: cliente.id },
       orderBy: {
         fecha: 'desc',
       },
     });
   }
 
-  async todas() {
+  async todas(tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
     return this.prisma.asistencia.findMany({
+      where: { tenantId: scopedTenantId },
       orderBy: {
         fecha: 'desc',
       },
@@ -58,17 +160,22 @@ export class AsistenciaService {
     });
   }
 
-  async getEstadisticasPorPlan(clienteId: number) {
-    // Obtener el plan activo del cliente
+  async getEstadisticasPorPlan(clienteId: number, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
     const planActivo = await this.prisma.clientePlan.findFirst({
       where: {
-        clienteId,
+        tenantId: scopedTenantId,
+        clienteId: cliente.id,
         activado: true,
         estado: 'ACTIVO',
       },
       include: {
         plan: true,
       },
+      orderBy: [{ fechaFin: 'desc' }, { id: 'desc' }],
     });
 
     if (!planActivo) {
@@ -78,10 +185,10 @@ export class AsistenciaService {
       };
     }
 
-    // Contar asistencias dentro del rango del plan
     const asistencias = await this.prisma.asistencia.count({
       where: {
-        clienteId,
+        tenantId: scopedTenantId,
+        clienteId: cliente.id,
         fecha: {
           gte: planActivo.fechaInicio,
           lte: planActivo.fechaFin,
@@ -89,14 +196,11 @@ export class AsistenciaService {
       },
     });
 
-    // Calcular días totales del plan
     const fechaInicio = new Date(planActivo.fechaInicio);
     const fechaFin = new Date(planActivo.fechaFin);
     const diasTotales = Math.ceil(
       (fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24),
     );
-
-    // Calcular porcentaje
     const porcentajeAsistencia =
       diasTotales > 0 ? Math.round((asistencias / diasTotales) * 100) : 0;
 
@@ -112,13 +216,17 @@ export class AsistenciaService {
     };
   }
 
-  async marcarAsistencia(usuarioId: number) {
-    // Buscar el cliente relacionado con este usuario
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { usuarioId },
+  async marcarAsistencia(usuarioId: number, tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { usuarioId, tenantId: scopedTenantId },
       include: {
         planes: {
-          where: { activado: true, estado: 'ACTIVO' },
+          where: {
+            tenantId: scopedTenantId,
+            activado: true,
+            estado: 'ACTIVO',
+          },
           include: { plan: true },
         },
       },
@@ -126,43 +234,41 @@ export class AsistenciaService {
 
     if (!cliente) {
       throw new NotFoundException(
-        'No existe un cliente con este ID de usuario',
+        'No existe un cliente con este ID de usuario en este tenant',
       );
     }
 
-    // Verificar que el cliente tenga al menos un plan activo
-    if (!cliente.planes || cliente.planes.length === 0) {
-      throw new BadRequestException(
-        'El cliente no tiene ningún plan activo. No se puede marcar asistencia',
-      );
+    if (!cliente.activo) {
+      throw new BadRequestException('El cliente esta inactivo');
     }
 
-    // Verificar que al menos un plan esté dentro de las fechas válidas
     const fechaActual = new Date();
-    const tieneplanVigente = cliente.planes.some(
+    const tienePlanVigente = cliente.planes.some(
       (clientePlan) =>
         clientePlan.activado &&
         new Date(clientePlan.fechaInicio) <= fechaActual &&
         new Date(clientePlan.fechaFin) >= fechaActual,
     );
 
-    if (!tieneplanVigente) {
+    if (!tienePlanVigente) {
       throw new BadRequestException(
-        'El cliente no tiene ningún plan vigente. No se puede marcar asistencia',
+        'El cliente no tiene ningun plan vigente. No se puede marcar asistencia',
       );
     }
 
-    // Crear la asistencia
-    return this.prisma.asistencia.create({
-      data: {
-        clienteId: cliente.id,
-        fecha: new Date(),
-      },
-    });
+    const fecha = this.normalizeAttendanceDate(fechaActual);
+    return this.createOrReuseAttendance(
+      cliente.id,
+      scopedTenantId,
+      fecha,
+      fechaActual,
+    );
   }
 
-  async findAll() {
+  async findAll(tenantId?: number) {
+    const scopedTenantId = await this.getScopedTenantId(tenantId);
     return this.prisma.asistencia.findMany({
+      where: { tenantId: scopedTenantId },
       include: {
         cliente: {
           include: {
@@ -180,9 +286,14 @@ export class AsistenciaService {
     });
   }
 
-  async findByCliente(clienteId: number) {
+  async findByCliente(clienteId: number, tenantId?: number) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
+
     return this.prisma.asistencia.findMany({
-      where: { clienteId },
+      where: { tenantId: scopedTenantId, clienteId: cliente.id },
       orderBy: { fecha: 'desc' },
     });
   }

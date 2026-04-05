@@ -1,15 +1,13 @@
 import {
-  Body,
   Controller,
   Delete,
+  GoneException,
   Get,
-  Param,
+  Header,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UsuariosService } from './usuarios.service';
-import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles, Role } from '../auth/decorators/roles.decorator';
@@ -19,33 +17,53 @@ export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
 
   @Post()
-  crear(@Body() dto: CreateUsuarioDto) {
-    return this.usuariosService.crear(dto);
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
+  crear() {
+    throw new GoneException(
+      'POST /usuarios fue retirado; use /staff para la gestion de personal',
+    );
   }
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  listar(@Query('rol') rol?: string) {
-    return this.usuariosService.findByRol(rol);
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
+  listar() {
+    throw new GoneException(
+      'GET /usuarios fue retirado; use /staff para la gestion de personal',
+    );
   }
 
   @Get(':id')
-  obtenerPorId(@Param('id') id: string) {
-    return this.usuariosService.obtenerPorId(+id);
-  }
-
-  @Get('counts')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  conteos() {
-    return this.usuariosService.counts();
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
+  obtenerPorId() {
+    throw new GoneException(
+      'GET /usuarios/:id fue retirado; use /staff/:usuarioId',
+    );
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  eliminar(@Param('id') id: string) {
-    return this.usuariosService.eliminar(+id);
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
+  eliminar() {
+    throw new GoneException(
+      'DELETE /usuarios/:id fue retirado; use el flujo tenant-aware de /staff',
+    );
+  }
+
+  @Get('counts')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Header('Deprecation', 'true')
+  @Header('Link', '</staff>; rel="successor-version"')
+  conteos() {
+    throw new GoneException(
+      'GET /usuarios/counts fue retirado; use /staff para la gestion de personal',
+    );
   }
 }

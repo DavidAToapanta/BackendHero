@@ -1,9 +1,21 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsEmail,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
 
 export class CreateUsuarioDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  userName: string;
+  userName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @IsNotEmpty()
   @IsString()
@@ -22,9 +34,9 @@ export class CreateUsuarioDto {
   @IsString()
   cedula: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  fechaNacimiento: string;
+  fechaNacimiento?: string;
 
   @IsNotEmpty()
   @IsString()

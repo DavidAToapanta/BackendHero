@@ -19,12 +19,16 @@ import { CompraModule } from './compra/compra.module';
 import { AsistenciaModule } from './asistencia/asistencia.module';
 import { FacturaModule } from './factura/factura.module';
 import { EntrenamientoModule } from './entrenamiento/entrenamiento.module';
+import { TenantModule } from './tenant/tenant.module';
+import { StaffModule } from './staff/staff.module';
 
 @Module({
   imports: [
     UsuariosModule,
     PrismaModule,
     AuthModule,
+    TenantModule,
+    StaffModule,
     ClienteModule,
     ProductoModule,
     PlanModule,

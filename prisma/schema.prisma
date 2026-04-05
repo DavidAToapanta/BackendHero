@@ -15,20 +15,105 @@ datasource db {
 }
 
 model Usuario {
-  id              Int    @id @default(autoincrement())
-  userName        String
+  id              Int       @id @default(autoincrement())
+  email           String?   @unique
+  userName        String?   @unique
   password        String
   nombres         String
   apellidos       String
-  cedula          String @unique
-  fechaNacimiento String
+  cedula          String    @unique
+  fechaNacimiento String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  administrador Administrador[]
-  entrenador    Entrenador[]
-  recepcionista Recepcionista[]
-  cliente       Cliente[]
-  gastos        Gasto[]
+  memberships           UserTenant[]
+  staffProfiles         StaffProfile[]
+  administrador         Administrador[]
+  entrenador            Entrenador[]
+  recepcionista         Recepcionista[]
+  cliente               Cliente[]
+  gastos                Gasto[]
   devolucionMovimientos DevolucionMovimiento[]
+}
+
+model Tenant {
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  slug        String       @unique
+  tipoNegocio TipoNegocio
+  estado      TenantEstado @default(ACTIVO)
+
+  email       String?
+  telefono    String?
+  direccion   String?
+  ciudad      String?
+  pais        String?
+  logoUrl     String?
+  descripcion String?
+
+  latitud   Float?
+  longitud  Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                 UserTenant[]
+  staffProfiles         StaffProfile[]
+  modules               TenantModule[]
+  clientes              Cliente[]
+  clienteMedidas        ClienteMedida[]
+  novedades             Novedad[]
+  productos             Producto[]
+  compras               Compra[]
+  planes                Plan[]
+  clientesPlan          ClientePlan[]
+  pagos                 Pago[]
+  deudas                Deuda[]
+  facturas              Factura[]
+  gastos                Gasto[]
+  asistencias           Asistencia[]
+  rutinas               Rutina[]
+  entrenamientos        Entrenamiento[]
+  semanas               Semana[]
+  musculosSemana        MusculoSemana[]
+  ejerciciosMusculo     EjercicioMusculo[]
+  cambiosPlan           CambioPlan[]
+  devolucionMovimientos DevolucionMovimiento[]
+
+  @@index([tipoNegocio])
+  @@index([estado])
+}
+
+model UserTenant {
+  id        Int              @id @default(autoincrement())
+  usuarioId Int
+  tenantId  Int
+  role      TenantRole
+  estado    UserTenantEstado @default(ACTIVO)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tenantId])
+  @@index([tenantId, role])
+  @@index([usuarioId])
+}
+
+model TenantModule {
+  id       Int       @id @default(autoincrement())
+  tenantId Int
+  module   ModuleKey
+  activo   Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module])
+  @@index([tenantId])
 }
 
 model Administrador {
@@ -53,9 +138,29 @@ model Recepcionista {
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 }
 
+model StaffProfile {
+  id         Int        @id @default(autoincrement())
+  usuarioId  Int
+  tenantId   Int
+  tenantRole TenantRole
+  horario    String
+  sueldo     Float
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tenantId, tenantRole])
+  @@index([tenantId])
+  @@index([usuarioId])
+  @@index([tenantId, tenantRole])
+}
+
 model Cliente {
-  id             Int    @id
-  usuarioId      Int    @unique
+  id             Int     @id @default(autoincrement())
+  usuarioId      Int
+  tenantId       Int
   horario        String
   sexo           String
   observaciones  String
@@ -64,6 +169,7 @@ model Cliente {
   activo         Boolean @default(true)
 
   usuario        Usuario         @relation(fields: [usuarioId], references: [id])
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
   clienteMedidas ClienteMedida[]
   novedades      Novedad[]
   compras        Compra[]
@@ -71,6 +177,10 @@ model Cliente {
   rutinas        Rutina[]
   asistencias    Asistencia[]
   cambiosPlan    CambioPlan[]
+
+  @@unique([usuarioId, tenantId])
+  @@index([usuarioId])
+  @@index([tenantId])
 }
 
 model Medida {
@@ -81,58 +191,79 @@ model Medida {
 
 model ClienteMedida {
   id        Int @id @default(autoincrement())
+  tenantId  Int
   clienteId Int
   medidaId  Int
   medida    Int
 
+  tenant     Tenant  @relation(fields: [tenantId], references: [id])
   cliente    Cliente @relation(fields: [clienteId], references: [id])
   medidaTipo Medida  @relation(fields: [medidaId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Novedad {
   id         Int      @id @default(autoincrement())
+  tenantId   Int
   clienteId  Int
   novedad    String
   fecha      DateTime
   solventada Boolean
 
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
   cliente Cliente @relation(fields: [clienteId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Producto {
-  id     Int     @id @default(autoincrement())
-  nombre String
-  precio Float
-  stock  Int
-  estado Boolean
+  id       Int     @id @default(autoincrement())
+  tenantId Int
+  nombre   String
+  precio   Float
+  stock    Int
+  estado   Boolean
 
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
   compras Compra[]
+
+  @@index([tenantId])
 }
 
 model Compra {
   id         Int      @id @default(autoincrement())
+  tenantId   Int
   productoId Int
   clienteId  Int
   cantidad   Int
   total      Float
   fecha      DateTime
 
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
   producto Producto @relation(fields: [productoId], references: [id])
   cliente  Cliente  @relation(fields: [clienteId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Plan {
   id              Int             @id @default(autoincrement())
+  tenantId        Int
   nombre          String
   precio          Float
   duracion        Int
   unidadDuracion  UnidadDuracion  @default(MESES)
   activo          Boolean         @default(true)
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
   clientePlan     ClientePlan[]
+
+  @@index([tenantId])
 }
 
 model ClientePlan {
   id          Int                @id @default(autoincrement())
+  tenantId    Int
   clienteId   Int
   planId      Int
   fechaInicio DateTime
@@ -141,6 +272,7 @@ model ClientePlan {
   activado    Boolean
   estado      EstadoClientePlan  @default(ACTIVO)
 
+  tenant          Tenant       @relation(fields: [tenantId], references: [id])
   cliente         Cliente      @relation(fields: [clienteId], references: [id])
   plan            Plan         @relation(fields: [planId], references: [id])
   pago            Pago[]
@@ -148,67 +280,92 @@ model ClientePlan {
   facturas        Factura[]
   cambiosComoAnterior CambioPlan[] @relation("PlanAnterior")
   cambiosComoNuevo    CambioPlan[] @relation("PlanNuevo")
+
+  @@index([tenantId])
 }
 
 model Pago {
   id            Int      @id @default(autoincrement())
+  tenantId      Int
   clientePlanId Int
   monto         Float
   fecha         DateTime
 
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
   clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
 
+  @@index([tenantId])
   @@index([clientePlanId])
   @@index([fecha])
 }
 
 model Deuda {
   id            Int     @id @default(autoincrement())
+  tenantId      Int
   clientePlanId Int
   monto         Float
   solventada    Boolean
 
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
   clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Rutina {
   id          Int      @id @default(autoincrement())
+  tenantId    Int
   clienteId   Int
   rutina      Bytes
   fechaInicio DateTime
   fechaFin    DateTime
   observacion String
 
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
   cliente       Cliente        @relation(fields: [clienteId], references: [id])
   entrenamiento Entrenamiento? @relation("RutinaEntrenamiento") // sin fields ni references
+
+  @@index([tenantId])
 }
 
 model Entrenamiento {
   id         Int     @id @default(autoincrement())
+  tenantId   Int
   rutinaId   Int     @unique
   finalizado Boolean
 
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
   rutina  Rutina   @relation("RutinaEntrenamiento", fields: [rutinaId], references: [id])
   semanas Semana[]
+
+  @@index([tenantId])
 }
 
 model Semana {
-  id              Int             @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
+  tenantId        Int
   numero          Int
   entrenamientoId Int
-  entrenamiento   Entrenamiento   @relation(fields: [entrenamientoId], references: [id])
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  entrenamiento   Entrenamiento @relation(fields: [entrenamientoId], references: [id])
   musculosSemana  MusculoSemana[]
+
+  @@index([tenantId])
 }
 
 model MusculoSemana {
   id        Int @id @default(autoincrement())
+  tenantId  Int
   semanaId  Int
   musculoId Int
   orden     Int // Orden en que se entrena este músculo en la semana
 
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
   semana            Semana             @relation(fields: [semanaId], references: [id])
   musculo           Musculo            @relation(fields: [musculoId], references: [id])
   ejerciciosMusculo EjercicioMusculo[]
+
+  @@index([tenantId])
 }
 
 model Musculo {
@@ -219,14 +376,18 @@ model Musculo {
 
 model EjercicioMusculo {
   id              Int @id @default(autoincrement())
+  tenantId        Int
   musculoSemanaId Int
   ejercicioId     Int
   orden           Int // Orden en que se hace este ejercicio para el músculo
 
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
   musculoSemana MusculoSemana @relation(fields: [musculoSemanaId], references: [id])
   ejercicio     Ejercicio     @relation(fields: [ejercicioId], references: [id])
   seriesReps    SerieRep[]
   seriesTiempos SerieTiempo[]
+
+  @@index([tenantId])
 }
 
 model Ejercicio {
@@ -261,28 +422,36 @@ model SerieTiempo {
 
 model Gasto {
   id          Int      @id @default(autoincrement())
+  tenantId    Int
   descripcion String
   monto       Float
   fecha       DateTime @default(now())
   usuarioId   Int
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
   usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Asistencia {
   id          Int      @id @default(autoincrement())
+  tenantId    Int
   clienteId   Int
   fecha       DateTime @default(now())
   horaEntrada DateTime @default(now())
 
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
   cliente Cliente @relation(fields: [clienteId], references: [id])
 
   @@unique([clienteId, fecha(sort: Desc)]) // Solo 1 asistencia por día
+  @@index([tenantId])
   @@index([clienteId, fecha])
 }
 
 model Factura {
   id            Int    @id @default(autoincrement())
   numero        String @unique
+  tenantId      Int
   clientePlanId Int
 
   subtotal Float
@@ -296,14 +465,49 @@ model Factura {
   estado       EstadoFactura
   fechaEmision DateTime      @default(now())
 
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
   clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
   devoluciones DevolucionMovimiento[]
+
+  @@index([tenantId])
 }
 
 enum EstadoFactura {
   PENDIENTE
   PAGADA
   ANULADA
+}
+
+enum TipoNegocio {
+  GYM
+  STORE
+  MIXTO
+}
+
+enum TenantEstado {
+  ACTIVO
+  SUSPENDIDO
+  ELIMINADO
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  EMPLEADO
+  ENTRENADOR
+  RECEPCIONISTA
+  CAJERO
+}
+
+enum UserTenantEstado {
+  ACTIVO
+  PENDIENTE
+  INACTIVO
+}
+
+enum ModuleKey {
+  GYM
+  STORE
 }
 
 enum EstadoClientePlan {
@@ -326,26 +530,31 @@ enum EstadoDevolucion {
 }
 
 model CambioPlan {
-  id                     Int              @id @default(autoincrement())
-  clienteId              Int
-  clientePlanAnteriorId  Int
-  clientePlanNuevoId     Int
-  montoPagadoTransferido Float
-  montoDevuelto          Float            @default(0)
-  devolucionPendiente    Float            @default(0)
-  devolucionDevueltaAcumulada Float       @default(0)
-  fecha                  DateTime         @default(now())
-  estadoDevolucion       EstadoDevolucion @default(PENDIENTE)
-  motivo                 String?
+  id                          Int              @id @default(autoincrement())
+  tenantId                    Int
+  clienteId                   Int
+  clientePlanAnteriorId       Int
+  clientePlanNuevoId          Int
+  montoPagadoTransferido      Float
+  montoDevuelto               Float            @default(0)
+  devolucionPendiente         Float            @default(0)
+  devolucionDevueltaAcumulada Float            @default(0)
+  fecha                       DateTime         @default(now())
+  estadoDevolucion            EstadoDevolucion @default(PENDIENTE)
+  motivo                      String?
 
-  cliente             Cliente     @relation(fields: [clienteId], references: [id])
-  clientePlanAnterior ClientePlan @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
-  clientePlanNuevo    ClientePlan @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
+  tenant              Tenant       @relation(fields: [tenantId], references: [id])
+  cliente             Cliente      @relation(fields: [clienteId], references: [id])
+  clientePlanAnterior ClientePlan  @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
+  clientePlanNuevo    ClientePlan  @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
   devoluciones        DevolucionMovimiento[]
+
+  @@index([tenantId])
 }
 
 model DevolucionMovimiento {
   id           Int       @id @default(autoincrement())
+  tenantId     Int
   cambioPlanId Int
   facturaId    Int
   monto        Float
@@ -353,10 +562,12 @@ model DevolucionMovimiento {
   motivo       String?
   usuarioId    Int?
 
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
   cambioPlan CambioPlan @relation(fields: [cambioPlanId], references: [id])
   factura    Factura    @relation(fields: [facturaId], references: [id])
   usuario    Usuario?   @relation(fields: [usuarioId], references: [id])
 
+  @@index([tenantId])
   @@index([cambioPlanId])
   @@index([facturaId])
   @@index([fecha])

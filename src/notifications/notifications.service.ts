@@ -1,31 +1,42 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { addDays } from 'date-fns';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
-  async getCurrentNotifications() {
+
+  async getCurrentNotifications(tenantId: number) {
     const hoy = new Date();
 
-    const pagosVencidos = await this.prisma.deuda.count({
-      where: { solventada: false },
-    });
-
-    const proximasMembresias = await this.prisma.clientePlan.count({
-      where: {
-        activado: true,
-        estado: 'ACTIVO',
-        fechaFin: {
-          gte: hoy,
-          lte: addDays(hoy, 7),
+    const [pagosVencidos, proximasMembresias, productosBajos] = await Promise.all([
+      this.prisma.deuda.count({
+        where: {
+          tenantId,
+          solventada: false,
         },
-      },
-    });
-
-    const productosBajos = await this.prisma.producto.count({
-      where: { stock: { lt: 5 }, estado: true },
-    });
+      }),
+      this.prisma.clientePlan.count({
+        where: {
+          tenantId,
+          activado: true,
+          estado: 'ACTIVO',
+          fechaFin: {
+            gte: hoy,
+            lte: addDays(hoy, 7),
+          },
+        },
+      }),
+      this.prisma.producto.count({
+        where: {
+          tenantId,
+          estado: true,
+          stock: {
+            lte: 5,
+          },
+        },
+      }),
+    ]);
 
     return [
       {
@@ -36,8 +47,8 @@ export class NotificationsService {
       },
       {
         icon: 'clock',
-        title: `${proximasMembresias} membresías expiran pronto`,
-        message: 'En los próximos 7 días',
+        title: `${proximasMembresias} membresias expiran pronto`,
+        message: 'En los proximos 7 dias',
         color: 'bg-yellow-50 border-yellow-200 text-yellow-700',
       },
       {

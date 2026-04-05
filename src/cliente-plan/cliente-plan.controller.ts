@@ -1,60 +1,102 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Role, Roles } from '../auth/decorators/roles.decorator';
+import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { ClientePlanService } from './cliente-plan.service';
 import { CreateClientePlanDto } from './dto/create-cliente-plan.dto';
 import { UpdateClientePlanDto } from './dto/update-cliente-plan.dto';
 import { CambiarPlanDto } from './dto/cambiar-plan.dto';
 
+type TenantRequest = {
+  user?: {
+    tenantId?: number | null;
+  };
+};
+
 @Controller('cliente-plan')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ClientePlanController {
-    constructor(private readonly clientePlanService: ClientePlanService){}
+  constructor(private readonly clientePlanService: ClientePlanService) {}
 
-    @Post()
-    create(@Body() dto: CreateClientePlanDto){
-        return this.clientePlanService.create(dto);
-    }
+  @Post()
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  create(@Body() dto: CreateClientePlanDto, @Request() req: TenantRequest) {
+    return this.clientePlanService.create(dto, getTenantIdOrThrow(req.user));
+  }
 
-    @Get()
-    findAll(){
-        return this.clientePlanService.findAll();
-    }
+  @Get()
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findAll(@Request() req: TenantRequest) {
+    return this.clientePlanService.findAll(getTenantIdOrThrow(req.user));
+  }
 
-    @Get('activos')
-    async obtenerClientesActivos() {
-      console.log('→ Llamando a contarClientesActivos');
-      const cantidad = await this.clientePlanService.contarClientesActivos();
-      return { activos: cantidad };
-    }
+  @Get('activos')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  obtenerClientesActivos(@Request() req: TenantRequest) {
+    return this.clientePlanService
+      .contarClientesActivos(getTenantIdOrThrow(req.user))
+      .then((cantidad) => ({ activos: cantidad }));
+  }
 
-    // IMPORTANTE: ruta estática antes de :id para evitar conflictos
-    @Post(':id/cambiar-plan')
-    cambiarPlan(@Param('id') id: string, @Body() dto: CambiarPlanDto) {
-      return this.clientePlanService.cambiarPlan(+id, dto);
-    }
+  @Post(':id/cambiar-plan')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  cambiarPlan(
+    @Param('id') id: string,
+    @Body() dto: CambiarPlanDto,
+    @Request() req: TenantRequest,
+  ) {
+    return this.clientePlanService.cambiarPlan(
+      +id,
+      dto,
+      getTenantIdOrThrow(req.user),
+    );
+  }
 
-    @Get(':id')
-    findOne(@Param('id') id: string) {
-      return this.clientePlanService.findOne(+id);
-}
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  findOne(@Param('id') id: string, @Request() req: TenantRequest) {
+    return this.clientePlanService.findOne(+id, getTenantIdOrThrow(req.user));
+  }
 
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateClientePlanDto,
+    @Request() req: TenantRequest,
+  ) {
+    return this.clientePlanService.update(
+      +id,
+      dto,
+      getTenantIdOrThrow(req.user),
+    );
+  }
 
-@Patch(':id')
-update(@Param('id') id: string, @Body() dto: UpdateClientePlanDto) {
-  return this.clientePlanService.update(+id, dto);
-}
+  @Delete(':id')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  remove(@Param('id') id: string, @Request() req: TenantRequest) {
+    return this.clientePlanService.remove(+id, getTenantIdOrThrow(req.user));
+  }
 
-@Delete(':id')
-remove(@Param('id') id: string) {
-  return this.clientePlanService.remove(+id);
-}
-
-@Post('renovar/:clienteId')
-async renovarPlan(
-  @Param('clienteId') clienteId: string,
-  @Body() dto: CreateClientePlanDto
-) {
-  // Asegurar que el clienteId del DTO coincida con el parámetro
-  dto.clienteId = +clienteId;
-  return this.clientePlanService.create(dto);
-}
-
+  @Post('renovar/:clienteId')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  renovarPlan(
+    @Param('clienteId') clienteId: string,
+    @Body() dto: CreateClientePlanDto,
+    @Request() req: TenantRequest,
+  ) {
+    dto.clienteId = +clienteId;
+    return this.clientePlanService.create(dto, getTenantIdOrThrow(req.user));
+  }
 }
