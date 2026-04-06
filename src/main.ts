@@ -5,7 +5,7 @@ import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const port = Number(process.env.PORT ?? 3000);
+  const port = Number(process.env.PORT ?? 8080);
 
   // Aumentar el límite de tamaño del body a 50MB para imágenes en base64
   app.use(bodyParser.json({ limit: '50mb' }));
@@ -14,6 +14,6 @@ async function bootstrap() {
   app.enableCors();
 
   app.useGlobalPipes(new ValidationPipe());
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 }
 void bootstrap();
