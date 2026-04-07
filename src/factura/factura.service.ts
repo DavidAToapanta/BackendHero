@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
@@ -247,7 +251,9 @@ export class FacturaService {
       }),
     ]);
 
-    const data = facturas.map((factura) => this.mapFacturaConDevolucion(factura));
+    const data = facturas.map((factura) =>
+      this.mapFacturaConDevolucion(factura),
+    );
 
     return {
       data,
@@ -261,7 +267,11 @@ export class FacturaService {
     };
   }
 
-  async devolver(facturaId: number, dto: DevolverFacturaDto, tenantId?: number) {
+  async devolver(
+    facturaId: number,
+    dto: DevolverFacturaDto,
+    tenantId?: number,
+  ) {
     const scopedTenantId = await this.getScopedTenantId(tenantId);
     const monto = Number(dto.monto);
 
@@ -377,24 +387,40 @@ export class FacturaService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const ingresoMesResult = await this.prisma.factura.aggregate({
-      _sum: {
-        totalPagado: true,
-      },
-      where: {
-        tenantId: scopedTenantId,
-        fechaEmision: {
-          gte: startOfMonth,
-          lte: endOfMonth,
+    const [ingresoMesResult, ingresosRapidosResult] = await Promise.all([
+      this.prisma.factura.aggregate({
+        _sum: {
+          totalPagado: true,
         },
-      },
-    });
+        where: {
+          tenantId: scopedTenantId,
+          fechaEmision: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+      }),
+      (this.prisma as any).ingresoRapido.aggregate({
+        _sum: {
+          monto: true,
+        },
+        where: {
+          tenantId: scopedTenantId,
+          fecha: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+      }),
+    ]);
 
     return {
       totalFacturas,
       facturasPagadas,
       personasPendientes,
-      ingresoMes: ingresoMesResult._sum.totalPagado || 0,
+      ingresoMes:
+        (ingresoMesResult._sum.totalPagado || 0) +
+        (ingresosRapidosResult._sum.monto || 0),
     };
   }
 

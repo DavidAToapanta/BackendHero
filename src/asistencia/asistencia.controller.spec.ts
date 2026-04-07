@@ -10,6 +10,7 @@ describe('AsistenciaController', () => {
     getEstadisticasPorPlan: jest.Mock;
     historial: jest.Mock;
     marcarAsistencia: jest.Mock;
+    registrarAsistenciaHistorica: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -17,6 +18,7 @@ describe('AsistenciaController', () => {
       getEstadisticasPorPlan: jest.fn(),
       historial: jest.fn(),
       marcarAsistencia: jest.fn(),
+      registrarAsistenciaHistorica: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -130,5 +132,24 @@ describe('AsistenciaController', () => {
     await controller.marcarAsistencia(dto, req);
 
     expect(asistenciaService.marcarAsistencia).toHaveBeenCalledWith(44, 7);
+  });
+
+  it('registrarHistorica usa clienteId y fecha del body con el tenant actual', async () => {
+    const req = {
+      user: {
+        sub: 10,
+        rol: Role.ADMIN,
+        tenantId: 7,
+      },
+    };
+    const dto = { clienteId: 15, fecha: '2026-04-03' };
+
+    await controller.registrarHistorica(dto, req);
+
+    expect(asistenciaService.registrarAsistenciaHistorica).toHaveBeenCalledWith(
+      15,
+      '2026-04-03',
+      7,
+    );
   });
 });
