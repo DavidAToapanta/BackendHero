@@ -179,4 +179,71 @@ describe('AsistenciaService', () => {
     });
     expect(result).toEqual([{ id: 1 }]);
   });
+
+  it('registra asistencia historica con fecha pasada dentro del tenant', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({
+      id: 5,
+      tenantId: 7,
+      activo: true,
+      usuario: { id: 10 },
+    });
+    prisma.clientePlan.findFirst.mockResolvedValue({
+      id: 20,
+      tenantId: 7,
+      plan: { nombre: 'Mensual', precio: 30 },
+      fechaInicio: new Date('2026-04-01'),
+      fechaFin: new Date('2026-04-30'),
+    });
+    prisma.asistencia.create.mockResolvedValue({
+      id: 3,
+      tenantId: 7,
+      clienteId: 5,
+      fecha: new Date('2026-04-03'),
+    });
+
+    await service.registrarAsistenciaHistorica(
+      5,
+      '2026-04-03T12:00:00.000Z',
+      7,
+    );
+    const createArgs = prisma.asistencia.create.mock.calls[0][0];
+
+    expect(createArgs.data.tenantId).toBe(7);
+    expect(createArgs.data.clienteId).toBe(5);
+    expect(createArgs.data.fecha.toISOString()).toContain('2026-04-03');
+  });
+
+  it('rechaza asistencia historica en fecha futura', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({
+      id: 5,
+      tenantId: 7,
+      activo: true,
+      usuario: { id: 10 },
+    });
+
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+
+    await expect(
+      service.registrarAsistenciaHistorica(5, manana.toISOString(), 7),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'No se puede registrar asistencia en una fecha futura',
+      ),
+    );
+  });
+
+  it('rechaza asistencia historica si no tenia plan vigente en esa fecha', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({
+      id: 5,
+      tenantId: 7,
+      activo: true,
+      usuario: { id: 10 },
+    });
+    prisma.clientePlan.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.registrarAsistenciaHistorica(5, '2026-04-03T12:00:00.000Z', 7),
+    ).rejects.toThrow(BadRequestException);
+  });
 });

@@ -224,7 +224,10 @@ export class PagoService {
       tenantId,
     );
 
-    if (dto.clientePlanId !== undefined && dto.clientePlanId !== pago.clientePlanId) {
+    if (
+      dto.clientePlanId !== undefined &&
+      dto.clientePlanId !== pago.clientePlanId
+    ) {
       const clientePlan = await this.prisma.clientePlan.findFirst({
         where: { id: dto.clientePlanId, tenantId: scopedTenantId },
         select: { id: true },
@@ -327,19 +330,33 @@ export class PagoService {
     const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
 
-    const resultado = await this.prisma.pago.aggregate({
-      _sum: {
-        monto: true,
-      },
-      where: {
-        tenantId: scopedTenantId,
-        fecha: {
-          gte: inicioMes,
-          lte: finMes,
+    const [pagos, ingresosRapidos] = await Promise.all([
+      this.prisma.pago.aggregate({
+        _sum: {
+          monto: true,
         },
-      },
-    });
+        where: {
+          tenantId: scopedTenantId,
+          fecha: {
+            gte: inicioMes,
+            lte: finMes,
+          },
+        },
+      }),
+      (this.prisma as any).ingresoRapido.aggregate({
+        _sum: {
+          monto: true,
+        },
+        where: {
+          tenantId: scopedTenantId,
+          fecha: {
+            gte: inicioMes,
+            lte: finMes,
+          },
+        },
+      }),
+    ]);
 
-    return resultado._sum.monto ?? 0;
+    return (pagos._sum.monto ?? 0) + (ingresosRapidos._sum.monto ?? 0);
   }
 }

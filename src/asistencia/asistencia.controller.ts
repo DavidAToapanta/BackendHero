@@ -14,6 +14,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Role, Roles } from '../auth/decorators/roles.decorator';
 import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { AsistenciaService } from './asistencia.service';
+import { CreateAsistenciaDto } from './dto/create-asistencia.dto';
 import { MarcarAsistenciaDto } from './dto/marcar-asistencia.dto';
 
 @Controller('asistencia')
@@ -35,7 +36,10 @@ export class AsistenciaController {
 
   @Post('registrar/:clienteId')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA, Role.ENTRENADOR)
-  registrar(@Param('clienteId', ParseIntPipe) clienteId: number, @Request() req) {
+  registrar(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Request() req,
+  ) {
     return this.asistenciaService.registrarAsistencia(
       clienteId,
       getTenantIdOrThrow(req.user),
@@ -54,6 +58,16 @@ export class AsistenciaController {
     );
   }
 
+  @Post('historica')
+  @Roles(Role.OWNER, Role.ADMIN, Role.RECEPCIONISTA)
+  registrarHistorica(@Body() dto: CreateAsistenciaDto, @Request() req) {
+    return this.asistenciaService.registrarAsistenciaHistorica(
+      dto.clienteId,
+      dto.fecha,
+      getTenantIdOrThrow(req.user),
+    );
+  }
+
   @Get('mi-historial')
   @Roles(Role.CLIENTE)
   miHistorial(@Request() req) {
@@ -65,7 +79,10 @@ export class AsistenciaController {
 
   @Get('historial/:clienteId')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA, Role.ENTRENADOR)
-  historial(@Param('clienteId', ParseIntPipe) clienteId: number, @Request() req) {
+  historial(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Request() req,
+  ) {
     return this.asistenciaService.historial(
       clienteId,
       getTenantIdOrThrow(req.user),

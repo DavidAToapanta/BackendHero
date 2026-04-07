@@ -70,6 +70,7 @@ model Tenant {
   deudas                Deuda[]
   facturas              Factura[]
   gastos                Gasto[]
+  ingresosRapidos       IngresoRapido[]
   asistencias           Asistencia[]
   rutinas               Rutina[]
   entrenamientos        Entrenamiento[]
@@ -431,6 +432,19 @@ model Gasto {
   usuario     Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@index([tenantId])
+}
+
+model IngresoRapido {
+  id       Int      @id @default(autoincrement())
+  tenantId Int
+  concepto String
+  monto    Float
+  fecha    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([fecha])
 }
 
 model Asistencia {

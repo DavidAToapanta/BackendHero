@@ -23,6 +23,26 @@ export class AsistenciaService {
     );
   }
 
+  private normalizeHistoricalDate(dateValue: string | Date) {
+    const parsedDate =
+      dateValue instanceof Date ? dateValue : new Date(dateValue);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new BadRequestException('La fecha de asistencia no es valida');
+    }
+
+    const normalizedDate = this.normalizeAttendanceDate(parsedDate);
+    const today = this.normalizeAttendanceDate();
+
+    if (normalizedDate.getTime() > today.getTime()) {
+      throw new BadRequestException(
+        'No se puede registrar asistencia en una fecha futura',
+      );
+    }
+
+    return normalizedDate;
+  }
+
   private async findClienteOrThrow(clienteId: number, tenantId?: number) {
     const scopedTenantId = await this.getScopedTenantId(tenantId);
     const cliente = await this.prisma.cliente.findFirst({
@@ -126,6 +146,36 @@ export class AsistenciaService {
       scopedTenantId,
       fecha,
       new Date(),
+    );
+  }
+
+  async registrarAsistenciaHistorica(
+    clienteId: number,
+    fecha: string | Date,
+    tenantId?: number,
+  ) {
+    const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
+      clienteId,
+      tenantId,
+    );
+
+    if (!cliente.activo) {
+      throw new BadRequestException('El cliente esta inactivo');
+    }
+
+    const fechaHistorica = this.normalizeHistoricalDate(fecha);
+
+    await this.findPlanActivoOrThrow(
+      cliente.id,
+      scopedTenantId,
+      fechaHistorica,
+    );
+
+    return this.createOrReuseAttendance(
+      cliente.id,
+      scopedTenantId,
+      fechaHistorica,
+      fechaHistorica,
     );
   }
 

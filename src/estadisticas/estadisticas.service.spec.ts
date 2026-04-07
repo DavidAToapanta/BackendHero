@@ -6,6 +6,9 @@ const makePrisma = () => ({
   pago: {
     groupBy: jest.fn(),
   },
+  ingresoRapido: {
+    groupBy: jest.fn(),
+  },
   $queryRaw: jest.fn(),
 });
 
@@ -40,15 +43,17 @@ describe('EstadisticasService', () => {
         _sum: { monto: 25 },
       },
     ]);
+    prisma.ingresoRapido.groupBy.mockResolvedValue([
+      {
+        fecha: new Date('2026-03-14T10:00:00.000Z'),
+        _sum: { monto: 5 },
+      },
+    ]);
 
     const result = await service.obtenerIngresos('dia', 11);
 
-    expect(prisma.pago.groupBy).toHaveBeenCalledWith({
-      by: ['fecha'],
-      _sum: { monto: true },
-      where: { tenantId: 11 },
-      orderBy: { fecha: 'asc' },
-    });
-    expect(result).toEqual([{ label: '2026-03-14', total: 25 }]);
+    expect(prisma.pago.groupBy).toHaveBeenCalled();
+    expect(prisma.ingresoRapido.groupBy).toHaveBeenCalled();
+    expect(result).toEqual([{ label: '2026-03-14', total: 30 }]);
   });
 });

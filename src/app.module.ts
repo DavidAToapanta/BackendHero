@@ -21,6 +21,7 @@ import { FacturaModule } from './factura/factura.module';
 import { EntrenamientoModule } from './entrenamiento/entrenamiento.module';
 import { TenantModule } from './tenant/tenant.module';
 import { StaffModule } from './staff/staff.module';
+import { IngresoRapidoModule } from './ingreso-rapido/ingreso-rapido.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { StaffModule } from './staff/staff.module';
     AuthModule,
     TenantModule,
     StaffModule,
+    IngresoRapidoModule,
     ClienteModule,
     ProductoModule,
     PlanModule,
