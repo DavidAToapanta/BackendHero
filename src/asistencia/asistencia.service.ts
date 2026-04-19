@@ -3,9 +3,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrigenAsistencia, Prisma, SaasPlan } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
+
+type BiometricAttendanceStatus =
+  | 'processed'
+  | 'duplicate'
+  | 'unlinked'
+  | 'rejectedByPlan'
+  | 'invalid';
 
 @Injectable()
 export class AsistenciaService {
@@ -128,6 +135,25 @@ export class AsistenciaService {
     }
   }
 
+  private async updateAttendanceWithBiometricMetadata(
+    asistenciaId: number,
+    data: {
+      eventoBiometricoId: string;
+      dispositivoSn?: string | null;
+      biometricoPersonId: string;
+    },
+  ) {
+    return this.prisma.asistencia.update({
+      where: { id: asistenciaId },
+      data: {
+        origen: OrigenAsistencia.BIOMETRIA,
+        eventoBiometricoId: data.eventoBiometricoId,
+        dispositivoSn: data.dispositivoSn ?? null,
+        biometricoPersonId: data.biometricoPersonId,
+      },
+    });
+  }
+
   async registrarAsistencia(clienteId: number, tenantId?: number) {
     const { cliente, tenantId: scopedTenantId } = await this.findClienteOrThrow(
       clienteId,
@@ -147,6 +173,116 @@ export class AsistenciaService {
       fecha,
       new Date(),
     );
+  }
+
+  async registrarAsistenciaBiometrica(input: {
+    tenantId: number;
+    eventoBiometricoId: string;
+    occurredAt: string | Date;
+    dispositivoSn?: string | null;
+    biometricoPersonId: string;
+  }): Promise<{ status: BiometricAttendanceStatus; asistencia?: unknown }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: input.tenantId },
+      select: { id: true, saasPlan: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant no encontrado');
+    }
+
+    if (tenant.saasPlan !== SaasPlan.PLUS) {
+      return { status: 'rejectedByPlan' };
+    }
+
+    const biometricoPersonId = input.biometricoPersonId?.trim();
+    const eventoBiometricoId = input.eventoBiometricoId?.trim();
+
+    if (!biometricoPersonId || !eventoBiometricoId) {
+      return { status: 'invalid' };
+    }
+
+    const fechaEvento = this.normalizeHistoricalDate(input.occurredAt);
+    const existingEvent = await this.prisma.asistencia.findFirst({
+      where: {
+        tenantId: tenant.id,
+        eventoBiometricoId,
+      },
+    });
+
+    if (existingEvent) {
+      return { status: 'duplicate', asistencia: existingEvent };
+    }
+
+    const cliente = await this.prisma.cliente.findFirst({
+      where: {
+        tenantId: tenant.id,
+        zkbioPersonId: biometricoPersonId,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        activo: true,
+      },
+    });
+
+    if (!cliente) {
+      return { status: 'unlinked' };
+    }
+
+    if (!cliente.activo) {
+      return { status: 'rejectedByPlan' };
+    }
+
+    try {
+      await this.findPlanActivoOrThrow(cliente.id, tenant.id, fechaEvento);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return { status: 'rejectedByPlan' };
+      }
+
+      throw error;
+    }
+
+    const existingDailyAttendance = await this.prisma.asistencia.findFirst({
+      where: {
+        tenantId: tenant.id,
+        clienteId: cliente.id,
+        fecha: fechaEvento,
+      },
+    });
+
+    if (existingDailyAttendance) {
+      if (!existingDailyAttendance.eventoBiometricoId) {
+        const asistencia = await this.updateAttendanceWithBiometricMetadata(
+          existingDailyAttendance.id,
+          {
+            eventoBiometricoId,
+            dispositivoSn: input.dispositivoSn,
+            biometricoPersonId,
+          },
+        );
+
+        return { status: 'processed', asistencia };
+      }
+
+      return { status: 'processed', asistencia: existingDailyAttendance };
+    }
+
+    const asistencia = await this.prisma.asistencia.create({
+      data: {
+        tenantId: tenant.id,
+        clienteId: cliente.id,
+        fecha: fechaEvento,
+        horaEntrada: fechaEvento,
+        origen: OrigenAsistencia.BIOMETRIA,
+        eventoBiometricoId,
+        dispositivoSn: input.dispositivoSn ?? null,
+        biometricoPersonId,
+      },
+    });
+
+    return { status: 'processed', asistencia };
   }
 
   async registrarAsistenciaHistorica(

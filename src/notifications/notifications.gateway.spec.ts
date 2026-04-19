@@ -155,11 +155,12 @@ describe('NotificationsGateway', () => {
     await jest.advanceTimersByTimeAsync(10000);
     await jest.advanceTimersByTimeAsync(10000);
 
-    expect(notificationsService.getCurrentNotifications).toHaveBeenCalledTimes(2);
-    expect(notificationsService.getCurrentNotifications).toHaveBeenNthCalledWith(
-      1,
-      9,
+    expect(notificationsService.getCurrentNotifications).toHaveBeenCalledTimes(
+      2,
     );
+    expect(
+      notificationsService.getCurrentNotifications,
+    ).toHaveBeenNthCalledWith(1, 9);
     expect(toMock).toHaveBeenCalledTimes(1);
     expect(toMock).toHaveBeenCalledWith('tenant:9');
     expect(emitMock).toHaveBeenCalledTimes(1);

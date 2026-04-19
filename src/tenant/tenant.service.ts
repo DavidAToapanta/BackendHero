@@ -6,13 +6,17 @@ import {
 import {
   ModuleKey,
   Prisma,
+  SaasPlan,
   TenantEstado,
   TenantRole,
   TipoNegocio,
   UserTenantEstado,
 } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
+import { UpdateSaasPlanDto } from './dto/update-saas-plan.dto';
 
 type PrismaExecutor = PrismaService | Prisma.TransactionClient;
 
@@ -110,6 +114,47 @@ export class TenantService {
     }
 
     return tenant;
+  }
+
+  async updateSaasPlan(id: number, dto: UpdateSaasPlanDto) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      include: tenantDetailInclude,
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant no encontrado');
+    }
+
+    if (tenant.saasPlan === dto.saasPlan) {
+      return tenant;
+    }
+
+    return this.prisma.tenant.update({
+      where: { id },
+      data: {
+        saasPlan: dto.saasPlan,
+      },
+      include: tenantDetailInclude,
+    });
+  }
+
+  async rotateBridgeKey(id: number) {
+    await this.findOne(id);
+
+    const bridgeKey = `bh_${id}_${randomBytes(24).toString('hex')}`;
+    const bridgeKeyHash = await bcrypt.hash(bridgeKey, 10);
+
+    await this.prisma.tenant.update({
+      where: { id },
+      data: { bridgeKeyHash },
+    });
+
+    return {
+      tenantId: id,
+      bridgeKey,
+      headerName: 'x-bridge-key',
+    };
   }
 
   async findDefaultTenant() {

@@ -48,7 +48,14 @@ describe('ProductoService', () => {
   it('findAll filtra por tenant y search', async () => {
     prisma.producto.count.mockResolvedValue(1);
     prisma.producto.findMany.mockResolvedValue([
-      { id: 1, tenantId: 9, nombre: 'Proteina', precio: 45, stock: 8, estado: true },
+      {
+        id: 1,
+        tenantId: 9,
+        nombre: 'Proteina',
+        precio: 45,
+        stock: 8,
+        estado: true,
+      },
     ]);
 
     await service.findAll(1, 10, 'prote', 9);

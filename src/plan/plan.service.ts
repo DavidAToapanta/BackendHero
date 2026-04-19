@@ -13,7 +13,10 @@ export class PlanService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreatePlanDto, tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     return this.prisma.plan.create({
       data: {
         ...dto,
@@ -23,7 +26,10 @@ export class PlanService {
   }
 
   async findAll(page = 1, limit = 10, tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const take = Math.max(1, Math.min(limit, 50));
     const currentPage = Math.max(1, page);
     const skip = (currentPage - 1) * take;
@@ -55,7 +61,10 @@ export class PlanService {
   }
 
   async findOne(id: number, tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const plan = await this.prisma.plan.findFirst({
       where: { id, tenantId: scopedTenantId },
     });

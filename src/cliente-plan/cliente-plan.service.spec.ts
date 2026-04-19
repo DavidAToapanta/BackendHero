@@ -121,7 +121,9 @@ describe('ClientePlanService - cambiarPlan', () => {
   });
 
   it('lanza BadRequestException si se intenta cambiar al mismo plan', async () => {
-    prisma.clientePlan.findFirst.mockResolvedValue(makePlanActivo({ planId: 6 }));
+    prisma.clientePlan.findFirst.mockResolvedValue(
+      makePlanActivo({ planId: 6 }),
+    );
 
     await expect(
       service.cambiarPlan(1, { ...dtoCambio, nuevoPlanId: 6 }),
@@ -161,12 +163,14 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.clientePlan.findFirst.mockResolvedValue(planActual);
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(1, dtoCambio);
 
@@ -193,13 +197,15 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      txMock = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        txMock = tx;
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(1, dtoCambio);
 
@@ -235,13 +241,15 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      txMock = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        txMock = tx;
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(1, dtoCambio);
 
@@ -290,12 +298,14 @@ describe('ClientePlanService - cambiarPlan', () => {
     );
     prisma.plan.findFirst.mockResolvedValue(planBase);
 
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(planActual.id, dtoVolverA10);
 
@@ -340,12 +350,14 @@ describe('ClientePlanService - cambiarPlan', () => {
     );
     prisma.plan.findFirst.mockResolvedValue(planBase);
 
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(planActual.id, dtoVolverA10);
 
@@ -390,12 +402,14 @@ describe('ClientePlanService - cambiarPlan', () => {
     );
     prisma.plan.findFirst.mockResolvedValue(planBase);
 
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.cambiarPlan(planActual.id, dtoVolverA10);
 
@@ -427,13 +441,15 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let captureTx: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      captureTx = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        captureTx = tx;
+        return fn(tx);
+      },
+    );
 
     await service.cambiarPlan(1, dtoCambio);
 
@@ -461,13 +477,15 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      txMock = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        txMock = tx;
+        return fn(tx);
+      },
+    );
 
     await service.cambiarPlan(1, { ...dtoCambio, fechaInicio });
 
@@ -494,13 +512,15 @@ describe('ClientePlanService - cambiarPlan', () => {
     prisma.plan.findFirst.mockResolvedValue(nuevoPlanData);
 
     let txMock: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
-      tx.cambioPlan.create.mockResolvedValue({});
-      txMock = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.clientePlan.create.mockResolvedValue(nuevoClientePlan);
+        tx.cambioPlan.create.mockResolvedValue({});
+        txMock = tx;
+        return fn(tx);
+      },
+    );
 
     await service.cambiarPlan(1, dtoCambio);
 
@@ -559,18 +579,20 @@ describe('ClientePlanService - remove (quitar plan)', () => {
     prisma.clientePlan.findFirst.mockResolvedValue(planActual);
 
     let txMock: any;
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-      const tx = makeTx();
-      tx.deuda.deleteMany.mockResolvedValue({ count: 1 });
-      tx.clientePlan.update.mockResolvedValue({
-        ...planActual,
-        activado: false,
-        estado: 'CANCELADO',
-        fechaFin: new Date(),
-      });
-      txMock = tx;
-      return fn(tx);
-    });
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => {
+        const tx = makeTx();
+        tx.deuda.deleteMany.mockResolvedValue({ count: 1 });
+        tx.clientePlan.update.mockResolvedValue({
+          ...planActual,
+          activado: false,
+          estado: 'CANCELADO',
+          fechaFin: new Date(),
+        });
+        txMock = tx;
+        return fn(tx);
+      },
+    );
 
     const resultado = await service.remove(planActual.id);
 

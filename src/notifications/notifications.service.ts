@@ -9,34 +9,35 @@ export class NotificationsService {
   async getCurrentNotifications(tenantId: number) {
     const hoy = new Date();
 
-    const [pagosVencidos, proximasMembresias, productosBajos] = await Promise.all([
-      this.prisma.deuda.count({
-        where: {
-          tenantId,
-          solventada: false,
-        },
-      }),
-      this.prisma.clientePlan.count({
-        where: {
-          tenantId,
-          activado: true,
-          estado: 'ACTIVO',
-          fechaFin: {
-            gte: hoy,
-            lte: addDays(hoy, 7),
+    const [pagosVencidos, proximasMembresias, productosBajos] =
+      await Promise.all([
+        this.prisma.deuda.count({
+          where: {
+            tenantId,
+            solventada: false,
           },
-        },
-      }),
-      this.prisma.producto.count({
-        where: {
-          tenantId,
-          estado: true,
-          stock: {
-            lte: 5,
+        }),
+        this.prisma.clientePlan.count({
+          where: {
+            tenantId,
+            activado: true,
+            estado: 'ACTIVO',
+            fechaFin: {
+              gte: hoy,
+              lte: addDays(hoy, 7),
+            },
           },
-        },
-      }),
-    ]);
+        }),
+        this.prisma.producto.count({
+          where: {
+            tenantId,
+            estado: true,
+            stock: {
+              lte: 5,
+            },
+          },
+        }),
+      ]);
 
     return [
       {

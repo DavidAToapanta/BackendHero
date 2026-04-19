@@ -77,11 +77,15 @@ describe('PagoService', () => {
       plan: { precio: 50 },
       pago: [],
     });
-    tx.pago.create.mockResolvedValue({ id: 99, tenantId: 7, clientePlanId: 10 });
+    tx.pago.create.mockResolvedValue({
+      id: 99,
+      tenantId: 7,
+      clientePlanId: 10,
+    });
     tx.deuda.deleteMany.mockResolvedValue({ count: 1 });
     facturaService.aplicarPago.mockResolvedValue({ saldo: 0 });
-    prisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) =>
-      fn(tx),
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => fn(tx),
     );
 
     const result = await service.create(

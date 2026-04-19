@@ -4,6 +4,6 @@ import { DeudaService } from './deuda.service';
 
 @Module({
   controllers: [DeudaController],
-  providers: [DeudaService]
+  providers: [DeudaService],
 })
 export class DeudaModule {}

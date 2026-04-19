@@ -493,6 +493,35 @@ export class ClienteService {
     return this.prisma.cliente.update({ where: { id }, data: dto });
   }
 
+  async linkZkbioPerson(
+    id: number,
+    zkbioPersonId: string | null | undefined,
+    tenantId?: number,
+  ) {
+    const cliente = await this.findClienteOrThrow(id, tenantId);
+    const normalizedZkbioPersonId = this.normalizeOptionalString(zkbioPersonId);
+
+    try {
+      return await this.prisma.cliente.update({
+        where: { id: cliente.id },
+        data: {
+          zkbioPersonId: normalizedZkbioPersonId,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          'Ese zkbioPersonId ya esta vinculado a otro cliente en este tenant',
+        );
+      }
+
+      throw error;
+    }
+  }
+
   async remove(id: number, tenantId?: number) {
     return this.desactivar(id, tenantId);
   }
