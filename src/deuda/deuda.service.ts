@@ -116,7 +116,9 @@ export class DeudaService {
       data: {
         ...(dto.monto !== undefined && { monto: dto.monto }),
         ...(dto.solventada !== undefined && { solventada: dto.solventada }),
-        ...(dto.clientePlanId !== undefined && { clientePlanId: dto.clientePlanId }),
+        ...(dto.clientePlanId !== undefined && {
+          clientePlanId: dto.clientePlanId,
+        }),
       },
     });
   }

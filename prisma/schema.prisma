@@ -15,16 +15,16 @@ datasource db {
 }
 
 model Usuario {
-  id              Int       @id @default(autoincrement())
-  email           String?   @unique
-  userName        String?   @unique
+  id              Int      @id @default(autoincrement())
+  email           String?  @unique
+  userName        String?  @unique
   password        String
   nombres         String
   apellidos       String
-  cedula          String    @unique
+  cedula          String   @unique
   fechaNacimiento String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   memberships           UserTenant[]
   staffProfiles         StaffProfile[]
@@ -42,14 +42,16 @@ model Tenant {
   slug        String       @unique
   tipoNegocio TipoNegocio
   estado      TenantEstado @default(ACTIVO)
+  saasPlan    SaasPlan     @default(FREE)
 
-  email       String?
-  telefono    String?
-  direccion   String?
-  ciudad      String?
-  pais        String?
-  logoUrl     String?
-  descripcion String?
+  email         String?
+  telefono      String?
+  direccion     String?
+  ciudad        String?
+  pais          String?
+  logoUrl       String?
+  descripcion   String?
+  bridgeKeyHash String?
 
   latitud   Float?
   longitud  Float?
@@ -168,6 +170,7 @@ model Cliente {
   objetivos      String
   tiempoEntrenar Int
   activo         Boolean @default(true)
+  zkbioPersonId  String?
 
   usuario        Usuario         @relation(fields: [usuarioId], references: [id])
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
@@ -180,6 +183,7 @@ model Cliente {
   cambiosPlan    CambioPlan[]
 
   @@unique([usuarioId, tenantId])
+  @@unique([tenantId, zkbioPersonId])
   @@index([usuarioId])
   @@index([tenantId])
 }
@@ -249,21 +253,21 @@ model Compra {
 }
 
 model Plan {
-  id              Int             @id @default(autoincrement())
-  tenantId        Int
-  nombre          String
-  precio          Float
-  duracion        Int
-  unidadDuracion  UnidadDuracion  @default(MESES)
-  activo          Boolean         @default(true)
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  clientePlan     ClientePlan[]
+  id             Int            @id @default(autoincrement())
+  tenantId       Int
+  nombre         String
+  precio         Float
+  duracion       Int
+  unidadDuracion UnidadDuracion @default(MESES)
+  activo         Boolean        @default(true)
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  clientePlan    ClientePlan[]
 
   @@index([tenantId])
 }
 
 model ClientePlan {
-  id          Int                @id @default(autoincrement())
+  id          Int               @id @default(autoincrement())
   tenantId    Int
   clienteId   Int
   planId      Int
@@ -271,14 +275,14 @@ model ClientePlan {
   fechaFin    DateTime
   diaPago     Int
   activado    Boolean
-  estado      EstadoClientePlan  @default(ACTIVO)
+  estado      EstadoClientePlan @default(ACTIVO)
 
-  tenant          Tenant       @relation(fields: [tenantId], references: [id])
-  cliente         Cliente      @relation(fields: [clienteId], references: [id])
-  plan            Plan         @relation(fields: [planId], references: [id])
-  pago            Pago[]
-  deudas          Deuda[]
-  facturas        Factura[]
+  tenant              Tenant       @relation(fields: [tenantId], references: [id])
+  cliente             Cliente      @relation(fields: [clienteId], references: [id])
+  plan                Plan         @relation(fields: [planId], references: [id])
+  pago                Pago[]
+  deudas              Deuda[]
+  facturas            Factura[]
   cambiosComoAnterior CambioPlan[] @relation("PlanAnterior")
   cambiosComoNuevo    CambioPlan[] @relation("PlanNuevo")
 
@@ -343,12 +347,12 @@ model Entrenamiento {
 }
 
 model Semana {
-  id              Int           @id @default(autoincrement())
+  id              Int             @id @default(autoincrement())
   tenantId        Int
   numero          Int
   entrenamientoId Int
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
-  entrenamiento   Entrenamiento @relation(fields: [entrenamientoId], references: [id])
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  entrenamiento   Entrenamiento   @relation(fields: [entrenamientoId], references: [id])
   musculosSemana  MusculoSemana[]
 
   @@index([tenantId])
@@ -382,7 +386,7 @@ model EjercicioMusculo {
   ejercicioId     Int
   orden           Int // Orden en que se hace este ejercicio para el músculo
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
   musculoSemana MusculoSemana @relation(fields: [musculoSemanaId], references: [id])
   ejercicio     Ejercicio     @relation(fields: [ejercicioId], references: [id])
   seriesReps    SerieRep[]
@@ -448,16 +452,21 @@ model IngresoRapido {
 }
 
 model Asistencia {
-  id          Int      @id @default(autoincrement())
-  tenantId    Int
-  clienteId   Int
-  fecha       DateTime @default(now())
-  horaEntrada DateTime @default(now())
+  id                 Int              @id @default(autoincrement())
+  tenantId           Int
+  clienteId          Int
+  fecha              DateTime         @default(now())
+  horaEntrada        DateTime         @default(now())
+  origen             OrigenAsistencia @default(MANUAL)
+  eventoBiometricoId String?
+  dispositivoSn      String?
+  biometricoPersonId String?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   cliente Cliente @relation(fields: [clienteId], references: [id])
 
   @@unique([clienteId, fecha(sort: Desc)]) // Solo 1 asistencia por día
+  @@unique([tenantId, eventoBiometricoId])
   @@index([tenantId])
   @@index([clienteId, fecha])
 }
@@ -479,8 +488,8 @@ model Factura {
   estado       EstadoFactura
   fechaEmision DateTime      @default(now())
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  clientePlan ClientePlan @relation(fields: [clientePlanId], references: [id])
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id])
+  clientePlan  ClientePlan            @relation(fields: [clientePlanId], references: [id])
   devoluciones DevolucionMovimiento[]
 
   @@index([tenantId])
@@ -524,6 +533,11 @@ enum ModuleKey {
   STORE
 }
 
+enum SaasPlan {
+  FREE
+  PLUS
+}
+
 enum EstadoClientePlan {
   ACTIVO
   CAMBIADO
@@ -534,6 +548,11 @@ enum EstadoClientePlan {
 enum UnidadDuracion {
   MESES
   DIAS
+}
+
+enum OrigenAsistencia {
+  MANUAL
+  BIOMETRIA
 }
 
 enum EstadoDevolucion {
@@ -557,22 +576,22 @@ model CambioPlan {
   estadoDevolucion            EstadoDevolucion @default(PENDIENTE)
   motivo                      String?
 
-  tenant              Tenant       @relation(fields: [tenantId], references: [id])
-  cliente             Cliente      @relation(fields: [clienteId], references: [id])
-  clientePlanAnterior ClientePlan  @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
-  clientePlanNuevo    ClientePlan  @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
+  tenant              Tenant                 @relation(fields: [tenantId], references: [id])
+  cliente             Cliente                @relation(fields: [clienteId], references: [id])
+  clientePlanAnterior ClientePlan            @relation("PlanAnterior", fields: [clientePlanAnteriorId], references: [id])
+  clientePlanNuevo    ClientePlan            @relation("PlanNuevo", fields: [clientePlanNuevoId], references: [id])
   devoluciones        DevolucionMovimiento[]
 
   @@index([tenantId])
 }
 
 model DevolucionMovimiento {
-  id           Int       @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   tenantId     Int
   cambioPlanId Int
   facturaId    Int
   monto        Float
-  fecha        DateTime  @default(now())
+  fecha        DateTime @default(now())
   motivo       String?
   usuarioId    Int?
 

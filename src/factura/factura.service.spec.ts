@@ -24,7 +24,9 @@ const makePrisma = () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
     },
-    $transaction: jest.fn(async (fn: (trx: typeof tx) => Promise<any>) => fn(tx)),
+    $transaction: jest.fn(async (fn: (trx: typeof tx) => Promise<any>) =>
+      fn(tx),
+    ),
   };
 
   return { prisma, tx };
@@ -41,10 +43,7 @@ describe('FacturaService', () => {
     tx = mocks.tx;
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        FacturaService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [FacturaService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<FacturaService>(FacturaService);

@@ -17,6 +17,7 @@ import { Role, Roles } from '../auth/decorators/roles.decorator';
 import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
 import { ClienteService } from './cliente.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
+import { LinkZkbioPersonDto } from './dto/link-zkbio-person.dto';
 import { RegisterClienteDto } from './dto/register-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 
@@ -119,6 +120,20 @@ export class ClienteController {
     @Request() req,
   ) {
     return this.clienteService.update(+id, dto, getTenantIdOrThrow(req.user));
+  }
+
+  @Patch(':id/zkbio-link')
+  @Roles(Role.ADMIN, Role.RECEPCIONISTA)
+  linkZkbioPerson(
+    @Param('id') id: string,
+    @Body() dto: LinkZkbioPersonDto,
+    @Request() req,
+  ) {
+    return this.clienteService.linkZkbioPerson(
+      +id,
+      dto.zkbioPersonId,
+      getTenantIdOrThrow(req.user),
+    );
   }
 
   @Patch(':id/desactivar')
