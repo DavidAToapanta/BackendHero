@@ -21,10 +21,7 @@ describe('GastoService', () => {
     prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        GastoService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [GastoService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<GastoService>(GastoService);
@@ -32,7 +29,12 @@ describe('GastoService', () => {
 
   it('create guarda tenantId', async () => {
     const dto = { descripcion: 'Limpieza', monto: 25 };
-    prisma.gasto.create.mockResolvedValue({ id: 1, tenantId: 9, usuarioId: 3, ...dto });
+    prisma.gasto.create.mockResolvedValue({
+      id: 1,
+      tenantId: 9,
+      usuarioId: 3,
+      ...dto,
+    });
 
     await service.create(dto, 3, 9);
 

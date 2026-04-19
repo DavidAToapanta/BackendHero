@@ -21,7 +21,9 @@ const makePrisma = () => {
     producto: {
       findMany: jest.fn(),
     },
-    $transaction: jest.fn(async (fn: (trx: typeof tx) => Promise<any>) => fn(tx)),
+    $transaction: jest.fn(async (fn: (trx: typeof tx) => Promise<any>) =>
+      fn(tx),
+    ),
   };
 
   return { prisma, tx };
@@ -38,10 +40,7 @@ describe('CompraService', () => {
     tx = mocks.tx;
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CompraService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [CompraService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<CompraService>(CompraService);

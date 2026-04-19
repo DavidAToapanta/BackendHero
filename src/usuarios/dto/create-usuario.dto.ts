@@ -65,5 +65,4 @@ export class CreateUsuarioDto {
   @IsOptional()
   @IsInt()
   tiempoEntrenar?: number;
-
 }

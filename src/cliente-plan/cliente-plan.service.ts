@@ -33,7 +33,10 @@ export class ClientePlanService {
       throw new BadRequestException('ID no valido');
     }
 
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const clientePlan = await this.prisma.clientePlan.findFirst({
       where: { id, tenantId: scopedTenantId },
     });
@@ -46,7 +49,10 @@ export class ClientePlanService {
   }
 
   async create(dto: CreateClientePlanDto, tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const hoy = new Date();
 
     const [cliente, plan, planVigente] = await Promise.all([
@@ -120,13 +126,21 @@ export class ClientePlanService {
       },
     });
 
-    await this.facturaService.crearFactura(clientePlan.id, undefined, undefined, scopedTenantId);
+    await this.facturaService.crearFactura(
+      clientePlan.id,
+      undefined,
+      undefined,
+      scopedTenantId,
+    );
 
     return clientePlan;
   }
 
   async findAll(tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     return this.prisma.clientePlan.findMany({
       where: { tenantId: scopedTenantId },
       include: {
@@ -145,7 +159,10 @@ export class ClientePlanService {
       throw new BadRequestException('ID no valido');
     }
 
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const clientePlan = await this.prisma.clientePlan.findFirst({
       where: { id, tenantId: scopedTenantId },
     });
@@ -158,7 +175,10 @@ export class ClientePlanService {
   }
 
   async update(id: number, dto: UpdateClientePlanDto, tenantId?: number) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     await this.findOne(id, scopedTenantId);
 
     if (dto.clienteId) {
@@ -192,9 +212,7 @@ export class ClientePlanService {
         fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
         diaPago,
         activado: dto.activado,
-        cliente: dto.clienteId
-          ? { connect: { id: dto.clienteId } }
-          : undefined,
+        cliente: dto.clienteId ? { connect: { id: dto.clienteId } } : undefined,
         plan: dto.planId ? { connect: { id: dto.planId } } : undefined,
       },
     });
@@ -240,7 +258,10 @@ export class ClientePlanService {
   }
 
   async contarClientesActivos(tenantId?: number): Promise<number> {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const clientes = await this.prisma.clientePlan.findMany({
       where: {
         tenantId: scopedTenantId,
@@ -261,7 +282,10 @@ export class ClientePlanService {
     dto: CambiarPlanDto,
     tenantId?: number,
   ) {
-    const scopedTenantId = await resolveTenantIdOrDefault(this.prisma, tenantId);
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
     const planActual = await this.prisma.clientePlan.findFirst({
       where: { id: clientePlanId, tenantId: scopedTenantId },
       include: {
@@ -353,7 +377,11 @@ export class ClientePlanService {
         },
       });
 
-      await this.facturaService.anularFactura(clientePlanId, tx, scopedTenantId);
+      await this.facturaService.anularFactura(
+        clientePlanId,
+        tx,
+        scopedTenantId,
+      );
 
       await tx.deuda.deleteMany({
         where: {
@@ -401,10 +429,10 @@ export class ClientePlanService {
           clientePlanAnteriorId: clientePlanId,
           clientePlanNuevoId: nuevoClientePlan.id,
           montoPagadoTransferido: creditoAplicado,
-          devolucionPendiente: devolucionPendiente > 0 ? devolucionPendiente : 0,
+          devolucionPendiente:
+            devolucionPendiente > 0 ? devolucionPendiente : 0,
           devolucionDevueltaAcumulada: 0,
-          estadoDevolucion:
-            devolucionPendiente > 0 ? 'PENDIENTE' : 'NO_APLICA',
+          estadoDevolucion: devolucionPendiente > 0 ? 'PENDIENTE' : 'NO_APLICA',
           motivo: dto.motivo ?? null,
         },
       });

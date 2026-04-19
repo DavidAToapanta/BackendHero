@@ -53,7 +53,11 @@ export class ProductoController {
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  update(@Param('id') id: string, @Body() dto: UpdateProductoDto, @Request() req) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductoDto,
+    @Request() req,
+  ) {
     return this.productoService.update(+id, dto, getTenantIdOrThrow(req.user));
   }
 

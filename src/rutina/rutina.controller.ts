@@ -51,7 +51,11 @@ export class RutinaController {
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.ENTRENADOR)
-  update(@Param('id') id: string, @Body() dto: UpdateRutinaDto, @Request() req) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateRutinaDto,
+    @Request() req,
+  ) {
     return this.rutinaService.update(+id, dto, getTenantIdOrThrow(req.user));
   }
 

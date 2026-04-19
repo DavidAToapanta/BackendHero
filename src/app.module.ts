@@ -22,6 +22,7 @@ import { EntrenamientoModule } from './entrenamiento/entrenamiento.module';
 import { TenantModule } from './tenant/tenant.module';
 import { StaffModule } from './staff/staff.module';
 import { IngresoRapidoModule } from './ingreso-rapido/ingreso-rapido.module';
+import { ZkbioModule } from './integrations/zkbio/zkbio.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { IngresoRapidoModule } from './ingreso-rapido/ingreso-rapido.module';
     TenantModule,
     StaffModule,
     IngresoRapidoModule,
+    ZkbioModule,
     ClienteModule,
     ProductoModule,
     PlanModule,

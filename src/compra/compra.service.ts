@@ -35,7 +35,9 @@ export class CompraService {
       throw new NotFoundException('Cliente no encontrado');
     }
 
-    const productoIds = [...new Set(detalles.map((detalle) => detalle.productoId))];
+    const productoIds = [
+      ...new Set(detalles.map((detalle) => detalle.productoId)),
+    ];
     const productos = await this.prisma.producto.findMany({
       where: {
         tenantId: scopedTenantId,

@@ -154,7 +154,7 @@ export class NotificationsGateway
       try {
         const payload = this.jwtService.verify(token, {
           secret: process.env.JWT_SECRET || 'supersecret',
-        }) as { tenantId?: number | string };
+        });
         const verifiedTenantId = Number(payload?.tenantId);
         if (verifiedTenantId && !Number.isNaN(verifiedTenantId)) {
           return verifiedTenantId;

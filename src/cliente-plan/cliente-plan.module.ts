@@ -6,7 +6,6 @@ import { FacturaModule } from 'src/factura/factura.module';
 @Module({
   controllers: [ClientePlanController],
   providers: [ClientePlanService],
-  imports: [FacturaModule]
-
+  imports: [FacturaModule],
 })
 export class ClientePlanModule {}

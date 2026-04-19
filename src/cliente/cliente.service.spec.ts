@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { ClienteService } from './cliente.service';
@@ -378,5 +379,54 @@ describe('ClienteService', () => {
       data: { activo: false },
     });
     expect(resultado).toEqual(expect.objectContaining({ activo: false }));
+  });
+
+  it('vincula zkbioPersonId usando el tenant del contexto', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({ id: 6, tenantId: 5 });
+    prisma.cliente.update.mockResolvedValue({
+      id: 6,
+      tenantId: 5,
+      zkbioPersonId: '88',
+    });
+
+    const result = await service.linkZkbioPerson(6, ' 88 ', 5);
+
+    expect(prisma.cliente.update).toHaveBeenCalledWith({
+      where: { id: 6 },
+      data: { zkbioPersonId: '88' },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ zkbioPersonId: '88', tenantId: 5 }),
+    );
+  });
+
+  it('permite desvincular zkbioPersonId con null', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({ id: 6, tenantId: 5 });
+    prisma.cliente.update.mockResolvedValue({
+      id: 6,
+      tenantId: 5,
+      zkbioPersonId: null,
+    });
+
+    await service.linkZkbioPerson(6, null, 5);
+
+    expect(prisma.cliente.update).toHaveBeenCalledWith({
+      where: { id: 6 },
+      data: { zkbioPersonId: null },
+    });
+  });
+
+  it('respeta unicidad por tenant al vincular zkbioPersonId', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({ id: 6, tenantId: 5 });
+    prisma.cliente.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(service.linkZkbioPerson(6, '88', 5)).rejects.toThrow(
+      'Ese zkbioPersonId ya esta vinculado a otro cliente en este tenant',
+    );
   });
 });

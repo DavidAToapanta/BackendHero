@@ -4,6 +4,6 @@ import { GastoService } from './gasto.service';
 
 @Module({
   controllers: [GastoController],
-  providers: [GastoService]
+  providers: [GastoService],
 })
 export class GastoModule {}

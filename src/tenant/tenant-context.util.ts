@@ -9,7 +9,9 @@ export function getTenantIdOrThrow(user?: TenantAwareUser) {
   const tenantId = Number(user?.tenantId);
 
   if (!tenantId || Number.isNaN(tenantId)) {
-    throw new UnauthorizedException('No se pudo resolver el tenant del usuario');
+    throw new UnauthorizedException(
+      'No se pudo resolver el tenant del usuario',
+    );
   }
 
   return tenantId;
