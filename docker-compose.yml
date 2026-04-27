@@ -1,0 +1,16 @@
+services:
+  postgres-dev:
+    image: postgres:16
+    container_name: hero_gym_postgres_dev
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hero_gym_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - hero_gym_postgres_dev_data:/var/lib/postgresql/data
+
+volumes:
+  hero_gym_postgres_dev_data:

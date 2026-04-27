@@ -10,18 +10,27 @@ ADD COLUMN IF NOT EXISTS "tenantId" INTEGER;
 ALTER TABLE "Semana"
 ADD COLUMN IF NOT EXISTS "tenantId" INTEGER;
 
-ALTER TABLE "MusculoSemana"
+ALTER TABLE IF EXISTS "MusculoSemana"
 ADD COLUMN IF NOT EXISTS "tenantId" INTEGER;
 
-ALTER TABLE "EjercicioMusculo"
+ALTER TABLE IF EXISTS "EjercicioMusculo"
 ADD COLUMN IF NOT EXISTS "tenantId" INTEGER;
 
 CREATE INDEX IF NOT EXISTS "Asistencia_tenantId_idx" ON "Asistencia"("tenantId");
 CREATE INDEX IF NOT EXISTS "Rutina_tenantId_idx" ON "Rutina"("tenantId");
 CREATE INDEX IF NOT EXISTS "Entrenamiento_tenantId_idx" ON "Entrenamiento"("tenantId");
 CREATE INDEX IF NOT EXISTS "Semana_tenantId_idx" ON "Semana"("tenantId");
-CREATE INDEX IF NOT EXISTS "MusculoSemana_tenantId_idx" ON "MusculoSemana"("tenantId");
-CREATE INDEX IF NOT EXISTS "EjercicioMusculo_tenantId_idx" ON "EjercicioMusculo"("tenantId");
+
+DO $$
+BEGIN
+  IF to_regclass('"MusculoSemana"') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS "MusculoSemana_tenantId_idx" ON "MusculoSemana"("tenantId");
+  END IF;
+
+  IF to_regclass('"EjercicioMusculo"') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS "EjercicioMusculo_tenantId_idx" ON "EjercicioMusculo"("tenantId");
+  END IF;
+END $$;
 
 ALTER TABLE "Asistencia"
 DROP CONSTRAINT IF EXISTS "Asistencia_tenantId_fkey";
@@ -51,19 +60,26 @@ ALTER TABLE "Semana"
 ADD CONSTRAINT "Semana_tenantId_fkey"
 FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
-ALTER TABLE "MusculoSemana"
-DROP CONSTRAINT IF EXISTS "MusculoSemana_tenantId_fkey";
+DO $$
+BEGIN
+  IF to_regclass('"MusculoSemana"') IS NOT NULL THEN
+    ALTER TABLE "MusculoSemana"
+    DROP CONSTRAINT IF EXISTS "MusculoSemana_tenantId_fkey";
 
-ALTER TABLE "MusculoSemana"
-ADD CONSTRAINT "MusculoSemana_tenantId_fkey"
-FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    ALTER TABLE "MusculoSemana"
+    ADD CONSTRAINT "MusculoSemana_tenantId_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
 
-ALTER TABLE "EjercicioMusculo"
-DROP CONSTRAINT IF EXISTS "EjercicioMusculo_tenantId_fkey";
+  IF to_regclass('"EjercicioMusculo"') IS NOT NULL THEN
+    ALTER TABLE "EjercicioMusculo"
+    DROP CONSTRAINT IF EXISTS "EjercicioMusculo_tenantId_fkey";
 
-ALTER TABLE "EjercicioMusculo"
-ADD CONSTRAINT "EjercicioMusculo_tenantId_fkey"
-FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    ALTER TABLE "EjercicioMusculo"
+    ADD CONSTRAINT "EjercicioMusculo_tenantId_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 DO $$
 DECLARE
@@ -119,6 +135,7 @@ BEGIN
   SET "tenantId" = legacy_tenant_id
   WHERE "tenantId" IS NULL;
 
+  IF to_regclass('"MusculoSemana"') IS NOT NULL THEN
   UPDATE "MusculoSemana" AS musculo_semana
   SET "tenantId" = COALESCE(semana."tenantId", legacy_tenant_id)
   FROM "Semana" AS semana
@@ -128,15 +145,21 @@ BEGIN
   UPDATE "MusculoSemana"
   SET "tenantId" = legacy_tenant_id
   WHERE "tenantId" IS NULL;
+END IF;
 
+  IF to_regclass('"MusculoSemana"') IS NOT NULL
+   AND to_regclass('"EjercicioMusculo"') IS NOT NULL THEN
   UPDATE "EjercicioMusculo" AS ejercicio_musculo
   SET "tenantId" = COALESCE(musculo_semana."tenantId", legacy_tenant_id)
   FROM "MusculoSemana" AS musculo_semana
   WHERE ejercicio_musculo."musculoSemanaId" = musculo_semana."id"
     AND ejercicio_musculo."tenantId" IS NULL;
+END IF;
 
+  IF to_regclass('"EjercicioMusculo"') IS NOT NULL THEN
   UPDATE "EjercicioMusculo"
   SET "tenantId" = legacy_tenant_id
   WHERE "tenantId" IS NULL;
+END IF;
 END
 $$;
