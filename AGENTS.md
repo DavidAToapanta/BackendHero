@@ -1,6 +1,7 @@
 # BackendHero Agent Notes
 
 ## Runtime Shape
+- `README.md` is the default Nest starter README; prefer `package.json`, Nest config, Prisma files, and `src/*` as sources of truth.
 - Single NestJS app, not a monorepo. Entry points are `src/main.ts` and `src/app.module.ts`; Nest source root is `src`, build output is `dist`.
 - Prisma is the only data layer. Schema lives in `prisma/schema.prisma`; SQL migrations live in `prisma/migrations/`.
 
@@ -16,9 +17,10 @@
 - No dedicated typecheck script exists; use `npx tsc --noEmit` if you need one.
 
 ## Env And Services
-- The app reads `process.env` directly in runtime code; there is no `@nestjs/config`, `ConfigModule.forRoot()`, or `dotenv` bootstrap. Do not assume Nest loads `.env` for you.
+- Runtime code reads `process.env` directly; there is no `@nestjs/config` or app-level dotenv bootstrap. Do not assume Nest loads `.env` for runtime execution.
 - Prisma uses `DATABASE_URL`; the checked-in `.env` points to local Postgres at `127.0.0.1:5433/SistemaGym`.
 - `JWT_SECRET` is optional in local work because auth and sockets fall back to `'supersecret'`; `PORT` defaults to `8080`.
+- `src/main.ts` raises JSON/urlencoded body limits to `50mb`.
 - `test/app.e2e-spec.ts` boots the real `AppModule`, so e2e runs need a working database connection.
 
 ## Architecture Invariants
