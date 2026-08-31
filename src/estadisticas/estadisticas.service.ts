@@ -5,48 +5,89 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class EstadisticasService {
   constructor(private prisma: PrismaService) {}
 
+  private obtenerRangoDiaEcuador(fechaActual = new Date()) {
+    const desplazamientoEcuador = 5 * 60 * 60 * 1000;
+    const fechaEcuador = new Date(
+      fechaActual.getTime() - desplazamientoEcuador,
+    );
+  
+    const anio = fechaEcuador.getUTCFullYear();
+    const mes = fechaEcuador.getUTCMonth();
+    const dia = fechaEcuador.getUTCDate();
+  
+    // Ecuador está en UTC-5: las 00:00 locales corresponden a las 05:00 UTC.
+    const inicioDia = new Date(Date.UTC(anio, mes, dia, 5, 0, 0, 0));
+    const finDia = new Date(inicioDia.getTime() + 24 * 60 * 60 * 1000);
+  
+    const etiquetaDia = [
+      anio,
+      String(mes + 1).padStart(2, '0'),
+      String(dia).padStart(2, '0'),
+    ].join('-');
+  
+    return { inicioDia, finDia, etiquetaDia };
+  }
+
   private get ingresoRapidoRepo() {
     return (this.prisma as any).ingresoRapido;
   }
 
   async obtenerIngresos(periodo: 'dia' | 'mes' | 'anio', tenantId: number) {
     if (periodo === 'dia') {
+      const { inicioDia, finDia, etiquetaDia } =
+        this.obtenerRangoDiaEcuador();
+    
       const [pagos, ingresosRapidos] = await Promise.all([
         this.prisma.pago.groupBy({
           by: ['fecha'],
           _sum: { monto: true },
-          where: { tenantId },
+          where: {
+            tenantId,
+            fecha: {
+              gte: inicioDia,
+              lt: finDia,
+            },
+          },
           orderBy: { fecha: 'asc' },
         }),
         this.ingresoRapidoRepo.groupBy({
           by: ['fecha'],
           _sum: { monto: true },
-          where: { tenantId },
+          where: {
+            tenantId,
+            fecha: {
+              gte: inicioDia,
+              lt: finDia,
+            },
+          },
           orderBy: { fecha: 'asc' },
         }),
       ]);
-
-      const totalsByDate = new Map<string, number>();
-
-      for (const pago of pagos) {
-        const label = pago.fecha.toISOString().slice(0, 10);
-        totalsByDate.set(
-          label,
-          (totalsByDate.get(label) ?? 0) + (pago._sum.monto ?? 0),
-        );
+    
+      const totalPagos = pagos.reduce(
+        (total, pago) => total + Number(pago._sum.monto ?? 0),
+        0,
+      );
+    
+      const totalIngresosRapidos = ingresosRapidos.reduce(
+        (total, ingreso) => total + Number(ingreso._sum.monto ?? 0),
+        0,
+      );
+    
+      const total = totalPagos + totalIngresosRapidos;
+    
+      // Si hoy no existen ingresos, el controlador devolverá data: [].
+      // El frontend ya convierte ese resultado en 0 con su reduce.
+      if (total === 0) {
+        return [];
       }
-
-      for (const ingreso of ingresosRapidos) {
-        const label = ingreso.fecha.toISOString().slice(0, 10);
-        totalsByDate.set(
-          label,
-          (totalsByDate.get(label) ?? 0) + (ingreso._sum.monto ?? 0),
-        );
-      }
-
-      return [...totalsByDate.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([label, total]) => ({ label, total }));
+    
+      return [
+        {
+          label: etiquetaDia,
+          total,
+        },
+      ];
     }
 
     if (periodo === 'mes') {
