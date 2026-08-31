@@ -32,17 +32,25 @@ describe('EstadisticasService', () => {
     service = module.get<EstadisticasService>(EstadisticasService);
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  it('filtra ingresos diarios por tenant', async () => {
+  it('filtra y suma los ingresos del día actual por tenant', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-14T15:00:00.000Z'));
+
     prisma.pago.groupBy.mockResolvedValue([
       {
-        fecha: new Date('2026-03-14T00:00:00.000Z'),
+        fecha: new Date('2026-03-14T06:00:00.000Z'),
         _sum: { monto: 25 },
       },
     ]);
+
     prisma.ingresoRapido.groupBy.mockResolvedValue([
       {
         fecha: new Date('2026-03-14T10:00:00.000Z'),
@@ -52,8 +60,48 @@ describe('EstadisticasService', () => {
 
     const result = await service.obtenerIngresos('dia', 11);
 
-    expect(prisma.pago.groupBy).toHaveBeenCalled();
-    expect(prisma.ingresoRapido.groupBy).toHaveBeenCalled();
-    expect(result).toEqual([{ label: '2026-03-14', total: 30 }]);
+    const rangoEsperado = {
+      gte: new Date('2026-03-14T05:00:00.000Z'),
+      lt: new Date('2026-03-15T05:00:00.000Z'),
+    };
+
+    expect(prisma.pago.groupBy).toHaveBeenCalledWith({
+      by: ['fecha'],
+      _sum: { monto: true },
+      where: {
+        tenantId: 11,
+        fecha: rangoEsperado,
+      },
+      orderBy: { fecha: 'asc' },
+    });
+
+    expect(prisma.ingresoRapido.groupBy).toHaveBeenCalledWith({
+      by: ['fecha'],
+      _sum: { monto: true },
+      where: {
+        tenantId: 11,
+        fecha: rangoEsperado,
+      },
+      orderBy: { fecha: 'asc' },
+    });
+
+    expect(result).toEqual([
+      {
+        label: '2026-03-14',
+        total: 30,
+      },
+    ]);
+  });
+
+  it('devuelve una lista vacía cuando no existen ingresos del día', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-14T15:00:00.000Z'));
+
+    prisma.pago.groupBy.mockResolvedValue([]);
+    prisma.ingresoRapido.groupBy.mockResolvedValue([]);
+
+    const result = await service.obtenerIngresos('dia', 11);
+
+    expect(result).toEqual([]);
   });
 });
