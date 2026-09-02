@@ -16,14 +16,14 @@ import { ModuleKey, TenantEstado, TipoNegocio } from '@prisma/client';
 export class CreateTenantDto {
   @IsNotEmpty()
   @IsString()
-  nombre: string;
+  nombre!: string;
 
   @IsOptional()
   @IsString()
   slug?: string;
 
   @IsEnum(TipoNegocio)
-  tipoNegocio: TipoNegocio;
+  tipoNegocio!: TipoNegocio;
 
   @IsOptional()
   @IsEnum(TenantEstado)

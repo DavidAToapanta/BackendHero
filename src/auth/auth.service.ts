@@ -40,6 +40,12 @@ type ContextSelectionResponse = {
   contexts: AvailableAuthContext[];
 };
 
+type AuthenticatedContextResponse = {
+  access_token: string;
+  tenantId: number;
+  tenantNombre: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -137,7 +143,7 @@ export class AuthService {
     cedula: string,
     password: string,
     accessMode: AuthAccessMode = 'PLATFORM',
-  ): Promise<{ access_token: string } | ContextSelectionResponse> {
+  ): Promise<AuthenticatedContextResponse | ContextSelectionResponse> {
     const usuario = await this.loginBase(cedula, password);
     const contexts = await this.buildAvailableContexts(usuario.id);
 
@@ -414,10 +420,13 @@ export class AuthService {
             ? 'CLIENTE'
             : this.mapTenantRoleToLegacyRole(context.tenantRole),
         tenantId: context.tenantId,
+        tenantNombre: context.tenantNombre,
         clienteId: context.clienteId,
         tenantRole: context.tenantRole,
         accessMode,
       }),
+      tenantId: context.tenantId,
+      tenantNombre: context.tenantNombre,
     };
   }
 

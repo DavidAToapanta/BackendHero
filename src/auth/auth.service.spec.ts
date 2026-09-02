@@ -92,7 +92,11 @@ describe('AuthService', () => {
     jest.spyOn(bcrypt, 'hash').mockResolvedValue('hash-owner' as never);
     const loginSpy = jest
       .spyOn(service, 'login')
-      .mockResolvedValue({ access_token: 'owner-token' });
+      .mockResolvedValue({
+        access_token: 'owner-token',
+        tenantId: 202,
+        tenantNombre: 'Gym Central',
+      });
 
     const result = await service.registerOwner({
       cedula: ' 0102030405 ',
@@ -152,7 +156,11 @@ describe('AuthService', () => {
       },
     });
     expect(loginSpy).toHaveBeenCalledWith('0102030405', '123456');
-    expect(result).toEqual({ access_token: 'owner-token' });
+    expect(result).toEqual({
+      access_token: 'owner-token',
+      tenantId: 202,
+      tenantNombre: 'Gym Central',
+    });
   });
 
   it('devuelve token directo cuando solo existe un contexto cliente', async () => {
@@ -182,11 +190,16 @@ describe('AuthService', () => {
         rol: 'CLIENTE',
         clienteId: 55,
         tenantId: 1,
+        tenantNombre: 'Gym Norte',
         tenantRole: null,
         accessMode: 'PLATFORM',
       }),
     );
-    expect(result).toEqual({ access_token: 'final-token' });
+    expect(result).toEqual({
+      access_token: 'final-token',
+      tenantId: 1,
+      tenantNombre: 'Gym Norte',
+    });
   });
 
   it('devuelve token directo en ASISTENCIA cuando el contexto unico lo permite', async () => {
@@ -216,11 +229,16 @@ describe('AuthService', () => {
         rol: 'CLIENTE',
         clienteId: 56,
         tenantId: 2,
+        tenantNombre: 'Gym Asistencia',
         tenantRole: null,
         accessMode: 'ASISTENCIA',
       }),
     );
-    expect(result).toEqual({ access_token: 'final-token' });
+    expect(result).toEqual({
+      access_token: 'final-token',
+      tenantId: 2,
+      tenantNombre: 'Gym Asistencia',
+    });
   });
 
   it('devuelve token directo cuando solo existe un contexto staff', async () => {
@@ -250,11 +268,16 @@ describe('AuthService', () => {
         rol: 'RECEPCIONISTA',
         clienteId: null,
         tenantId: 99,
+        tenantNombre: 'Gym Centro',
         tenantRole: TenantRole.RECEPCIONISTA,
         accessMode: 'PLATFORM',
       }),
     );
-    expect(result).toEqual({ access_token: 'final-token' });
+    expect(result).toEqual({
+      access_token: 'final-token',
+      tenantId: 99,
+      tenantNombre: 'Gym Centro',
+    });
   });
 
   it('rechaza ASISTENCIA cuando el contexto unico no lo permite', async () => {
@@ -373,11 +396,16 @@ describe('AuthService', () => {
         rol: 'CLIENTE',
         clienteId: 91,
         tenantId: 7,
+        tenantNombre: 'Gym Contexto',
         tenantRole: null,
         accessMode: 'ASISTENCIA',
       }),
     );
-    expect(result).toEqual({ access_token: 'final-token' });
+    expect(result).toEqual({
+      access_token: 'final-token',
+      tenantId: 7,
+      tenantNombre: 'Gym Contexto',
+    });
   });
 
   it('select-context emite token para staff usando TenantRole como fuente de verdad', async () => {
@@ -415,11 +443,16 @@ describe('AuthService', () => {
         rol: 'RECEPCIONISTA',
         clienteId: null,
         tenantId: 12,
+        tenantNombre: 'Gym Staff',
         tenantRole: TenantRole.RECEPCIONISTA,
         accessMode: 'ASISTENCIA',
       }),
     );
-    expect(result).toEqual({ access_token: 'final-token' });
+    expect(result).toEqual({
+      access_token: 'final-token',
+      tenantId: 12,
+      tenantNombre: 'Gym Staff',
+    });
   });
 
   it('rechaza seleccionar un contexto que no pertenece al usuario', async () => {

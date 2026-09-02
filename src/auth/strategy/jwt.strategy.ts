@@ -21,6 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     rol: string;
     clienteId?: number | null;
     tenantId?: number | null;
+    tenantNombre?: string | null;
     tenantRole?: string | null;
     accessMode?: AuthAccessMode | null;
   }) {
@@ -32,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       rol: payload.rol,
       clienteId: payload.clienteId,
       tenantId: payload.tenantId,
+      tenantNombre: payload.tenantNombre,
       tenantRole: payload.tenantRole,
       accessMode: payload.accessMode,
     };
