@@ -1,0 +1,6 @@
+# Keep the active baseline identical across Windows and Linux checkouts.
+prisma/migrations/0_init/migration.sql text eol=lf
+prisma/schema.prisma text eol=lf
+
+# Archived migrations are byte-preserved audit artifacts with recorded hashes.
+prisma/migrations_legacy/** -text

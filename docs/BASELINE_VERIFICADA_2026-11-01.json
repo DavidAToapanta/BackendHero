@@ -1,0 +1,154 @@
+{
+  "baselineSha256": "a274f57ca36b0d7ce43d0f22397241fb08cf7770abc13dda38c0cb0492a47413",
+  "schemaSha256": "699c4854d0e092511d62c5c70ee98bfa43d5b724f0c29be78429b82374aca8fb",
+  "structureDigest": "404a50003ecd732c34597770f6abe532aa65508f05b2f8ce91daaf29bacfb592",
+  "expectedLegacyHistory": [
+    {
+      "migration_name": "20250621230910_init",
+      "checksum": "502b68cbd6440c799337319140ccb1c7f9a2fb773a99a8471511572cfae6830c",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20250713002150_update_observaciones_type",
+      "checksum": "01d4ddb43f7507388b16377e11e982b50cc5487ff30e6bd74ba9ed1edd775af8",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20250803185744_add_gasto_with_user_relation",
+      "checksum": "ee2f5dfe314b2bd39f3987cdcb0547413ae5d209dca0a4a3c318772237fc6208",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20250803204945_add_gasto_with_user_relation",
+      "checksum": "b217eeb56f8c3a4f264025034fd15411626d6c787df6699407db608202720761",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20251109031629_cliente_id_equals_usuario_id",
+      "checksum": "dda069b6f71624ea237fbd266eab9bc22f62bb5cf9372144cc0072b8d954b003",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20251202033109_asistencia",
+      "checksum": "122d743a0403e77ad7e0ed9447f5b8826f2fbdbc55612d936eff004dd13c2eec",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20251202042826_agregar_asistencia_bien",
+      "checksum": "d6cf12e84af25efef4a4f83a972d9312f4c2ffaeaac9eb05207d8e54e62300ff",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20251215035438_add_factura",
+      "checksum": "3488f7cfa264ed4cafced94364db3036122959fb34a84bd0d79634627668c1df",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260105170355_add_plan_duration_unit",
+      "checksum": "56b4382e203999bb32b5cd7bcac75b9b637e8ce90fb8edcd67236076a96f9ce0",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260309110000_add_devoluciones_parciales",
+      "checksum": "99f6979e834d6b0ebfafc6a7b94d2e99448bee58a0f4f20c929c9ddc11901116",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260314113000_saas_base_phase_1",
+      "checksum": "5f53719a818c019817c6695962c8bcfdc1ccbd0682fd82c3f106dcef31d891cf",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260314224500_stabilize_identity_guards",
+      "checksum": "55f3e8268cd8302b95a1ef74f69a35e0b3520f464024f930d55f85a58ef06e6c",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260314233000_add_tenant_to_financial_core",
+      "checksum": "6ae02ff3ef4f64d749942acc4a604b0b06ce2b9089e07f19e89f1b494994ff79",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260314234000_enforce_tenant_financial_core",
+      "checksum": "d2fd895161f6590bf8038ca7472821505116dda7860fea46dfdcc8048e802747",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260315000500_add_tenant_to_gym_secondary",
+      "checksum": "394ab76d46d4e9f8dc2a26f8489dd7c600a38dba292bced963486b526f051b4c",
+      "completed": false,
+      "reverted": true
+    },
+    {
+      "migration_name": "20260315000500_add_tenant_to_gym_secondary",
+      "checksum": "394ab76d46d4e9f8dc2a26f8489dd7c600a38dba292bced963486b526f051b4c",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260315001000_enforce_tenant_gym_secondary",
+      "checksum": "f11bb60f9eac17895099125b331d55ee22d5c49e3d1d5587e2f7d39297a66174",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260315010000_add_tenant_to_phase_3_blocks",
+      "checksum": "214a3edabbae52ecbfc9921c114b373777c6b72eddac6e2d91e3313cb1c7c40c",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260315011000_enforce_tenant_phase_3_blocks",
+      "checksum": "340e14b553594282329d9840043075464e3cd1897955ad96a7f67b9e9ac9620b",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260404120000_cliente_multigym_phase_2",
+      "checksum": "61fe69664d764ded6904dbbf0ca6f78d86e72b54d6256711d54059536fcd3635",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260404170000_add_staff_profile_tenant_aware",
+      "checksum": "bf93865a087542164f4927acfb322a4e7d4984dfeceeb7c12a993d76f84667ea",
+      "completed": false,
+      "reverted": true
+    },
+    {
+      "migration_name": "20260404170000_add_staff_profile_tenant_aware",
+      "checksum": "bf93865a087542164f4927acfb322a4e7d4984dfeceeb7c12a993d76f84667ea",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260406120000_add_ingreso_rapido",
+      "checksum": "93d879a54b4f5016b90cf4df8306aab8b5768615a1205b854719ac9659fc9e01",
+      "completed": true,
+      "reverted": false
+    },
+    {
+      "migration_name": "20260409120000_add_zkbio_bridge_sync",
+      "checksum": "57a2f6d02be784b0805e83b52468e571cd497ea5c1b936019b545f00df3c86f9",
+      "completed": true,
+      "reverted": false
+    }
+  ],
+  "sourceDatabase": "SistemaGym",
+  "sourceVersion": "18.6",
+  "schemaHashNormalization": "LF"
+}

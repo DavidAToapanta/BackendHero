@@ -2,3 +2,9 @@ node_modules
 dist
 npm-debug.log
 .git
+.tmp
+.temp
+.env
+.env.*
+*.dump
+*.backup

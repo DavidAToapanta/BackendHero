@@ -47,6 +47,10 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Database backups must stay local, including outside temporary directories.
+*.dump
+*.backup
+
 # Runtime data
 pids
 *.pid

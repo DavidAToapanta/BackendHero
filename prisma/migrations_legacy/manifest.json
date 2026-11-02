@@ -1,0 +1,125 @@
+{
+  "baselineSha256": "a274f57ca36b0d7ce43d0f22397241fb08cf7770abc13dda38c0cb0492a47413",
+  "files": [
+    {
+      "path": "20250621230910_init/migration.sql",
+      "sha256": "502b68cbd6440c799337319140ccb1c7f9a2fb773a99a8471511572cfae6830c"
+    },
+    {
+      "path": "20250713002150_update_observaciones_type/migration.sql",
+      "sha256": "01d4ddb43f7507388b16377e11e982b50cc5487ff30e6bd74ba9ed1edd775af8"
+    },
+    {
+      "path": "20250803185744_add_gasto_with_user_relation/migration.sql",
+      "sha256": "ee2f5dfe314b2bd39f3987cdcb0547413ae5d209dca0a4a3c318772237fc6208"
+    },
+    {
+      "path": "20250803204945_add_gasto_with_user_relation/migration.sql",
+      "sha256": "b217eeb56f8c3a4f264025034fd15411626d6c787df6699407db608202720761"
+    },
+    {
+      "path": "20251109031629_cliente_id_equals_usuario_id/migration.sql",
+      "sha256": "dda069b6f71624ea237fbd266eab9bc22f62bb5cf9372144cc0072b8d954b003"
+    },
+    {
+      "path": "20251202033109_asistencia/migration.sql",
+      "sha256": "122d743a0403e77ad7e0ed9447f5b8826f2fbdbc55612d936eff004dd13c2eec"
+    },
+    {
+      "path": "20251202042826_agregar_asistencia_bien/migration.sql",
+      "sha256": "d6cf12e84af25efef4a4f83a972d9312f4c2ffaeaac9eb05207d8e54e62300ff"
+    },
+    {
+      "path": "20251215035438_add_factura/migration.sql",
+      "sha256": "3488f7cfa264ed4cafced94364db3036122959fb34a84bd0d79634627668c1df"
+    },
+    {
+      "path": "20260105170355_add_plan_duration_unit/migration.sql",
+      "sha256": "56b4382e203999bb32b5cd7bcac75b9b637e8ce90fb8edcd67236076a96f9ce0"
+    },
+    {
+      "path": "20260309110000_add_devoluciones_parciales/migration.sql",
+      "sha256": "99f6979e834d6b0ebfafc6a7b94d2e99448bee58a0f4f20c929c9ddc11901116"
+    },
+    {
+      "path": "20260314113000_saas_base_phase_1/migration.sql",
+      "sha256": "5f53719a818c019817c6695962c8bcfdc1ccbd0682fd82c3f106dcef31d891cf"
+    },
+    {
+      "path": "20260314224500_stabilize_identity_guards/migration.sql",
+      "sha256": "55f3e8268cd8302b95a1ef74f69a35e0b3520f464024f930d55f85a58ef06e6c"
+    },
+    {
+      "path": "20260314233000_add_tenant_to_financial_core/migration.sql",
+      "sha256": "6ae02ff3ef4f64d749942acc4a604b0b06ce2b9089e07f19e89f1b494994ff79"
+    },
+    {
+      "path": "20260314234000_enforce_tenant_financial_core/migration.sql",
+      "sha256": "d2fd895161f6590bf8038ca7472821505116dda7860fea46dfdcc8048e802747"
+    },
+    {
+      "path": "20260315000500_add_tenant_to_gym_secondary/migration.sql",
+      "sha256": "5ce605150526ad3f953802199610fc8f19ac02308051fbb0d18a9b9854ba79c2"
+    },
+    {
+      "path": "20260315001000_enforce_tenant_gym_secondary/migration.sql",
+      "sha256": "5cd6e4b379e095c5f1ea58aefe249e0a6a6dbd51c4f192c7e1ccfa5143743742"
+    },
+    {
+      "path": "20260315010000_add_tenant_to_phase_3_blocks/migration.sql",
+      "sha256": "214a3edabbae52ecbfc9921c114b373777c6b72eddac6e2d91e3313cb1c7c40c"
+    },
+    {
+      "path": "20260315011000_enforce_tenant_phase_3_blocks/migration.sql",
+      "sha256": "340e14b553594282329d9840043075464e3cd1897955ad96a7f67b9e9ac9620b"
+    },
+    {
+      "path": "20260404120000_cliente_multigym_phase_2/migration.sql",
+      "sha256": "61fe69664d764ded6904dbbf0ca6f78d86e72b54d6256711d54059536fcd3635"
+    },
+    {
+      "path": "20260404170000_add_staff_profile_tenant_aware/migration.sql",
+      "sha256": "bf93865a087542164f4927acfb322a4e7d4984dfeceeb7c12a993d76f84667ea"
+    },
+    {
+      "path": "20260406120000_add_ingreso_rapido/migration.sql",
+      "sha256": "93d879a54b4f5016b90cf4df8306aab8b5768615a1205b854719ac9659fc9e01"
+    },
+    {
+      "path": "20260409120000_add_zkbio_bridge_sync/migration.sql",
+      "sha256": "57a2f6d02be784b0805e83b52468e571cd497ea5c1b936019b545f00df3c86f9"
+    },
+    {
+      "path": "20260604100000_add_cliente_activo/migration.sql",
+      "sha256": "b0a7a818291ef6aaf18e6be1759f7684e5c572c54be5abca381581fd23f4fac6"
+    },
+    {
+      "path": "20260604101000_add_cliente_plan_estado/migration.sql",
+      "sha256": "99a8db182040fe949d508b5e58d821bafd9e7da4cc3e2c492c59628dff8cd72c"
+    },
+    {
+      "path": "20260604102000_sync_training_schema/migration.sql",
+      "sha256": "013e55d27e8f3580807129e7a75aeacb0990b12a00147389bba0887fdf53e078"
+    },
+    {
+      "path": "20260605100000_sync_remaining_schema_drift/migration.sql",
+      "sha256": "01d1c49bd469a8aca33e73e1aa8076ee7fc5b31f0870aa77a496b4014e2f1212"
+    },
+    {
+      "path": "migration_lock.toml",
+      "sha256": "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900"
+    }
+  ],
+  "productionVariants": [
+    {
+      "migration": "20260315000500_add_tenant_to_gym_secondary",
+      "sourceCommit": "5c1bde7e617e9ac79a65296725dee946dd61fb68",
+      "sha256": "394ab76d46d4e9f8dc2a26f8489dd7c600a38dba292bced963486b526f051b4c"
+    },
+    {
+      "migration": "20260315001000_enforce_tenant_gym_secondary",
+      "sourceCommit": "5c1bde7e617e9ac79a65296725dee946dd61fb68",
+      "sha256": "f11bb60f9eac17895099125b331d55ee22d5c49e3d1d5587e2f7d39297a66174"
+    }
+  ]
+}
