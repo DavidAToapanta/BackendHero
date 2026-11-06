@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateIngresoRapidoDto } from './dto/create-ingreso-rapido.dto';
 import { UpdateIngresoRapidoDto } from './dto/update-ingreso-rapido.dto';

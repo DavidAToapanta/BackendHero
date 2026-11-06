@@ -1,6 +1,6 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '@app/seguridad';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { ClienteController } from './cliente.controller';
 import { ClienteService } from './cliente.service';

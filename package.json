@@ -7,12 +7,12 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --write \"apps/gym-api/src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/apps/gym-api/main",
-    "lint": "eslint \"apps/gym-api/src/**/*.ts\" \"test/**/*.ts\" --fix",
+    "start:prod": "node dist/apps/gym-api/src/main",
+    "lint": "eslint \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"test/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -79,18 +79,27 @@
       "json",
       "ts"
     ],
-    "rootDir": "apps/gym-api/src",
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/apps/gym-api/src",
+      "<rootDir>/libs/prisma/src",
+      "<rootDir>/libs/seguridad/src"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "apps/gym-api/src/**/*.(t|j)s",
+      "libs/prisma/src/**/*.(t|j)s",
+      "libs/seguridad/src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../../../coverage",
+    "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
-      "^src/(.*)$": "<rootDir>/$1"
+      "^src/(.*)$": "<rootDir>/apps/gym-api/src/$1",
+      "^@app/prisma$": "<rootDir>/libs/prisma/src",
+      "^@app/seguridad$": "<rootDir>/libs/seguridad/src"
     }
   }
 }

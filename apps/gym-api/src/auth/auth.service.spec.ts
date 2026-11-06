@@ -9,7 +9,7 @@ import {
   UserTenantEstado,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { AuthService } from './auth.service';
 
 const makePrisma = () => ({
@@ -358,6 +358,34 @@ describe('AuthService', () => {
         },
       ],
     });
+  });
+
+  it('conserva diez minutos al emitir el token de seleccion de contexto', async () => {
+    prisma.usuario.findUnique.mockResolvedValue({
+      id: 40,
+      cedula: '1231231231',
+      userName: 'multi.context',
+      email: 'multi@gym.test',
+      password: 'hash',
+    });
+    prisma.cliente.findMany.mockResolvedValue([
+      { id: 88, tenantId: 7, tenant: { nombre: 'Gym Sur' } },
+    ]);
+    prisma.userTenant.findMany.mockResolvedValue([
+      {
+        tenantId: 9,
+        role: TenantRole.ADMIN,
+        tenant: { nombre: 'Gym Oeste' },
+      },
+    ]);
+    jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+    await service.login('1231231231', 'abcd', 'ASISTENCIA');
+
+    expect(jwtService.sign).toHaveBeenCalledWith(
+      { sub: 40, tokenType: 'CONTEXT_SELECTION' },
+      { expiresIn: '10m' },
+    );
   });
 
   it('select-context emite token para un contexto cliente valido', async () => {

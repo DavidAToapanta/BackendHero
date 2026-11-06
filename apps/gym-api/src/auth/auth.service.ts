@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { CONTEXT_SELECTION_TOKEN_EXPIRES_IN } from '@app/seguridad';
 import {
   ModuleKey,
   Prisma,
@@ -13,7 +14,7 @@ import {
   UserTenantEstado,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { RegisterDto } from './dto/register.dto';
 import { SelectContextDto } from './dto/select-context.dto';
 import {
@@ -343,7 +344,7 @@ export class AuthService {
         sub: usuarioId,
         tokenType: 'CONTEXT_SELECTION',
       } satisfies ContextSelectionTokenPayload,
-      { expiresIn: '10m' },
+      { expiresIn: CONTEXT_SELECTION_TOKEN_EXPIRES_IN },
     );
   }
 

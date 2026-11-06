@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { addDays } from 'date-fns';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 
 @Injectable()
 export class NotificationsService {

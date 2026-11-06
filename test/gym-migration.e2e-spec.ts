@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../apps/gym-api/src/app.module';
-import { PrismaService } from '../apps/gym-api/src/prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 
 // Solo se habilita expresamente sobre una copia local de ensayo. Nunca siembra
 // hero_gym_dev ni una base de produccion al ejecutar test:e2e normalmente.

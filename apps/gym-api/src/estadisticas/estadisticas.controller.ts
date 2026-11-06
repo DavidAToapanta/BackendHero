@@ -1,9 +1,9 @@
 import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
 import { EstadisticasService } from './estadisticas.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '@app/seguridad';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles, Role } from '../auth/decorators/roles.decorator';
-import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
+import { getTenantIdOrThrow } from '@app/seguridad';
 
 @Controller('estadisticas')
 @UseGuards(JwtAuthGuard, RolesGuard)

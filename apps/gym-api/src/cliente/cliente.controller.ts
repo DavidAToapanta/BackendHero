@@ -11,10 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '@app/seguridad';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Role, Roles } from '../auth/decorators/roles.decorator';
-import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
+import { getTenantIdOrThrow } from '@app/seguridad';
 import { ClienteService } from './cliente.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { LinkZkbioPersonDto } from './dto/link-zkbio-person.dto';

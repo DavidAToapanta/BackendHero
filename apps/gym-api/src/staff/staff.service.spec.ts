@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { TenantRole, UserTenantEstado } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { StaffService } from './staff.service';
 import * as bcrypt from 'bcrypt';
 

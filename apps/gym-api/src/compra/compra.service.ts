@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Compra, Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateCompraDto } from './dto/create-compra.dto';
 

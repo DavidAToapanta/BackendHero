@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PagoService } from './pago.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { FacturaService } from '../factura/factura.service';
 
 const makeTx = () => ({

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { OrigenAsistencia, Prisma, SaasPlan } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 
 type BiometricAttendanceStatus =

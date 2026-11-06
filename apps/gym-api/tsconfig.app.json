@@ -1,8 +1,8 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src",
-    "outDir": "../../dist/apps/gym-api",
+    "rootDir": "../..",
+    "outDir": "../../dist",
     "tsBuildInfoFile": "../../dist/apps/gym-api/tsconfig.app.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],

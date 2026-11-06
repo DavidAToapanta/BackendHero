@@ -6,6 +6,19 @@ export type AuthContextType = (typeof AUTH_CONTEXT_TYPES)[number];
 export const AUTH_ACCESS_MODES = ['PLATFORM', 'ASISTENCIA'] as const;
 export type AuthAccessMode = (typeof AUTH_ACCESS_MODES)[number];
 
+export type GymJwtPayload = {
+  sub: number;
+  email?: string | null;
+  userName?: string | null;
+  cedula?: string | null;
+  rol: string;
+  clienteId?: number | null;
+  tenantId?: number | null;
+  tenantNombre?: string | null;
+  tenantRole?: string | null;
+  accessMode?: AuthAccessMode | null;
+};
+
 export type ClienteAuthContext = {
   type: 'CLIENTE';
   tenantId: number;

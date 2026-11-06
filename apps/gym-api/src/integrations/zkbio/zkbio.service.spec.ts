@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ZkbioService } from './zkbio.service';
 import { AsistenciaService } from '../../asistencia/asistencia.service';
 import { SyncZkbioDto } from './dto/sync-zkbio.dto';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 
 const makeAsistenciaService = () => ({
   registrarAsistenciaBiometrica: jest.fn(),

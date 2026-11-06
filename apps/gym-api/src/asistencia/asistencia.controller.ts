@@ -9,10 +9,10 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '@app/seguridad';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Role, Roles } from '../auth/decorators/roles.decorator';
-import { getTenantIdOrThrow } from '../tenant/tenant-context.util';
+import { getTenantIdOrThrow } from '@app/seguridad';
 import { AsistenciaService } from './asistencia.service';
 import { CreateAsistenciaDto } from './dto/create-asistencia.dto';
 import { MarcarAsistenciaDto } from './dto/marcar-asistencia.dto';

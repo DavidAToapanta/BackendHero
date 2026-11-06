@@ -1,18 +1,20 @@
-# Librerías compartidas futuras
+# Librerías
 
-Esta carpeta reserva espacios para código reutilizable por `gym-api` y
-`tienda-api`. Actualmente solo contiene documentación; el código del gimnasio
-permanece íntegro en `apps/gym-api/src/` y todavía no se ha extraído a librerías.
+Esta carpeta contiene las librerías Prisma y seguridad técnica utilizadas por
+`gym-api`, además de espacios documentales para futuras extracciones.
+`tienda-api` todavía no tiene implementación.
 
 | Carpeta | Propósito previsto |
 | --- | --- |
-| [seguridad](./seguridad/README.md) | Elementos comunes de autenticación y contexto del negocio. |
+| [prisma](./prisma/README.md) | Implementada: módulo y cliente de conexión a PostgreSQL mediante `@app/prisma`. |
+| [seguridad](./seguridad/README.md) | Implementada: contexto autenticado, guard JWT, configuración y estrategia técnica base mediante `@app/seguridad`. Identidad y gestión de negocios siguen pendientes. |
 | [contratos](./contratos/README.md) | Interfaces y tipos de comunicación explícitos. |
 | [utilidades](./utilidades/README.md) | Funciones generales con comportamiento común. |
 | [facturacion](./facturacion/README.md) | Espacio para evaluar la lógica de facturación reutilizable. |
 
-Una librería futura se incorporará en cada aplicación que la utilice y se
-ejecutará dentro de su proceso. No será un servicio con servidor propio.
+Una librería se incorpora en cada aplicación que la utiliza y se ejecuta dentro
+de su proceso. No es un servicio con servidor propio. La dependencia va desde
+la aplicación a la librería; una librería no debe importar código de `gym-api`.
 
 Se compartirá código cuando coincidan sus reglas y significado para ambos
 negocios. La ubicación definitiva de cada módulo se decidirá después de revisar

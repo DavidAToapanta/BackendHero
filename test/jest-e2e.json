@@ -4,7 +4,9 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "moduleNameMapper": {
-    "^src/(.*)$": "<rootDir>/../apps/gym-api/src/$1"
+    "^src/(.*)$": "<rootDir>/../apps/gym-api/src/$1",
+    "^@app/prisma$": "<rootDir>/../libs/prisma/src",
+    "^@app/seguridad$": "<rootDir>/../libs/seguridad/src"
   },
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"

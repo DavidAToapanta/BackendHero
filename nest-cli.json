@@ -19,6 +19,26 @@
       "compilerOptions": {
         "tsConfigPath": "apps/gym-api/tsconfig.app.json"
       }
+    },
+    "seguridad": {
+      "type": "library",
+      "root": "libs/seguridad",
+      "entryFile": "index",
+      "sourceRoot": "libs/seguridad/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/seguridad/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
+    "prisma": {
+      "type": "library",
+      "root": "libs/prisma",
+      "entryFile": "index",
+      "sourceRoot": "libs/prisma/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/prisma/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
     }
   }
 }

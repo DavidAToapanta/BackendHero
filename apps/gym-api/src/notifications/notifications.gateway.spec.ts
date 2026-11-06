@@ -1,7 +1,10 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Namespace } from 'socket.io';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsService } from './notifications.service';
+
+type GatewayClient = Parameters<NotificationsGateway['handleConnection']>[0];
 
 const notificationsPayload = [
   {
@@ -104,6 +107,103 @@ describe('NotificationsGateway', () => {
       notificationsPayload,
     );
     expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('prefiere el tenant del JWT sobre el tenant recibido en el handshake', async () => {
+    const { namespace } = makeNamespace();
+    const client = makeClient({
+      handshake: {
+        auth: { token: 'Bearer token', tenantId: 15 },
+        query: { tenantId: 20 },
+        headers: {},
+      },
+    });
+    gateway.server = namespace as unknown as Namespace;
+    jwtService.verify.mockReturnValue({ tenantId: 9 });
+    notificationsService.getCurrentNotifications.mockResolvedValue(
+      notificationsPayload,
+    );
+
+    await gateway.handleConnection(client as unknown as GatewayClient);
+
+    expect(client.join).toHaveBeenCalledWith('tenant:9');
+    expect(notificationsService.getCurrentNotifications).toHaveBeenCalledWith(
+      9,
+    );
+  });
+
+  it.each([
+    { auth: { token: 'token' }, query: {}, headers: {} },
+    {
+      auth: {},
+      query: {},
+      headers: { authorization: 'Bearer token' },
+    },
+  ])('conserva los formatos de token del socket: %j', async (handshake) => {
+    const { namespace } = makeNamespace();
+    const client = makeClient({ handshake });
+    gateway.server = namespace as unknown as Namespace;
+    jwtService.verify.mockReturnValue({ tenantId: 9 });
+    notificationsService.getCurrentNotifications.mockResolvedValue(
+      notificationsPayload,
+    );
+
+    await gateway.handleConnection(client as unknown as GatewayClient);
+
+    expect(jwtService.verify).toHaveBeenCalledWith('token', expect.any(Object));
+    expect(client.join).toHaveBeenCalledWith('tenant:9');
+  });
+
+  it.each([
+    { auth: { tenantId: 9 }, query: {}, headers: {} },
+    { auth: {}, query: { tenantId: '9' }, headers: {} },
+  ])('conserva el fallback sin JWT: %j', async (handshake) => {
+    const { namespace } = makeNamespace();
+    const client = makeClient({ handshake });
+    gateway.server = namespace as unknown as Namespace;
+    notificationsService.getCurrentNotifications.mockResolvedValue(
+      notificationsPayload,
+    );
+
+    await gateway.handleConnection(client as unknown as GatewayClient);
+
+    expect(jwtService.verify).not.toHaveBeenCalled();
+    expect(client.join).toHaveBeenCalledWith('tenant:9');
+  });
+
+  it('conserva el fallback del handshake cuando falla la verificacion JWT', async () => {
+    const { namespace } = makeNamespace();
+    const client = makeClient({
+      handshake: {
+        auth: { token: 'Bearer invalido', tenantId: 9 },
+        query: {},
+        headers: {},
+      },
+    });
+    gateway.server = namespace as unknown as Namespace;
+    jwtService.verify.mockImplementation(() => {
+      throw new Error('Token invalido o vencido');
+    });
+    notificationsService.getCurrentNotifications.mockResolvedValue(
+      notificationsPayload,
+    );
+
+    await gateway.handleConnection(client as unknown as GatewayClient);
+
+    expect(client.join).toHaveBeenCalledWith('tenant:9');
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('desconecta el socket si no hay JWT verificable ni tenant de compatibilidad', async () => {
+    const client = makeClient();
+    jwtService.verify.mockImplementation(() => {
+      throw new Error('Token invalido');
+    });
+
+    await gateway.handleConnection(client as unknown as GatewayClient);
+
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(notificationsService.getCurrentNotifications).not.toHaveBeenCalled();
   });
 
   it('solo limpia snapshot cuando el tenant room ya no existe', () => {

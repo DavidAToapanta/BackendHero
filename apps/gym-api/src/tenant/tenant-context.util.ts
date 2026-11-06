@@ -1,21 +1,5 @@
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-
-type TenantAwareUser = {
-  tenantId?: number | null;
-};
-
-export function getTenantIdOrThrow(user?: TenantAwareUser) {
-  const tenantId = Number(user?.tenantId);
-
-  if (!tenantId || Number.isNaN(tenantId)) {
-    throw new UnauthorizedException(
-      'No se pudo resolver el tenant del usuario',
-    );
-  }
-
-  return tenantId;
-}
+import { NotFoundException } from '@nestjs/common';
+import { PrismaService } from '@app/prisma';
 
 export async function resolveTenantIdOrDefault(
   prisma: PrismaService,

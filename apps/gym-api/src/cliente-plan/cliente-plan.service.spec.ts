@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { FacturaService } from 'src/factura/factura.service';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { ClientePlanService } from './cliente-plan.service';
 
 const makePlanActivo = (overrides: Partial<any> = {}) => ({

@@ -10,7 +10,9 @@
     "sourceMap": true,
     "outDir": "./dist",
     "paths": {
-      "src/*": ["./apps/gym-api/src/*"]
+      "src/*": ["./apps/gym-api/src/*"],
+      "@app/prisma": ["./libs/prisma/src"],
+      "@app/seguridad": ["./libs/seguridad/src"]
     },
     "incremental": true,
     "skipLibCheck": true,

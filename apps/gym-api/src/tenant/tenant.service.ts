@@ -14,7 +14,7 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateSaasPlanDto } from './dto/update-saas-plan.dto';
 

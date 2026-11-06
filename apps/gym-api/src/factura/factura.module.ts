@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FacturaService } from './factura.service';
 import { FacturaController } from './factura.controller';
-import { PrismaModule } from 'src/prisma/prisma.module';
+import { PrismaModule } from '@app/prisma';
 
 @Module({
   imports: [PrismaModule],

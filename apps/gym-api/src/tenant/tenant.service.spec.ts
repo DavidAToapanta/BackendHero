@@ -1,7 +1,7 @@
 import * as bcrypt from 'bcrypt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ModuleKey, SaasPlan, TenantRole, TipoNegocio } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { TenantService } from './tenant.service';
 
 const makePrisma = () => ({

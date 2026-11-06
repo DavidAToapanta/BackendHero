@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import * as bcrypt from 'bcrypt';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateClienteDto } from './dto/create-cliente.dto';

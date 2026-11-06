@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AsistenciaService } from '../../asistencia/asistencia.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { SyncZkbioDto, ZkbioEventDto } from './dto/sync-zkbio.dto';
 
 @Injectable()

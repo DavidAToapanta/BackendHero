@@ -4,14 +4,17 @@ import { AuthController } from './auth.controller';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategy/jwt.strategy';
+import {
+  ACCESS_TOKEN_EXPIRES_IN,
+  createJwtModuleOptions,
+} from '@app/seguridad';
 
 @Module({
   imports: [
     PassportModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'supersecret',
-      signOptions: { expiresIn: '1d' }, // Token expiration time
-    }),
+    JwtModule.register(
+      createJwtModuleOptions({ expiresIn: ACCESS_TOKEN_EXPIRES_IN }),
+    ),
   ],
 
   providers: [AuthService, JwtStrategy],

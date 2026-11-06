@@ -7,8 +7,10 @@ activa: `gym-api`. El backend completo del gimnasio se trasladó a esa aplicaci�
 conservando el contenido de sus archivos fuente y sus reglas de negocio.
 
 Los puntos de entrada son `apps/gym-api/src/main.ts` y
-`apps/gym-api/src/app.module.ts`. `tienda-api` y `libs/*` continúan siendo espacios
-documentales; todavía no tienen servicios implementados ni despliegues propios.
+`apps/gym-api/src/app.module.ts`. La infraestructura de conexión Prisma está en
+`libs/prisma/src/` y la seguridad técnica común en `libs/seguridad/src/`.
+`tienda-api` y las otras librerías continúan siendo espacios documentales;
+todavía no tienen servicios implementados ni despliegues propios.
 
 ## Organización actual
 
@@ -24,7 +26,13 @@ BackendHero/
 │       └── README.md            Espacio futuro para tiendas
 ├── libs/
 │   ├── README.md
+│   ├── prisma/
+│   │   ├── src/                 Módulo y cliente de conexión
+│   │   ├── tsconfig.lib.json
+│   │   └── README.md
 │   ├── seguridad/
+│   │   ├── src/                 Contexto, guard y configuración JWT
+│   │   ├── tsconfig.lib.json
 │   │   └── README.md
 │   ├── contratos/
 │   │   └── README.md
@@ -45,21 +53,42 @@ Los comandos existentes se ejecutan desde la raíz: `npm run start`,
 acepta explícitamente con `npx nest build gym-api` y `npx nest start gym-api`.
 
 La compilación usa `apps/gym-api/tsconfig.app.json` y genera
-`dist/apps/gym-api/main.js`. El arranque de producción y Docker apuntan a ese
+`dist/apps/gym-api/src/main.js`. El arranque de producción y Docker apuntan a ese
 archivo. `tsconfig.build.json` conserva un acceso a la configuración de compilación
 desde la raíz. Las pruebas unitarias siguen junto al código; las pruebas e2e
-permanecen en `test/`.
+permanecen en `test/`. Las pruebas unitarias también incluyen `libs/prisma/src/`.
 
 El alias interno `src/*` apunta ahora a `apps/gym-api/src/*`. Su conservación
 permite trasladar el código sin reescribir sus imports; Jest utiliza la misma
 correspondencia y Nest transforma esos imports en la compilación.
+
+`@app/prisma` es la entrada pública de la librería de conexión. Todos sus
+consumidores usan ese alias y la misma clase `PrismaService`. Se conserva el
+módulo global y sus hooks de conexión y desconexión. La librería no contiene
+reglas del gimnasio ni depende de `apps/`.
+
+TypeScript compila las fuentes de la aplicación y sus librerías conservando su
+estructura desde la raíz del repositorio bajo `dist/`. Esto produce
+`dist/apps/gym-api/src/main.js` y `dist/libs/prisma/src/index.js`. La configuración
+de Jest resuelve los aliases registrados y los comandos de lint/formato incluyen Prisma.
+
+`@app/seguridad` exporta el contexto autenticado, `getTenantIdOrThrow()`,
+`JwtAuthGuard`, configuración común de JWT y una estrategia técnica base.
+Los controladores de Gym consumen ese guard y helper; su estrategia concreta
+conserva el mapeo de `req.user`. Login, selección de contexto, roles y el
+fallback de `gym-principal` permanecen en la aplicación. Se conservan acceso
+de un día, selección de diez minutos y la compatibilidad del socket.
+
+La librería no depende de Gym ni de Prisma. Jest, lint, cobertura y compilación
+incluyen ambas librerías. El informe y la lista de seguimiento del bloque están
+en [INFORME_SEGURIDAD_COMPARTIDA.md](INFORME_SEGURIDAD_COMPARTIDA.md).
 
 Se conservan los métodos y rutas HTTP, entradas, respuestas, paginación y errores.
 También el login y `POST /auth/select-context`, los tokens, roles, aislamiento
 por tenant y namespace WebSocket `notifications`. La reorganización no requiere
 cambios en el frontend ni en la dirección pública del backend.
 
-Prisma, el esquema, las migraciones y los archivos de entorno permanecen en la
+El esquema Prisma, las migraciones y los archivos de entorno permanecen en la
 raíz. Las variables siguen suministrándose al proceso: no se añade carga
 automática de `.env`. No se ejecutan migraciones como parte de este traslado.
 
@@ -94,8 +123,8 @@ En particular, la facturación actual depende de membresías y cambios de plan
 del gimnasio. Su ubicación en `apps/gym-api/src/factura/` se mantiene hasta identificar qué
 reglas pueden compartirse con tiendas.
 
-La implementación de tiendas y la extracción de código común se realizarán en
-cambios posteriores, con verificación de los consumidores afectados.
+La implementación de tiendas y las demás extracciones de código común se
+realizarán en cambios posteriores, con verificación de los consumidores afectados.
 
 ## Verificación de esta entrega
 
@@ -128,3 +157,36 @@ flujos del frontend con datos reales requieren el PostgreSQL configurado disponi
   antes del traslado. El motor Docker tampoco estuvo disponible durante la
   verificación. Esto impidió probar el recorrido completo del frontend y el
   arranque de producción con esa base.
+
+### Extracción de Prisma a librería (2026-11-06)
+
+- `PrismaModule` y `PrismaService` se trasladaron a `libs/prisma/src/` sin cambiar
+  su contenido. Los consumidores importan ambos desde `@app/prisma`.
+- Los 165 archivos TypeScript preexistentes conservan su contenido, salvo los
+  imports de Prisma y la ubicación de sus dos archivos. No se cambiaron rutas,
+  DTO ni reglas de negocio.
+- La compilación TypeScript incorpora aplicación y librería bajo `dist/`. El
+  arranque de producción es ahora `dist/apps/gym-api/src/main.js`; los scripts,
+  Docker y la resolución de aliases de Jest se actualizaron juntos.
+- Pasaron 159 pruebas unitarias, incluida la instancia global y los hooks de
+  conexión de Prisma, y 11 pruebas de integración HTTP/WebSocket. La prueba de
+  `AppModule` utilizó PostgreSQL local real; las de contratos usan datos simulados.
+- Compilación de aplicación, compilación independiente de la librería y
+  comprobación TypeScript sin emisión correctas.
+- El ejecutable de producción arrancó con PostgreSQL local, registró 111 rutas,
+  superó ocho comprobaciones HTTP y entregó `notificationsUpdate` por WebSocket.
+  La comprobación utilizó solo lecturas y no sustituyó una revisión manual
+  completa del frontend.
+- ESLint mantiene 391 errores y 79 advertencias preexistentes, con las mismas
+  reglas y ubicaciones. La librería y su prueba no añaden diagnósticos.
+- El esquema, las migraciones, las dependencias y el frontend permanecieron
+  intactos. No se ejecutaron migraciones ni escrituras de datos.
+
+### Seguridad técnica compartida (2026-11-06)
+
+`@app/seguridad` contiene el contexto autenticado, guard, configuración JWT y
+estrategia base. Gym conserva mapeo de usuario, login, selección de contexto,
+roles y fallback legacy. Se verificaron 186 pruebas unitarias, 17 de integración,
+compilación de aplicación/librería y arranque de producción con PostgreSQL local,
+111 rutas y HTTP/WebSocket. El informe y el avance de los bloques están en
+[INFORME_SEGURIDAD_COMPARTIDA.md](INFORME_SEGURIDAD_COMPARTIDA.md).

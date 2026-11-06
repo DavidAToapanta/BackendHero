@@ -2,7 +2,7 @@ import { OrigenAsistencia, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AsistenciaService } from './asistencia.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 
 const makePrisma = () => ({
   tenant: {

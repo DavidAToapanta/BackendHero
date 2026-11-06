@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { getJwtSecret } from '@app/seguridad';
 import { OnModuleDestroy } from '@nestjs/common';
 import {
   OnGatewayConnection,
@@ -153,7 +154,7 @@ export class NotificationsGateway
     if (token) {
       try {
         const payload = this.jwtService.verify(token, {
-          secret: process.env.JWT_SECRET || 'supersecret',
+          secret: getJwtSecret(),
         });
         const verifiedTenantId = Number(payload?.tenantId);
         if (verifiedTenantId && !Number.isNaN(verifiedTenantId)) {

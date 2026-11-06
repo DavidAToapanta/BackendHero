@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DeudaService } from './deuda.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '@app/prisma';
 import { NotFoundException } from '@nestjs/common';
 
 const makePrisma = () => ({
