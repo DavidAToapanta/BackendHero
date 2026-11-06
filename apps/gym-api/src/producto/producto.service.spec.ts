@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductoService } from './producto.service';
 
@@ -75,5 +76,32 @@ describe('ProductoService', () => {
     prisma.producto.findFirst.mockResolvedValue(null);
 
     await expect(service.findOne(5, 9)).rejects.toThrow(NotFoundException);
+  });
+
+  it('conserva precio numerico al serializar un producto Decimal', async () => {
+    prisma.producto.findFirst.mockResolvedValue({
+      id: 5,
+      tenantId: 9,
+      precio: new Prisma.Decimal('1.25'),
+    });
+
+    const producto = await service.findOne(5, 9);
+
+    expect(JSON.parse(JSON.stringify(producto))).toEqual({
+      id: 5,
+      tenantId: 9,
+      precio: 1.25,
+    });
+  });
+
+  it('conserva precio numerico en los listados', async () => {
+    prisma.producto.count.mockResolvedValue(1);
+    prisma.producto.findMany.mockResolvedValue([
+      { id: 5, precio: new Prisma.Decimal('1.25') },
+    ]);
+
+    const resultado = await service.findAll(1, 10, undefined, 9);
+
+    expect(resultado.data[0].precio).toBe(1.25);
   });
 });

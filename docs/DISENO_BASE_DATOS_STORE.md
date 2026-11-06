@@ -529,6 +529,12 @@ autorizadas y sus rangos/zonas; no conceden acceso entre negocios.
 
 ## 16. Implementación y validación por bloques futuros
 
+Actualización de alcance: por indicación del usuario, todos los modelos se
+prepararon juntos en `prisma/schema.prisma`, en una sola etapa. El inventario y
+los resultados están en `ESQUEMA_STORE_IMPLEMENTADO.md`. Los bloques siguientes
+se conservan como mapa de dependencias para migración/activación funcional, no
+como una obligación de preparar el schema en entregas separadas.
+
 | Bloque | Contenido y condición de activación |
 | --- | --- |
 | A | Cliente comercial/vínculo, catálogo/categorías/imágenes, timezone y claves compuestas de soporte. Precio Decimal con revisión de datos y adaptadores legacy antes de usarlo. |

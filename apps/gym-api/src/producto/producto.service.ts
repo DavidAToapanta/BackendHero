@@ -9,6 +9,12 @@ import { UpdateProductoDto } from './dto/update-producto.dto';
 export class ProductoService {
   constructor(private prisma: PrismaService) {}
 
+  // Las rutas existentes siguen entregando precio numerico al frontend GYM.
+  // Los futuros servicios comerciales deben operar con el Decimal original.
+  private toLegacyResponse<T extends { precio: Prisma.Decimal }>(producto: T) {
+    return { ...producto, precio: Number(producto.precio) };
+  }
+
   private async getScopedTenantId(tenantId?: number) {
     return resolveTenantIdOrDefault(this.prisma, tenantId);
   }
@@ -28,12 +34,13 @@ export class ProductoService {
 
   async create(dto: CreateProductoDto, tenantId?: number) {
     const scopedTenantId = await this.getScopedTenantId(tenantId);
-    return this.prisma.producto.create({
+    const producto = await this.prisma.producto.create({
       data: {
         tenantId: scopedTenantId,
         ...dto,
       },
     });
+    return this.toLegacyResponse(producto);
   }
 
   async findAll(page = 1, limit = 10, search?: string, tenantId?: number) {
@@ -66,7 +73,7 @@ export class ProductoService {
     ]);
 
     return {
-      data: productos,
+      data: productos.map((producto) => this.toLegacyResponse(producto)),
       meta: {
         totalItems,
         itemCount: productos.length,
@@ -79,16 +86,21 @@ export class ProductoService {
 
   async findOne(id: number, tenantId?: number) {
     const { producto } = await this.findProductoOrThrow(id, tenantId);
-    return producto;
+    return this.toLegacyResponse(producto);
   }
 
   async update(id: number, dto: UpdateProductoDto, tenantId?: number) {
     await this.findProductoOrThrow(id, tenantId);
-    return this.prisma.producto.update({ where: { id }, data: dto });
+    const producto = await this.prisma.producto.update({
+      where: { id },
+      data: dto,
+    });
+    return this.toLegacyResponse(producto);
   }
 
   async remove(id: number, tenantId?: number) {
     await this.findProductoOrThrow(id, tenantId);
-    return this.prisma.producto.delete({ where: { id } });
+    const producto = await this.prisma.producto.delete({ where: { id } });
+    return this.toLegacyResponse(producto);
   }
 }

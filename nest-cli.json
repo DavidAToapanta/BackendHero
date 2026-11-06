@@ -1,8 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
+  "monorepo": true,
+  "root": "apps/gym-api",
+  "sourceRoot": "apps/gym-api/src",
+  "entryFile": "main",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "builder": "tsc",
+    "tsConfigPath": "apps/gym-api/tsconfig.app.json"
+  },
+  "projects": {
+    "gym-api": {
+      "type": "application",
+      "root": "apps/gym-api",
+      "entryFile": "main",
+      "sourceRoot": "apps/gym-api/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/gym-api/tsconfig.app.json"
+      }
+    }
   }
 }

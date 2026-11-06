@@ -10,7 +10,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "paths": {
-      "src/*": ["./src/*"]
+      "src/*": ["./apps/gym-api/src/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

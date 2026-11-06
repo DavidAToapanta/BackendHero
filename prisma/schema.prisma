@@ -26,14 +26,17 @@ model Usuario {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  memberships           UserTenant[]
-  staffProfiles         StaffProfile[]
-  administrador         Administrador[]
-  entrenador            Entrenador[]
-  recepcionista         Recepcionista[]
-  cliente               Cliente[]
-  gastos                Gasto[]
-  devolucionMovimientos DevolucionMovimiento[]
+  memberships                       UserTenant[]
+  staffProfiles                     StaffProfile[]
+  administrador                     Administrador[]
+  entrenador                        Entrenador[]
+  recepcionista                     Recepcionista[]
+  cliente                           Cliente[]
+  gastos                            Gasto[]
+  devolucionMovimientos             DevolucionMovimiento[]
+  vinculacionClienteUsuario_usuario VinculacionClienteUsuario[] @relation("VinculacionClienteUsuario_usuario")
+  auditoriaOperacion_usuario        AuditoriaOperacion[]        @relation("AuditoriaOperacion_usuario")
+  solicitudIdempotente_usuario      SolicitudIdempotente[]      @relation("SolicitudIdempotente_usuario")
 }
 
 model Tenant {
@@ -58,29 +61,70 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                 UserTenant[]
-  staffProfiles         StaffProfile[]
-  modules               TenantModule[]
-  clientes              Cliente[]
-  clienteMedidas        ClienteMedida[]
-  novedades             Novedad[]
-  productos             Producto[]
-  compras               Compra[]
-  planes                Plan[]
-  clientesPlan          ClientePlan[]
-  pagos                 Pago[]
-  deudas                Deuda[]
-  facturas              Factura[]
-  gastos                Gasto[]
-  ingresosRapidos       IngresoRapido[]
-  asistencias           Asistencia[]
-  rutinas               Rutina[]
-  entrenamientos        Entrenamiento[]
-  semanas               Semana[]
-  musculosSemana        MusculoSemana[]
-  ejerciciosMusculo     EjercicioMusculo[]
-  cambiosPlan           CambioPlan[]
-  devolucionMovimientos DevolucionMovimiento[]
+  users                     UserTenant[]
+  staffProfiles             StaffProfile[]
+  modules                   TenantModule[]
+  clientes                  Cliente[]
+  clienteMedidas            ClienteMedida[]
+  novedades                 Novedad[]
+  productos                 Producto[]
+  compras                   Compra[]
+  planes                    Plan[]
+  clientesPlan              ClientePlan[]
+  pagos                     Pago[]
+  deudas                    Deuda[]
+  facturas                  Factura[]
+  gastos                    Gasto[]
+  ingresosRapidos           IngresoRapido[]
+  asistencias               Asistencia[]
+  rutinas                   Rutina[]
+  entrenamientos            Entrenamiento[]
+  semanas                   Semana[]
+  musculosSemana            MusculoSemana[]
+  ejerciciosMusculo         EjercicioMusculo[]
+  cambiosPlan               CambioPlan[]
+  devolucionMovimientos     DevolucionMovimiento[]
+  zonaHoraria               String                      @default("America/Guayaquil")
+  moneda                    String                      @default("USD") @db.Char(3)
+  autorizacionVersion       VersionAutorizacion         @default(LEGACY)
+  clienteComercial          ClienteComercial[]          @relation("ClienteComercial_tenant")
+  vinculacionClienteUsuario VinculacionClienteUsuario[] @relation("VinculacionClienteUsuario_tenant")
+  rolNegocio                RolNegocio[]                @relation("RolNegocio_tenant")
+  rolPermiso                RolPermiso[]                @relation("RolPermiso_tenant")
+  asignacionRol             AsignacionRol[]             @relation("AsignacionRol_tenant")
+  categoriaProducto         CategoriaProducto[]         @relation("CategoriaProducto_tenant")
+  productoImagen            ProductoImagen[]            @relation("ProductoImagen_tenant")
+  entradaInventario         EntradaInventario[]         @relation("EntradaInventario_tenant")
+  loteInventario            LoteInventario[]            @relation("LoteInventario_tenant")
+  movimientoInventario      MovimientoInventario[]      @relation("MovimientoInventario_tenant")
+  carrito                   Carrito[]                   @relation("Carrito_tenant")
+  detalleCarrito            DetalleCarrito[]            @relation("DetalleCarrito_tenant")
+  pedido                    Pedido[]                    @relation("Pedido_tenant")
+  detallePedido             DetallePedido[]             @relation("DetallePedido_tenant")
+  reservaInventario         ReservaInventario[]         @relation("ReservaInventario_tenant")
+  historialEstadoPedido     HistorialEstadoPedido[]     @relation("HistorialEstadoPedido_tenant")
+  venta                     Venta[]                     @relation("Venta_tenant")
+  detalleVenta              DetalleVenta[]              @relation("DetalleVenta_tenant")
+  asignacionLoteVenta       AsignacionLoteVenta[]       @relation("AsignacionLoteVenta_tenant")
+  cobro                     Cobro[]                     @relation("Cobro_tenant")
+  aplicacionCobro           AplicacionCobro[]           @relation("AplicacionCobro_tenant")
+  reversionAplicacionCobro  ReversionAplicacionCobro[]  @relation("ReversionAplicacionCobro_tenant")
+  cuentaPorCobrar           CuentaPorCobrar[]           @relation("CuentaPorCobrar_tenant")
+  ajusteCuentaPorCobrar     AjusteCuentaPorCobrar[]     @relation("AjusteCuentaPorCobrar_tenant")
+  reembolso                 Reembolso[]                 @relation("Reembolso_tenant")
+  devolucionVenta           DevolucionVenta[]           @relation("DevolucionVenta_tenant")
+  detalleDevolucionVenta    DetalleDevolucionVenta[]    @relation("DetalleDevolucionVenta_tenant")
+  caja                      Caja[]                      @relation("Caja_tenant")
+  turnoCaja                 TurnoCaja[]                 @relation("TurnoCaja_tenant")
+  movimientoCaja            MovimientoCaja[]            @relation("MovimientoCaja_tenant")
+  gastoComercial            GastoComercial[]            @relation("GastoComercial_tenant")
+  secuenciaComprobante      SecuenciaComprobante[]      @relation("SecuenciaComprobante_tenant")
+  comprobanteVenta          ComprobanteVenta[]          @relation("ComprobanteVenta_tenant")
+  detalleComprobanteVenta   DetalleComprobanteVenta[]   @relation("DetalleComprobanteVenta_tenant")
+  eventoSalida              EventoSalida[]              @relation("EventoSalida_tenant")
+  notificacionCliente       NotificacionCliente[]       @relation("NotificacionCliente_tenant")
+  auditoriaOperacion        AuditoriaOperacion[]        @relation("AuditoriaOperacion_tenant")
+  solicitudIdempotente      SolicitudIdempotente[]      @relation("SolicitudIdempotente_tenant")
 
   @@index([tipoNegocio])
   @@index([estado])
@@ -96,10 +140,37 @@ model UserTenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario                                Usuario                     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tenant                                 Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versionAutorizacion                    Int                         @default(1)
+  vinculacionClienteUsuario_verificador  VinculacionClienteUsuario[] @relation("VinculacionClienteUsuario_verificador")
+  asignacionRol_membresia                AsignacionRol[]             @relation("AsignacionRol_membresia")
+  asignacionRol_asignador                AsignacionRol[]             @relation("AsignacionRol_asignador")
+  entradaInventario_responsable          EntradaInventario[]         @relation("EntradaInventario_responsable")
+  movimientoInventario_responsable       MovimientoInventario[]      @relation("MovimientoInventario_responsable")
+  historialEstadoPedido_responsable      HistorialEstadoPedido[]     @relation("HistorialEstadoPedido_responsable")
+  venta_responsable                      Venta[]                     @relation("Venta_responsable")
+  venta_anuladaPor                       Venta[]                     @relation("Venta_anuladaPor")
+  cobro_responsable                      Cobro[]                     @relation("Cobro_responsable")
+  cobro_reversadoPor                     Cobro[]                     @relation("Cobro_reversadoPor")
+  aplicacionCobro_responsable            AplicacionCobro[]           @relation("AplicacionCobro_responsable")
+  reversionAplicacionCobro_responsable   ReversionAplicacionCobro[]  @relation("ReversionAplicacionCobro_responsable")
+  ajusteCuentaPorCobrar_responsable      AjusteCuentaPorCobrar[]     @relation("AjusteCuentaPorCobrar_responsable")
+  reembolso_responsable                  Reembolso[]                 @relation("Reembolso_responsable")
+  devolucionVenta_responsable            DevolucionVenta[]           @relation("DevolucionVenta_responsable")
+  devolucionVenta_aprobadaPor            DevolucionVenta[]           @relation("DevolucionVenta_aprobadaPor")
+  turnoCaja_cajero                       TurnoCaja[]                 @relation("TurnoCaja_cajero")
+  turnoCaja_cerradoPor                   TurnoCaja[]                 @relation("TurnoCaja_cerradoPor")
+  movimientoCaja_responsable             MovimientoCaja[]            @relation("MovimientoCaja_responsable")
+  gastoComercial_responsable             GastoComercial[]            @relation("GastoComercial_responsable")
+  comprobanteVenta_emitidoPor            ComprobanteVenta[]          @relation("ComprobanteVenta_emitidoPor")
+  comprobanteVenta_anuladoPor            ComprobanteVenta[]          @relation("ComprobanteVenta_anuladoPor")
+  auditoriaOperacion_membresia           AuditoriaOperacion[]        @relation("AuditoriaOperacion_membresia")
+  auditoriaOperacion_membresiaReferencia AuditoriaOperacion[]        @relation("AuditoriaOperacion_membresiaReferencia")
 
   @@unique([usuarioId, tenantId])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, usuarioId])
   @@index([tenantId, role])
   @@index([usuarioId])
 }
@@ -172,18 +243,20 @@ model Cliente {
   activo         Boolean @default(true)
   zkbioPersonId  String?
 
-  usuario        Usuario         @relation(fields: [usuarioId], references: [id])
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  clienteMedidas ClienteMedida[]
-  novedades      Novedad[]
-  compras        Compra[]
-  planes         ClientePlan[]
-  rutinas        Rutina[]
-  asistencias    Asistencia[]
-  cambiosPlan    CambioPlan[]
+  usuario                     Usuario            @relation(fields: [usuarioId], references: [id])
+  tenant                      Tenant             @relation(fields: [tenantId], references: [id])
+  clienteMedidas              ClienteMedida[]
+  novedades                   Novedad[]
+  compras                     Compra[]
+  planes                      ClientePlan[]
+  rutinas                     Rutina[]
+  asistencias                 Asistencia[]
+  cambiosPlan                 CambioPlan[]
+  clienteComercial_clienteGym ClienteComercial[] @relation("ClienteComercial_clienteGym")
 
   @@unique([usuarioId, tenantId])
   @@unique([tenantId, zkbioPersonId])
+  @@unique([tenantId, id])
   @@index([usuarioId])
   @@index([tenantId])
 }
@@ -226,14 +299,38 @@ model Producto {
   id       Int     @id @default(autoincrement())
   tenantId Int
   nombre   String
-  precio   Float
+  precio   Decimal @db.Decimal(18, 2)
   stock    Int
   estado   Boolean
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  compras Compra[]
+  tenant                        Tenant                 @relation(fields: [tenantId], references: [id])
+  compras                       Compra[]
+  sku                           String?
+  codigoBarras                  String?
+  marca                         String?
+  presentacion                  String?
+  descripcion                   String?
+  unidadVenta                   UnidadVenta            @default(UNIDAD)
+  stockReservado                Int                    @default(0)
+  modoInventario                ModoInventario         @default(LEGACY)
+  createdAt                     DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime               @updatedAt @db.Timestamptz(3)
+  categoriaId                   Int?
+  productoImagen_producto       ProductoImagen[]       @relation("ProductoImagen_producto")
+  loteInventario_producto       LoteInventario[]       @relation("LoteInventario_producto")
+  movimientoInventario_producto MovimientoInventario[] @relation("MovimientoInventario_producto")
+  detalleCarrito_producto       DetalleCarrito[]       @relation("DetalleCarrito_producto")
+  detallePedido_producto        DetallePedido[]        @relation("DetallePedido_producto")
+  reservaInventario_producto    ReservaInventario[]    @relation("ReservaInventario_producto")
+  detalleVenta_producto         DetalleVenta[]         @relation("DetalleVenta_producto")
+  auditoriaOperacion_producto   AuditoriaOperacion[]   @relation("AuditoriaOperacion_producto")
+  categoria                     CategoriaProducto?     @relation("Producto_categoria", fields: [tenantId, categoriaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
 
+  @@unique([tenantId, id])
+  @@unique([tenantId, sku])
+  @@unique([tenantId, codigoBarras])
   @@index([tenantId])
+  @@index([tenantId, estado, categoriaId])
 }
 
 model Compra {
@@ -245,10 +342,12 @@ model Compra {
   total      Float
   fecha      DateTime
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
-  producto Producto @relation(fields: [productoId], references: [id])
-  cliente  Cliente  @relation(fields: [clienteId], references: [id])
+  tenant                            Tenant                 @relation(fields: [tenantId], references: [id])
+  producto                          Producto               @relation(fields: [productoId], references: [id])
+  cliente                           Cliente                @relation(fields: [clienteId], references: [id])
+  movimientoInventario_compraLegacy MovimientoInventario[] @relation("MovimientoInventario_compraLegacy")
 
+  @@unique([tenantId, id, productoId])
   @@index([tenantId])
 }
 
@@ -604,4 +703,1175 @@ model DevolucionMovimiento {
   @@index([cambioPlanId])
   @@index([facturaId])
   @@index([fecha])
+}
+
+// STORE: modelos completos. Las restricciones SQL y activacion se documentan
+// en docs/ESQUEMA_STORE_IMPLEMENTADO.md; no ejecutar una migracion sin revisarlas.
+
+model ClienteComercial {
+  id                                         Int                         @id @default(autoincrement())
+  nombres                                    String
+  apellidos                                  String?
+  razonSocial                                String?
+  tipoIdentificacion                         String?
+  identificacion                             String?
+  email                                      String?
+  telefono                                   String?
+  direccion                                  String?
+  activo                                     Boolean                     @default(true)
+  clienteGymId                               Int?
+  tenantId                                   Int
+  createdAt                                  DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                                  DateTime                    @updatedAt @db.Timestamptz(3)
+  clienteGym                                 Cliente?                    @relation("ClienteComercial_clienteGym", fields: [tenantId, clienteGymId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  vinculacionClienteUsuario_clienteComercial VinculacionClienteUsuario[] @relation("VinculacionClienteUsuario_clienteComercial")
+  carrito_clienteComercial                   Carrito[]                   @relation("Carrito_clienteComercial")
+  pedido_clienteComercial                    Pedido[]                    @relation("Pedido_clienteComercial")
+  venta_clienteComercial                     Venta[]                     @relation("Venta_clienteComercial")
+  cobro_clienteComercial                     Cobro[]                     @relation("Cobro_clienteComercial")
+  cuentaPorCobrar_clienteComercial           CuentaPorCobrar[]           @relation("CuentaPorCobrar_clienteComercial")
+  notificacionCliente_clienteComercial       NotificacionCliente[]       @relation("NotificacionCliente_clienteComercial")
+  tenant                                     Tenant                      @relation("ClienteComercial_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  comprobanteVenta_clienteComercial          ComprobanteVenta[]          @relation("ComprobanteVenta_clienteComercial")
+  aplicacionCobro_clienteComercial           AplicacionCobro[]           @relation("AplicacionCobro_clienteComercial")
+
+  @@unique([tenantId, clienteGymId])
+  @@unique([tenantId, tipoIdentificacion, identificacion], map: "ClienteComercial_key_53dbb48832")
+  @@unique([tenantId, id])
+  @@index([tenantId, activo])
+  @@index([tenantId, nombres])
+}
+
+model VinculacionClienteUsuario {
+  id                              Int                       @id @default(autoincrement())
+  metodo                          MetodoVerificacionCliente
+  verificadaAt                    DateTime                  @db.Timestamptz(3)
+  revocadaAt                      DateTime?                 @db.Timestamptz(3)
+  motivoRevocacion                String?
+  clienteComercialId              Int
+  usuarioId                       Int
+  verificadorId                   Int?
+  tenantId                        Int
+  createdAt                       DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime                  @updatedAt @db.Timestamptz(3)
+  clienteComercial                ClienteComercial          @relation("VinculacionClienteUsuario_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  usuario                         Usuario                   @relation("VinculacionClienteUsuario_usuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  verificador                     UserTenant?               @relation("VinculacionClienteUsuario_verificador", fields: [tenantId, verificadorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  notificacionCliente_vinculacion NotificacionCliente[]     @relation("NotificacionCliente_vinculacion")
+  tenant                          Tenant                    @relation("VinculacionClienteUsuario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id, clienteComercialId])
+  @@unique([tenantId, id])
+  @@index([tenantId, clienteComercialId, revocadaAt], map: "VinculacionClienteUsuario_idx_5c2e50946e")
+  @@index([usuarioId, revocadaAt])
+}
+
+model Permiso {
+  id                 Int          @id @default(autoincrement())
+  codigo             String       @unique
+  modulo             ModuleKey
+  descripcion        String
+  delegable          Boolean      @default(true)
+  createdAt          DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(3)
+  rolPermiso_permiso RolPermiso[] @relation("RolPermiso_permiso")
+}
+
+model RolNegocio {
+  id                 Int             @id @default(autoincrement())
+  codigo             String
+  nombre             String
+  activo             Boolean         @default(true)
+  protegido          Boolean         @default(false)
+  equivalenciaLegacy TenantRole?
+  tenantId           Int
+  createdAt          DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
+  rolPermiso_rol     RolPermiso[]    @relation("RolPermiso_rol")
+  asignacionRol_rol  AsignacionRol[] @relation("AsignacionRol_rol")
+  tenant             Tenant          @relation("RolNegocio_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, codigo])
+  @@unique([tenantId, nombre])
+  @@unique([tenantId, id])
+}
+
+model RolPermiso {
+  id        Int        @id @default(autoincrement())
+  rolId     Int
+  permisoId Int
+  tenantId  Int
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  rol       RolNegocio @relation("RolPermiso_rol", fields: [tenantId, rolId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  permiso   Permiso    @relation("RolPermiso_permiso", fields: [permisoId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  tenant    Tenant     @relation("RolPermiso_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, rolId, permisoId])
+  @@unique([tenantId, id])
+}
+
+model AsignacionRol {
+  id          Int         @id @default(autoincrement())
+  membresiaId Int
+  rolId       Int
+  asignadorId Int?
+  tenantId    Int
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+  membresia   UserTenant  @relation("AsignacionRol_membresia", fields: [tenantId, membresiaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  rol         RolNegocio  @relation("AsignacionRol_rol", fields: [tenantId, rolId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  asignador   UserTenant? @relation("AsignacionRol_asignador", fields: [tenantId, asignadorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant      Tenant      @relation("AsignacionRol_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, membresiaId])
+  @@unique([tenantId, id])
+}
+
+model CategoriaProducto {
+  id                      Int             @id @default(autoincrement())
+  modulo                  ModuleKey
+  nombre                  String
+  nombreNormalizado       String
+  activo                  Boolean         @default(true)
+  tenantId                Int
+  createdAt               DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime        @updatedAt @db.Timestamptz(3)
+  detallePedido_categoria DetallePedido[] @relation("DetallePedido_categoria")
+  detalleVenta_categoria  DetalleVenta[]  @relation("DetalleVenta_categoria")
+  producto_categoria      Producto[]      @relation("Producto_categoria")
+  tenant                  Tenant          @relation("CategoriaProducto_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, modulo, nombreNormalizado])
+  @@unique([tenantId, id])
+}
+
+model ProductoImagen {
+  id               Int      @id @default(autoincrement())
+  url              String
+  claveArchivo     String?
+  textoAlternativo String?
+  orden            Int
+  productoId       Int
+  tenantId         Int
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+  producto         Producto @relation("ProductoImagen_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant           Tenant   @relation("ProductoImagen_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, productoId, orden])
+  @@unique([tenantId, id])
+}
+
+model EntradaInventario {
+  id                           Int                    @id @default(autoincrement())
+  fecha                        DateTime               @default(now()) @db.Timestamptz(3)
+  referenciaExterna            String?
+  motivo                       String
+  claveIdempotencia            String
+  responsableId                Int
+  tenantId                     Int
+  createdAt                    DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                    DateTime               @updatedAt @db.Timestamptz(3)
+  responsable                  UserTenant             @relation("EntradaInventario_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  loteInventario_entrada       LoteInventario[]       @relation("LoteInventario_entrada")
+  movimientoInventario_entrada MovimientoInventario[] @relation("MovimientoInventario_entrada")
+  tenant                       Tenant                 @relation("EntradaInventario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@index([tenantId, fecha])
+}
+
+model LoteInventario {
+  id                        Int                    @id @default(autoincrement())
+  codigo                    String
+  fechaEntrada              DateTime               @default(now()) @db.Timestamptz(3)
+  vencimiento               DateTime?              @db.Timestamptz(3)
+  costoUnitario             Decimal                @db.Decimal(18, 4)
+  cantidadFisica            Int                    @default(0)
+  esApertura                Boolean                @default(false)
+  productoId                Int
+  entradaId                 Int
+  tenantId                  Int
+  createdAt                 DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime               @updatedAt @db.Timestamptz(3)
+  producto                  Producto               @relation("LoteInventario_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  entrada                   EntradaInventario      @relation("LoteInventario_entrada", fields: [tenantId, entradaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoInventario_lote MovimientoInventario[] @relation("MovimientoInventario_lote")
+  asignacionLoteVenta_lote  AsignacionLoteVenta[]  @relation("AsignacionLoteVenta_lote")
+  tenant                    Tenant                 @relation("LoteInventario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id, productoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, productoId, vencimiento])
+  @@index([tenantId, entradaId])
+  @@index([tenantId, productoId, codigo])
+}
+
+model MovimientoInventario {
+  id                                      Int                      @id @default(autoincrement())
+  tipo                                    TipoMovimientoInventario
+  fecha                                   DateTime                 @default(now()) @db.Timestamptz(3)
+  deltaFisico                             Int
+  deltaReservado                          Int
+  costoUnitario                           Decimal?                 @db.Decimal(18, 4)
+  costoTotal                              Decimal?                 @db.Decimal(18, 4)
+  motivo                                  String?
+  claveIdempotencia                       String
+  correlacionId                           String                   @db.Uuid
+  productoId                              Int
+  loteId                                  Int?
+  entradaId                               Int?
+  reservaId                               Int?
+  asignacionVentaId                       Int?
+  detalleDevolucionId                     Int?
+  compraLegacyId                          Int?
+  movimientoOriginalId                    Int?
+  responsableId                           Int
+  tenantId                                Int
+  createdAt                               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                               DateTime                 @updatedAt @db.Timestamptz(3)
+  producto                                Producto                 @relation("MovimientoInventario_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  lote                                    LoteInventario?          @relation("MovimientoInventario_lote", fields: [tenantId, loteId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
+  entrada                                 EntradaInventario?       @relation("MovimientoInventario_entrada", fields: [tenantId, entradaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  reserva                                 ReservaInventario?       @relation("MovimientoInventario_reserva", fields: [tenantId, reservaId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
+  asignacionVenta                         AsignacionLoteVenta?     @relation("MovimientoInventario_asignacionVenta", fields: [tenantId, asignacionVentaId, productoId, loteId], references: [tenantId, id, productoId, loteId], onDelete: Restrict, onUpdate: NoAction)
+  detalleDevolucion                       DetalleDevolucionVenta?  @relation("MovimientoInventario_detalleDevolucion", fields: [tenantId, detalleDevolucionId, productoId, loteId], references: [tenantId, id, productoId, loteId], onDelete: Restrict, onUpdate: NoAction)
+  compraLegacy                            Compra?                  @relation("MovimientoInventario_compraLegacy", fields: [tenantId, compraLegacyId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
+  movimientoOriginal                      MovimientoInventario?    @relation("MovimientoInventario_movimientoOriginal", fields: [tenantId, movimientoOriginalId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
+  movimientoInventario_movimientoOriginal MovimientoInventario[]   @relation("MovimientoInventario_movimientoOriginal")
+  responsable                             UserTenant               @relation("MovimientoInventario_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant                                  Tenant                   @relation("MovimientoInventario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  asignacionVentaReferencia               AsignacionLoteVenta?     @relation("MovimientoInventario_asignacionVentaReferencia", fields: [tenantId, asignacionVentaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detalleDevolucionReferencia             DetalleDevolucionVenta?  @relation("MovimientoInventario_detalleDevolucionReferencia", fields: [tenantId, detalleDevolucionId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, asignacionVentaId, tipo])
+  @@unique([tenantId, detalleDevolucionId, tipo])
+  @@unique([tenantId, id, productoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, productoId, fecha])
+  @@index([tenantId, tipo, fecha])
+  @@index([tenantId, responsableId, fecha])
+}
+
+model Carrito {
+  id                     Int              @id @default(autoincrement())
+  estado                 EstadoCarrito    @default(ACTIVO)
+  clienteComercialId     Int
+  tenantId               Int
+  createdAt              DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime         @updatedAt @db.Timestamptz(3)
+  clienteComercial       ClienteComercial @relation("Carrito_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detalleCarrito_carrito DetalleCarrito[] @relation("DetalleCarrito_carrito")
+  pedido_carrito         Pedido[]         @relation("Pedido_carrito")
+  tenant                 Tenant           @relation("Carrito_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, clienteComercialId])
+  @@index([tenantId, clienteComercialId, estado])
+}
+
+model DetalleCarrito {
+  id         Int      @id @default(autoincrement())
+  cantidad   Int
+  carritoId  Int
+  productoId Int
+  tenantId   Int
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  carrito    Carrito  @relation("DetalleCarrito_carrito", fields: [tenantId, carritoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  producto   Producto @relation("DetalleCarrito_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant     Tenant   @relation("DetalleCarrito_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, carritoId, productoId])
+  @@unique([tenantId, id])
+}
+
+model Pedido {
+  id                           Int                     @id @default(autoincrement())
+  numero                       String
+  estado                       EstadoPedido            @default(CONFIRMADO)
+  confirmadoAt                 DateTime                @default(now()) @db.Timestamptz(3)
+  reservaHasta                 DateTime                @db.Timestamptz(3)
+  entregadoAt                  DateTime?               @db.Timestamptz(3)
+  canceladoAt                  DateTime?               @db.Timestamptz(3)
+  motivoCancelacion            String?
+  subtotal                     Decimal                 @db.Decimal(18, 2)
+  descuento                    Decimal                 @default(0) @db.Decimal(18, 2)
+  impuesto                     Decimal                 @default(0) @db.Decimal(18, 2)
+  total                        Decimal                 @db.Decimal(18, 2)
+  claveIdempotencia            String
+  clienteComercialId           Int
+  carritoId                    Int?
+  tenantId                     Int
+  createdAt                    DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                    DateTime                @updatedAt @db.Timestamptz(3)
+  clienteComercial             ClienteComercial        @relation("Pedido_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  carrito                      Carrito?                @relation("Pedido_carrito", fields: [tenantId, carritoId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  detallePedido_pedido         DetallePedido[]         @relation("DetallePedido_pedido")
+  historialEstadoPedido_pedido HistorialEstadoPedido[] @relation("HistorialEstadoPedido_pedido")
+  venta_pedido                 Venta[]                 @relation("Venta_pedido")
+  notificacionCliente_pedido   NotificacionCliente[]   @relation("NotificacionCliente_pedido")
+  tenant                       Tenant                  @relation("Pedido_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  venta_pedidoReferencia       Venta[]                 @relation("Venta_pedidoReferencia")
+
+  @@unique([tenantId, numero])
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, clienteComercialId])
+  @@index([tenantId, estado, createdAt])
+  @@index([tenantId, clienteComercialId, createdAt])
+}
+
+model DetallePedido {
+  id                              Int                 @id @default(autoincrement())
+  nombreProducto                  String
+  presentacionProducto            String?
+  skuProducto                     String?
+  codigoBarrasProducto            String?
+  categoriaNombre                 String?
+  cantidad                        Int
+  precioUnitario                  Decimal             @db.Decimal(18, 2)
+  descuento                       Decimal             @default(0) @db.Decimal(18, 2)
+  tasaImpuesto                    Decimal             @default(0) @db.Decimal(7, 4)
+  subtotal                        Decimal             @db.Decimal(18, 2)
+  impuesto                        Decimal             @default(0) @db.Decimal(18, 2)
+  total                           Decimal             @db.Decimal(18, 2)
+  pedidoId                        Int
+  productoId                      Int
+  categoriaId                     Int?
+  tenantId                        Int
+  createdAt                       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime            @updatedAt @db.Timestamptz(3)
+  pedido                          Pedido              @relation("DetallePedido_pedido", fields: [tenantId, pedidoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  producto                        Producto            @relation("DetallePedido_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  categoria                       CategoriaProducto?  @relation("DetallePedido_categoria", fields: [tenantId, categoriaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  reservaInventario_detallePedido ReservaInventario[] @relation("ReservaInventario_detallePedido")
+  tenant                          Tenant              @relation("DetallePedido_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, pedidoId, productoId])
+  @@unique([tenantId, id, pedidoId, productoId])
+  @@unique([tenantId, id])
+}
+
+model ReservaInventario {
+  id                           Int                     @id @default(autoincrement())
+  cantidad                     Int
+  estado                       EstadoReservaInventario @default(ACTIVA)
+  reservaHasta                 DateTime                @db.Timestamptz(3)
+  consumidaAt                  DateTime?               @db.Timestamptz(3)
+  liberadaAt                   DateTime?               @db.Timestamptz(3)
+  motivo                       String?
+  productoId                   Int
+  pedidoId                     Int
+  detallePedidoId              Int
+  tenantId                     Int
+  createdAt                    DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                    DateTime                @updatedAt @db.Timestamptz(3)
+  movimientoInventario_reserva MovimientoInventario[]  @relation("MovimientoInventario_reserva")
+  producto                     Producto                @relation("ReservaInventario_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detallePedido                DetallePedido           @relation("ReservaInventario_detallePedido", fields: [tenantId, detallePedidoId, pedidoId, productoId], references: [tenantId, id, pedidoId, productoId], onDelete: Restrict, onUpdate: NoAction)
+  tenant                       Tenant                  @relation("ReservaInventario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, detallePedidoId])
+  @@unique([tenantId, id, productoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, estado, reservaHasta])
+  @@index([tenantId, productoId, estado])
+}
+
+model HistorialEstadoPedido {
+  id             Int                @id @default(autoincrement())
+  estadoAnterior EstadoPedido?
+  estadoNuevo    EstadoPedido
+  actor          TipoActorOperacion
+  motivo         String?
+  pedidoId       Int
+  responsableId  Int?
+  tenantId       Int
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
+  pedido         Pedido             @relation("HistorialEstadoPedido_pedido", fields: [tenantId, pedidoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  responsable    UserTenant?        @relation("HistorialEstadoPedido_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant         Tenant             @relation("HistorialEstadoPedido_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, pedidoId, createdAt])
+}
+
+model Venta {
+  id                            Int                @id @default(autoincrement())
+  origen                        OrigenVenta
+  estado                        EstadoVenta        @default(COMPLETADA)
+  fecha                         DateTime           @default(now()) @db.Timestamptz(3)
+  subtotal                      Decimal            @db.Decimal(18, 2)
+  descuento                     Decimal            @default(0) @db.Decimal(18, 2)
+  impuesto                      Decimal            @default(0) @db.Decimal(18, 2)
+  total                         Decimal            @db.Decimal(18, 2)
+  anuladaAt                     DateTime?          @db.Timestamptz(3)
+  motivoAnulacion               String?
+  claveIdempotencia             String
+  clienteComercialId            Int?
+  pedidoId                      Int?
+  responsableId                 Int
+  anuladaPorId                  Int?
+  tenantId                      Int
+  createdAt                     DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime           @updatedAt @db.Timestamptz(3)
+  clienteComercial              ClienteComercial?  @relation("Venta_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  pedido                        Pedido?            @relation("Venta_pedido", fields: [tenantId, pedidoId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  responsable                   UserTenant         @relation("Venta_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  anuladaPor                    UserTenant?        @relation("Venta_anuladaPor", fields: [tenantId, anuladaPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detalleVenta_venta            DetalleVenta[]     @relation("DetalleVenta_venta")
+  cuentaPorCobrar_venta         CuentaPorCobrar[]  @relation("CuentaPorCobrar_venta")
+  aplicacionCobro_venta         AplicacionCobro[]  @relation("AplicacionCobro_venta")
+  reembolso_venta               Reembolso[]        @relation("Reembolso_venta")
+  devolucionVenta_venta         DevolucionVenta[]  @relation("DevolucionVenta_venta")
+  comprobanteVenta_venta        ComprobanteVenta[] @relation("ComprobanteVenta_venta")
+  tenant                        Tenant             @relation("Venta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  pedidoReferencia              Pedido?            @relation("Venta_pedidoReferencia", fields: [tenantId, pedidoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  comprobanteVenta_ventaCliente ComprobanteVenta[] @relation("ComprobanteVenta_ventaCliente")
+  aplicacionCobro_ventaCliente  AplicacionCobro[]  @relation("AplicacionCobro_ventaCliente")
+
+  @@unique([tenantId, pedidoId])
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, clienteComercialId])
+  @@index([tenantId, fecha])
+  @@index([tenantId, estado, fecha])
+  @@index([tenantId, responsableId, fecha])
+  @@index([tenantId, clienteComercialId, fecha])
+}
+
+model DetalleVenta {
+  id                                   Int                       @id @default(autoincrement())
+  nombreProducto                       String
+  presentacionProducto                 String?
+  skuProducto                          String?
+  codigoBarrasProducto                 String?
+  categoriaNombre                      String?
+  cantidad                             Int
+  precioUnitario                       Decimal                   @db.Decimal(18, 2)
+  descuento                            Decimal                   @default(0) @db.Decimal(18, 2)
+  tasaImpuesto                         Decimal                   @default(0) @db.Decimal(7, 4)
+  subtotal                             Decimal                   @db.Decimal(18, 2)
+  impuesto                             Decimal                   @default(0) @db.Decimal(18, 2)
+  total                                Decimal                   @db.Decimal(18, 2)
+  ventaId                              Int
+  productoId                           Int
+  categoriaId                          Int?
+  tenantId                             Int
+  createdAt                            DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                            DateTime                  @updatedAt @db.Timestamptz(3)
+  venta                                Venta                     @relation("DetalleVenta_venta", fields: [tenantId, ventaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  producto                             Producto                  @relation("DetalleVenta_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  categoria                            CategoriaProducto?        @relation("DetalleVenta_categoria", fields: [tenantId, categoriaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  asignacionLoteVenta_detalleVenta     AsignacionLoteVenta[]     @relation("AsignacionLoteVenta_detalleVenta")
+  detalleComprobanteVenta_detalleVenta DetalleComprobanteVenta[] @relation("DetalleComprobanteVenta_detalleVenta")
+  tenant                               Tenant                    @relation("DetalleVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id, productoId, ventaId])
+  @@unique([tenantId, id, ventaId, productoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, ventaId])
+  @@index([tenantId, productoId, createdAt])
+  @@index([tenantId, categoriaId, createdAt])
+}
+
+model AsignacionLoteVenta {
+  id                                             Int                      @id @default(autoincrement())
+  cantidad                                       Int
+  costoUnitario                                  Decimal                  @db.Decimal(18, 4)
+  costoTotal                                     Decimal                  @db.Decimal(18, 4)
+  detalleVentaId                                 Int
+  loteId                                         Int
+  productoId                                     Int
+  ventaId                                        Int
+  tenantId                                       Int
+  createdAt                                      DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                                      DateTime                 @updatedAt @db.Timestamptz(3)
+  movimientoInventario_asignacionVenta           MovimientoInventario[]   @relation("MovimientoInventario_asignacionVenta")
+  detalleVenta                                   DetalleVenta             @relation("AsignacionLoteVenta_detalleVenta", fields: [tenantId, detalleVentaId, productoId, ventaId], references: [tenantId, id, productoId, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  lote                                           LoteInventario           @relation("AsignacionLoteVenta_lote", fields: [tenantId, loteId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
+  detalleDevolucionVenta_asignacionVenta         DetalleDevolucionVenta[] @relation("DetalleDevolucionVenta_asignacionVenta")
+  tenant                                         Tenant                   @relation("AsignacionLoteVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoInventario_asignacionVentaReferencia MovimientoInventario[]   @relation("MovimientoInventario_asignacionVentaReferencia")
+
+  @@unique([tenantId, detalleVentaId, loteId])
+  @@unique([tenantId, id, productoId, loteId])
+  @@unique([tenantId, id, ventaId, detalleVentaId, productoId, loteId], map: "AsignacionLoteVenta_key_85f419fd91")
+  @@unique([tenantId, id])
+}
+
+model Cobro {
+  id                           Int               @id @default(autoincrement())
+  monto                        Decimal           @db.Decimal(18, 2)
+  metodo                       MetodoCobro
+  estado                       EstadoCobro       @default(CONFIRMADO)
+  fecha                        DateTime          @default(now()) @db.Timestamptz(3)
+  referencia                   String?
+  reversadoAt                  DateTime?         @db.Timestamptz(3)
+  motivoReversion              String?
+  claveIdempotencia            String
+  clienteComercialId           Int?
+  responsableId                Int
+  turnoId                      Int?
+  reversadoPorId               Int?
+  tenantId                     Int
+  createdAt                    DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt                    DateTime          @updatedAt @db.Timestamptz(3)
+  clienteComercial             ClienteComercial? @relation("Cobro_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  responsable                  UserTenant        @relation("Cobro_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  turno                        TurnoCaja?        @relation("Cobro_turno", fields: [tenantId, turnoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  reversadoPor                 UserTenant?       @relation("Cobro_reversadoPor", fields: [tenantId, reversadoPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  aplicacionCobro_cobro        AplicacionCobro[] @relation("AplicacionCobro_cobro")
+  reembolso_cobro              Reembolso[]       @relation("Reembolso_cobro")
+  movimientoCaja_cobro         MovimientoCaja[]  @relation("MovimientoCaja_cobro")
+  tenant                       Tenant            @relation("Cobro_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  aplicacionCobro_cobroCliente AplicacionCobro[] @relation("AplicacionCobro_cobroCliente")
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, turnoId])
+  @@unique([tenantId, id, clienteComercialId])
+  @@index([tenantId, fecha])
+  @@index([tenantId, clienteComercialId, fecha])
+}
+
+model AplicacionCobro {
+  id                                  Int                        @id @default(autoincrement())
+  monto                               Decimal                    @db.Decimal(18, 2)
+  claveIdempotencia                   String
+  clienteComercialId                  Int?
+  cobroId                             Int
+  ventaId                             Int
+  cuentaId                            Int?
+  responsableId                       Int
+  tenantId                            Int
+  createdAt                           DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt                           DateTime                   @updatedAt @db.Timestamptz(3)
+  cobro                               Cobro                      @relation("AplicacionCobro_cobro", fields: [tenantId, cobroId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  venta                               Venta                      @relation("AplicacionCobro_venta", fields: [tenantId, ventaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  cuenta                              CuentaPorCobrar?           @relation("AplicacionCobro_cuenta", fields: [tenantId, cuentaId, ventaId, clienteComercialId], references: [tenantId, id, ventaId, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  responsable                         UserTenant                 @relation("AplicacionCobro_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  reversionAplicacionCobro_aplicacion ReversionAplicacionCobro[] @relation("ReversionAplicacionCobro_aplicacion")
+  reembolso_aplicacionOriginal        Reembolso[]                @relation("Reembolso_aplicacionOriginal")
+  tenant                              Tenant                     @relation("AplicacionCobro_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  cuentaReferencia                    CuentaPorCobrar?           @relation("AplicacionCobro_cuentaReferencia", fields: [tenantId, cuentaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  clienteComercial                    ClienteComercial?          @relation("AplicacionCobro_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  cobroCliente                        Cobro?                     @relation("AplicacionCobro_cobroCliente", fields: [tenantId, cobroId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  ventaCliente                        Venta?                     @relation("AplicacionCobro_ventaCliente", fields: [tenantId, ventaId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, cobroId, ventaId])
+  @@unique([tenantId, id, ventaId])
+  @@index([tenantId, cobroId])
+  @@index([tenantId, ventaId])
+  @@index([tenantId, cuentaId])
+}
+
+model ReversionAplicacionCobro {
+  id                              Int                     @id @default(autoincrement())
+  motivo                          String
+  claveIdempotencia               String
+  aplicacionId                    Int
+  responsableId                   Int
+  tenantId                        Int
+  createdAt                       DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime                @updatedAt @db.Timestamptz(3)
+  aplicacion                      AplicacionCobro         @relation("ReversionAplicacionCobro_aplicacion", fields: [tenantId, aplicacionId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  responsable                     UserTenant              @relation("ReversionAplicacionCobro_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  ajusteCuentaPorCobrar_reversion AjusteCuentaPorCobrar[] @relation("AjusteCuentaPorCobrar_reversion")
+  tenant                          Tenant                  @relation("ReversionAplicacionCobro_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ventaId                         Int
+
+  @@unique([tenantId, aplicacionId])
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, ventaId])
+}
+
+model CuentaPorCobrar {
+  id                               Int                     @id @default(autoincrement())
+  importeFinanciadoInicial         Decimal                 @db.Decimal(18, 2)
+  importeExigible                  Decimal                 @db.Decimal(18, 2)
+  saldo                            Decimal                 @db.Decimal(18, 2)
+  vencimiento                      DateTime                @db.Timestamptz(3)
+  estado                           EstadoCuentaPorCobrar   @default(ABIERTA)
+  clienteComercialId               Int
+  ventaId                          Int
+  tenantId                         Int
+  createdAt                        DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                        DateTime                @updatedAt @db.Timestamptz(3)
+  clienteComercial                 ClienteComercial        @relation("CuentaPorCobrar_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  venta                            Venta                   @relation("CuentaPorCobrar_venta", fields: [tenantId, ventaId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  aplicacionCobro_cuenta           AplicacionCobro[]       @relation("AplicacionCobro_cuenta")
+  ajusteCuentaPorCobrar_cuenta     AjusteCuentaPorCobrar[] @relation("AjusteCuentaPorCobrar_cuenta")
+  notificacionCliente_cuenta       NotificacionCliente[]   @relation("NotificacionCliente_cuenta")
+  tenant                           Tenant                  @relation("CuentaPorCobrar_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  aplicacionCobro_cuentaReferencia AplicacionCobro[]       @relation("AplicacionCobro_cuentaReferencia")
+
+  @@unique([tenantId, ventaId])
+  @@unique([tenantId, id, ventaId, clienteComercialId])
+  @@unique([tenantId, id, ventaId])
+  @@unique([tenantId, id, clienteComercialId])
+  @@unique([tenantId, id])
+  @@index([tenantId, estado, vencimiento])
+  @@index([tenantId, clienteComercialId, estado])
+}
+
+model AjusteCuentaPorCobrar {
+  id                Int                       @id @default(autoincrement())
+  tipo              TipoAjusteCuenta
+  deltaImporte      Decimal                   @db.Decimal(18, 2)
+  motivo            String
+  claveIdempotencia String
+  cuentaId          Int
+  devolucionId      Int?
+  reversionId       Int?
+  responsableId     Int
+  ventaId           Int
+  tenantId          Int
+  createdAt         DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                  @updatedAt @db.Timestamptz(3)
+  cuenta            CuentaPorCobrar           @relation("AjusteCuentaPorCobrar_cuenta", fields: [tenantId, cuentaId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  devolucion        DevolucionVenta?          @relation("AjusteCuentaPorCobrar_devolucion", fields: [tenantId, devolucionId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  reversion         ReversionAplicacionCobro? @relation("AjusteCuentaPorCobrar_reversion", fields: [tenantId, reversionId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  responsable       UserTenant                @relation("AjusteCuentaPorCobrar_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant            Tenant                    @relation("AjusteCuentaPorCobrar_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id])
+  @@index([tenantId, cuentaId, createdAt])
+}
+
+model Reembolso {
+  id                       Int              @id @default(autoincrement())
+  monto                    Decimal          @db.Decimal(18, 2)
+  metodo                   MetodoCobro
+  estado                   EstadoReembolso  @default(PENDIENTE)
+  fecha                    DateTime         @default(now()) @db.Timestamptz(3)
+  confirmadoAt             DateTime?        @db.Timestamptz(3)
+  referencia               String?
+  motivo                   String
+  claveIdempotencia        String
+  cobroId                  Int
+  ventaId                  Int
+  aplicacionOriginalId     Int?
+  devolucionId             Int?
+  responsableId            Int
+  turnoId                  Int?
+  tenantId                 Int
+  createdAt                DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime         @updatedAt @db.Timestamptz(3)
+  cobro                    Cobro            @relation("Reembolso_cobro", fields: [tenantId, cobroId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  venta                    Venta            @relation("Reembolso_venta", fields: [tenantId, ventaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  aplicacionOriginal       AplicacionCobro? @relation("Reembolso_aplicacionOriginal", fields: [tenantId, aplicacionOriginalId, cobroId, ventaId], references: [tenantId, id, cobroId, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  devolucion               DevolucionVenta? @relation("Reembolso_devolucion", fields: [tenantId, devolucionId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  responsable              UserTenant       @relation("Reembolso_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  turno                    TurnoCaja?       @relation("Reembolso_turno", fields: [tenantId, turnoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoCaja_reembolso MovimientoCaja[] @relation("MovimientoCaja_reembolso")
+  tenant                   Tenant           @relation("Reembolso_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id, turnoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, cobroId])
+  @@index([tenantId, ventaId])
+  @@index([tenantId, fecha])
+}
+
+model DevolucionVenta {
+  id                                Int                      @id @default(autoincrement())
+  estado                            EstadoDevolucionVenta    @default(PENDIENTE)
+  fecha                             DateTime                 @default(now()) @db.Timestamptz(3)
+  aprobadaAt                        DateTime?                @db.Timestamptz(3)
+  motivo                            String
+  subtotal                          Decimal                  @db.Decimal(18, 2)
+  descuento                         Decimal                  @default(0) @db.Decimal(18, 2)
+  impuesto                          Decimal                  @default(0) @db.Decimal(18, 2)
+  total                             Decimal                  @db.Decimal(18, 2)
+  claveIdempotencia                 String
+  ventaId                           Int
+  responsableId                     Int
+  aprobadaPorId                     Int?
+  tenantId                          Int
+  createdAt                         DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                         DateTime                 @updatedAt @db.Timestamptz(3)
+  ajusteCuentaPorCobrar_devolucion  AjusteCuentaPorCobrar[]  @relation("AjusteCuentaPorCobrar_devolucion")
+  reembolso_devolucion              Reembolso[]              @relation("Reembolso_devolucion")
+  venta                             Venta                    @relation("DevolucionVenta_venta", fields: [tenantId, ventaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  responsable                       UserTenant               @relation("DevolucionVenta_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  aprobadaPor                       UserTenant?              @relation("DevolucionVenta_aprobadaPor", fields: [tenantId, aprobadaPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detalleDevolucionVenta_devolucion DetalleDevolucionVenta[] @relation("DetalleDevolucionVenta_devolucion")
+  tenant                            Tenant                   @relation("DevolucionVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id, ventaId])
+  @@unique([tenantId, id])
+  @@index([tenantId, ventaId, fecha])
+}
+
+model DetalleDevolucionVenta {
+  id                                               Int                    @id @default(autoincrement())
+  cantidad                                         Int
+  destino                                          DestinoDevolucionVenta
+  subtotal                                         Decimal                @db.Decimal(18, 2)
+  descuento                                        Decimal                @default(0) @db.Decimal(18, 2)
+  impuesto                                         Decimal                @default(0) @db.Decimal(18, 2)
+  total                                            Decimal                @db.Decimal(18, 2)
+  costoUnitario                                    Decimal                @db.Decimal(18, 4)
+  costoTotal                                       Decimal                @db.Decimal(18, 4)
+  devolucionId                                     Int
+  asignacionVentaId                                Int
+  ventaId                                          Int
+  detalleVentaId                                   Int
+  productoId                                       Int
+  loteId                                           Int
+  tenantId                                         Int
+  createdAt                                        DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                                        DateTime               @updatedAt @db.Timestamptz(3)
+  movimientoInventario_detalleDevolucion           MovimientoInventario[] @relation("MovimientoInventario_detalleDevolucion")
+  devolucion                                       DevolucionVenta        @relation("DetalleDevolucionVenta_devolucion", fields: [tenantId, devolucionId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  asignacionVenta                                  AsignacionLoteVenta    @relation("DetalleDevolucionVenta_asignacionVenta", fields: [tenantId, asignacionVentaId, ventaId, detalleVentaId, productoId, loteId], references: [tenantId, id, ventaId, detalleVentaId, productoId, loteId], onDelete: Restrict, onUpdate: NoAction)
+  tenant                                           Tenant                 @relation("DetalleDevolucionVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoInventario_detalleDevolucionReferencia MovimientoInventario[] @relation("MovimientoInventario_detalleDevolucionReferencia")
+
+  @@unique([tenantId, id, productoId, loteId])
+  @@unique([tenantId, id])
+  @@index([tenantId, devolucionId])
+  @@index([tenantId, asignacionVentaId])
+}
+
+model Caja {
+  id             Int         @id @default(autoincrement())
+  codigo         String
+  nombre         String
+  activo         Boolean     @default(true)
+  tenantId       Int
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+  turnoCaja_caja TurnoCaja[] @relation("TurnoCaja_caja")
+  tenant         Tenant      @relation("Caja_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, codigo])
+  @@unique([tenantId, id])
+}
+
+model TurnoCaja {
+  id                   Int              @id @default(autoincrement())
+  estado               EstadoTurnoCaja  @default(ABIERTO)
+  aperturaAt           DateTime         @default(now()) @db.Timestamptz(3)
+  fondoInicial         Decimal          @db.Decimal(18, 2)
+  cierreAt             DateTime?        @db.Timestamptz(3)
+  efectivoEsperado     Decimal?         @db.Decimal(18, 2)
+  efectivoContado      Decimal?         @db.Decimal(18, 2)
+  diferencia           Decimal?         @db.Decimal(18, 2)
+  motivoCierre         String?
+  cajaId               Int
+  cajeroId             Int
+  cerradoPorId         Int?
+  tenantId             Int
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  cobro_turno          Cobro[]          @relation("Cobro_turno")
+  reembolso_turno      Reembolso[]      @relation("Reembolso_turno")
+  caja                 Caja             @relation("TurnoCaja_caja", fields: [tenantId, cajaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  cajero               UserTenant       @relation("TurnoCaja_cajero", fields: [tenantId, cajeroId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  cerradoPor           UserTenant?      @relation("TurnoCaja_cerradoPor", fields: [tenantId, cerradoPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoCaja_turno MovimientoCaja[] @relation("MovimientoCaja_turno")
+  gastoComercial_turno GastoComercial[] @relation("GastoComercial_turno")
+  tenant               Tenant           @relation("TurnoCaja_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, cajaId, estado])
+  @@index([tenantId, cajeroId, aperturaAt])
+}
+
+model MovimientoCaja {
+  id                Int                @id @default(autoincrement())
+  tipo              TipoMovimientoCaja
+  monto             Decimal            @db.Decimal(18, 2)
+  fecha             DateTime           @default(now()) @db.Timestamptz(3)
+  motivo            String
+  claveIdempotencia String
+  turnoId           Int
+  responsableId     Int
+  cobroId           Int?
+  reembolsoId       Int?
+  gastoId           Int?
+  tenantId          Int
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+  turno             TurnoCaja          @relation("MovimientoCaja_turno", fields: [tenantId, turnoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  responsable       UserTenant         @relation("MovimientoCaja_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  cobro             Cobro?             @relation("MovimientoCaja_cobro", fields: [tenantId, cobroId, turnoId], references: [tenantId, id, turnoId], onDelete: Restrict, onUpdate: NoAction)
+  reembolso         Reembolso?         @relation("MovimientoCaja_reembolso", fields: [tenantId, reembolsoId, turnoId], references: [tenantId, id, turnoId], onDelete: Restrict, onUpdate: NoAction)
+  gasto             GastoComercial?    @relation("MovimientoCaja_gasto", fields: [tenantId, gastoId, turnoId], references: [tenantId, id, turnoId], onDelete: Restrict, onUpdate: NoAction)
+  tenant            Tenant             @relation("MovimientoCaja_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, cobroId])
+  @@unique([tenantId, reembolsoId])
+  @@unique([tenantId, gastoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, turnoId, fecha])
+  @@index([tenantId, fecha])
+}
+
+model GastoComercial {
+  id                   Int              @id @default(autoincrement())
+  concepto             String
+  categoria            String?
+  monto                Decimal          @db.Decimal(18, 2)
+  metodo               MetodoCobro
+  fecha                DateTime         @default(now()) @db.Timestamptz(3)
+  referencia           String?
+  claveIdempotencia    String
+  responsableId        Int
+  turnoId              Int?
+  tenantId             Int
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  movimientoCaja_gasto MovimientoCaja[] @relation("MovimientoCaja_gasto")
+  responsable          UserTenant       @relation("GastoComercial_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  turno                TurnoCaja?       @relation("GastoComercial_turno", fields: [tenantId, turnoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant               Tenant           @relation("GastoComercial_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, claveIdempotencia])
+  @@unique([tenantId, id, turnoId])
+  @@unique([tenantId, id])
+  @@index([tenantId, fecha])
+}
+
+model SecuenciaComprobante {
+  id                Int      @id @default(autoincrement())
+  ultimoConsecutivo BigInt   @default(0)
+  tenantId          Int
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+  tenant            Tenant   @relation("SecuenciaComprobante_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId])
+  @@unique([tenantId, id])
+}
+
+model ComprobanteVenta {
+  id                                  Int                       @id @default(autoincrement())
+  consecutivo                         BigInt
+  numero                              String
+  estado                              EstadoComprobanteVenta    @default(EMITIDO)
+  fechaEmision                        DateTime                  @default(now()) @db.Timestamptz(3)
+  receptorNombre                      String
+  receptorTipoIdentificacion          String?
+  receptorIdentificacion              String?
+  receptorDireccion                   String?
+  receptorEmail                       String?
+  subtotal                            Decimal                   @db.Decimal(18, 2)
+  descuento                           Decimal                   @default(0) @db.Decimal(18, 2)
+  impuesto                            Decimal                   @default(0) @db.Decimal(18, 2)
+  total                               Decimal                   @db.Decimal(18, 2)
+  anuladaAt                           DateTime?                 @db.Timestamptz(3)
+  motivoAnulacion                     String?
+  ventaId                             Int
+  emitidoPorId                        Int
+  anuladoPorId                        Int?
+  tenantId                            Int
+  createdAt                           DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                           DateTime                  @updatedAt @db.Timestamptz(3)
+  venta                               Venta                     @relation("ComprobanteVenta_venta", fields: [tenantId, ventaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  emitidoPor                          UserTenant                @relation("ComprobanteVenta_emitidoPor", fields: [tenantId, emitidoPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  anuladoPor                          UserTenant?               @relation("ComprobanteVenta_anuladoPor", fields: [tenantId, anuladoPorId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  detalleComprobanteVenta_comprobante DetalleComprobanteVenta[] @relation("DetalleComprobanteVenta_comprobante")
+  notificacionCliente_comprobante     NotificacionCliente[]     @relation("NotificacionCliente_comprobante")
+  tenant                              Tenant                    @relation("ComprobanteVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  clienteComercialId                  Int?
+  clienteComercial                    ClienteComercial?         @relation("ComprobanteVenta_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  ventaCliente                        Venta?                    @relation("ComprobanteVenta_ventaCliente", fields: [tenantId, ventaId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, ventaId])
+  @@unique([tenantId, consecutivo])
+  @@unique([tenantId, numero])
+  @@unique([tenantId, id, ventaId])
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, clienteComercialId])
+  @@index([tenantId, fechaEmision])
+}
+
+model DetalleComprobanteVenta {
+  id                   Int              @id @default(autoincrement())
+  nombreProducto       String
+  presentacionProducto String?
+  skuProducto          String?
+  codigoBarrasProducto String?
+  categoriaNombre      String?
+  cantidad             Int
+  precioUnitario       Decimal          @db.Decimal(18, 2)
+  descuento            Decimal          @default(0) @db.Decimal(18, 2)
+  tasaImpuesto         Decimal          @default(0) @db.Decimal(7, 4)
+  subtotal             Decimal          @db.Decimal(18, 2)
+  impuesto             Decimal          @default(0) @db.Decimal(18, 2)
+  total                Decimal          @db.Decimal(18, 2)
+  comprobanteId        Int
+  detalleVentaId       Int
+  ventaId              Int
+  productoId           Int
+  tenantId             Int
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  comprobante          ComprobanteVenta @relation("DetalleComprobanteVenta_comprobante", fields: [tenantId, comprobanteId, ventaId], references: [tenantId, id, ventaId], onDelete: Restrict, onUpdate: NoAction)
+  detalleVenta         DetalleVenta     @relation("DetalleComprobanteVenta_detalleVenta", fields: [tenantId, detalleVentaId, ventaId, productoId], references: [tenantId, id, ventaId, productoId], onDelete: Restrict, onUpdate: NoAction)
+  tenant               Tenant           @relation("DetalleComprobanteVenta_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, comprobanteId, detalleVentaId], map: "DetalleComprobanteVenta_key_0917bd5041")
+  @@unique([tenantId, id])
+}
+
+model EventoSalida {
+  id                         Int                   @id @default(autoincrement())
+  eventoId                   String                @unique @default(uuid()) @db.Uuid
+  tipo                       String
+  entidadTipo                String
+  entidadId                  Int
+  version                    Int                   @default(1)
+  payload                    Json
+  estado                     EstadoEventoSalida    @default(PENDIENTE)
+  intentos                   Int                   @default(0)
+  proximoIntentoAt           DateTime              @default(now()) @db.Timestamptz(3)
+  leaseHasta                 DateTime?             @db.Timestamptz(3)
+  leaseToken                 String?               @db.Uuid
+  enviadoAt                  DateTime?             @db.Timestamptz(3)
+  ultimoError                String?
+  tenantId                   Int
+  createdAt                  DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime              @updatedAt @db.Timestamptz(3)
+  notificacionCliente_evento NotificacionCliente[] @relation("NotificacionCliente_evento")
+  tenant                     Tenant                @relation("EventoSalida_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([estado, proximoIntentoAt])
+  @@index([tenantId, createdAt])
+}
+
+model NotificacionCliente {
+  id                 Int                        @id @default(autoincrement())
+  tipo               TipoNotificacionCliente
+  titulo             String
+  mensaje            String
+  leidaAt            DateTime?                  @db.Timestamptz(3)
+  clienteComercialId Int
+  eventoId           Int
+  vinculacionId      Int?
+  pedidoId           Int?
+  comprobanteId      Int?
+  cuentaId           Int?
+  tenantId           Int
+  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
+  clienteComercial   ClienteComercial           @relation("NotificacionCliente_clienteComercial", fields: [tenantId, clienteComercialId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  evento             EventoSalida               @relation("NotificacionCliente_evento", fields: [tenantId, eventoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  vinculacion        VinculacionClienteUsuario? @relation("NotificacionCliente_vinculacion", fields: [tenantId, vinculacionId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  pedido             Pedido?                    @relation("NotificacionCliente_pedido", fields: [tenantId, pedidoId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  comprobante        ComprobanteVenta?          @relation("NotificacionCliente_comprobante", fields: [tenantId, comprobanteId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  cuenta             CuentaPorCobrar?           @relation("NotificacionCliente_cuenta", fields: [tenantId, cuentaId, clienteComercialId], references: [tenantId, id, clienteComercialId], onDelete: Restrict, onUpdate: NoAction)
+  tenant             Tenant                     @relation("NotificacionCliente_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, eventoId, clienteComercialId])
+  @@unique([tenantId, id])
+  @@index([tenantId, clienteComercialId, leidaAt, createdAt], map: "NotificacionCliente_idx_65e93edc38")
+}
+
+model AuditoriaOperacion {
+  id                  Int                @id @default(autoincrement())
+  actor               TipoActorOperacion
+  rolCodigo           String?
+  rolNombre           String?
+  accion              String
+  entidadTipo         String
+  entidadId           Int
+  motivo              String?
+  datos               Json?
+  correlacionId       String             @db.Uuid
+  usuarioId           Int?
+  membresiaId         Int?
+  productoId          Int?
+  tenantId            Int
+  createdAt           DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime           @updatedAt @db.Timestamptz(3)
+  usuario             Usuario?           @relation("AuditoriaOperacion_usuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  membresia           UserTenant?        @relation("AuditoriaOperacion_membresia", fields: [tenantId, membresiaId, usuarioId], references: [tenantId, id, usuarioId], onDelete: Restrict, onUpdate: NoAction)
+  producto            Producto?          @relation("AuditoriaOperacion_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  tenant              Tenant             @relation("AuditoriaOperacion_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  membresiaReferencia UserTenant?        @relation("AuditoriaOperacion_membresiaReferencia", fields: [tenantId, membresiaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, rolCodigo, createdAt])
+  @@index([tenantId, productoId, createdAt])
+  @@index([tenantId, entidadTipo, entidadId, createdAt], map: "AuditoriaOperacion_idx_f8f5db49a6")
+}
+
+model SolicitudIdempotente {
+  id            Int                        @id @default(autoincrement())
+  alcance       String
+  operacion     String
+  clave         String
+  hashSolicitud String
+  estado        EstadoSolicitudIdempotente @default(EN_PROCESO)
+  recursoTipo   String?
+  recursoId     Int?
+  usuarioId     Int?
+  tenantId      Int
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+  usuario       Usuario?                   @relation("SolicitudIdempotente_usuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  tenant        Tenant                     @relation("SolicitudIdempotente_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tenantId, alcance, operacion, clave])
+  @@unique([tenantId, id])
+}
+
+enum VersionAutorizacion {
+  LEGACY
+  PERMISOS
+}
+
+enum ModoInventario {
+  LEGACY
+  LOTES
+}
+
+enum UnidadVenta {
+  UNIDAD
+}
+
+enum MetodoVerificacionCliente {
+  PERSONAL_AUTORIZADO
+  CUENTA_VERIFICADA
+}
+
+enum EstadoCarrito {
+  ACTIVO
+  CONFIRMADO
+  ABANDONADO
+}
+
+enum EstadoPedido {
+  CONFIRMADO
+  EN_PREPARACION
+  ENTREGADO
+  CANCELADO
+  EXPIRADO
+}
+
+enum EstadoReservaInventario {
+  ACTIVA
+  CONSUMIDA
+  LIBERADA
+  EXPIRADA
+}
+
+enum OrigenVenta {
+  CAJA
+  PORTAL
+}
+
+enum EstadoVenta {
+  COMPLETADA
+  ANULADA
+}
+
+enum MetodoCobro {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  OTRO
+}
+
+enum EstadoCobro {
+  CONFIRMADO
+  REVERSADO
+}
+
+enum EstadoCuentaPorCobrar {
+  ABIERTA
+  PAGADA
+  CANCELADA
+}
+
+enum TipoAjusteCuenta {
+  DEVOLUCION
+  ANULACION
+  CORRECCION_PAGO_INICIAL
+}
+
+enum EstadoReembolso {
+  PENDIENTE
+  CONFIRMADO
+  CANCELADO
+}
+
+enum EstadoDevolucionVenta {
+  PENDIENTE
+  APROBADA
+  CANCELADA
+}
+
+enum DestinoDevolucionVenta {
+  REINTEGRO_APTO
+  BAJA_NO_APTO
+}
+
+enum EstadoTurnoCaja {
+  ABIERTO
+  CERRADO
+}
+
+enum TipoMovimientoCaja {
+  ENTRADA
+  SALIDA
+}
+
+enum EstadoComprobanteVenta {
+  EMITIDO
+  ANULADO
+}
+
+enum EstadoEventoSalida {
+  PENDIENTE
+  PROCESANDO
+  ENVIADO
+  FALLIDO
+}
+
+enum EstadoSolicitudIdempotente {
+  EN_PROCESO
+  COMPLETADA
+}
+
+enum TipoActorOperacion {
+  USUARIO
+  SISTEMA
+}
+
+enum TipoNotificacionCliente {
+  ESTADO_PEDIDO
+  COMPROBANTE_DISPONIBLE
+  RECORDATORIO_DEUDA
+}
+
+enum TipoMovimientoInventario {
+  APERTURA
+  ENTRADA
+  VENTA
+  RESERVA
+  LIBERACION_RESERVA
+  CONSUMO_RESERVA
+  BAJA
+  AJUSTE
+  DEVOLUCION
+  REVERSION
 }

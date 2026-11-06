@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CompraService } from './compra.service';
 
@@ -132,5 +133,28 @@ describe('CompraService', () => {
         9,
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('calcula el total legacy con precio Decimal sin error binario', async () => {
+    prisma.cliente.findFirst.mockResolvedValue({ id: 7 });
+    prisma.producto.findMany.mockResolvedValue([
+      {
+        id: 1,
+        nombre: 'Producto',
+        precio: new Prisma.Decimal('0.10'),
+        stock: 5,
+      },
+    ]);
+    tx.compra.create.mockResolvedValue({ id: 11 });
+
+    await service.create(
+      { clienteId: 7, detalles: [{ productoId: 1, cantidad: 3 }] },
+      9,
+    );
+
+    const llamada = tx.compra.create.mock.calls[0] as [
+      { data: { total: number } },
+    ];
+    expect(llamada[0].data.total).toBe(0.3);
   });
 });

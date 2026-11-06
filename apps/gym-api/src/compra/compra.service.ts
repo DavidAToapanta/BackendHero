@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Compra } from '@prisma/client';
+import { Compra, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateCompraDto } from './dto/create-compra.dto';
@@ -131,7 +131,12 @@ export class CompraService {
             clienteId,
             productoId: detalle.productoId,
             cantidad: detalle.cantidad,
-            total: producto.precio * detalle.cantidad,
+            // Compra conserva su importe Float y contrato legacy. El precio
+            // nuevo se calcula en Decimal antes de convertir ese resultado.
+            total: new Prisma.Decimal(producto.precio)
+              .mul(detalle.cantidad)
+              .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+              .toNumber(),
             fecha: new Date(),
           },
         });
