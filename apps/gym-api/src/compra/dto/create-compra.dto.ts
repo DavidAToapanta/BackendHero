@@ -3,10 +3,20 @@ import {
   IsArray,
   IsInt,
   IsNotEmpty,
-  IsNumber,
+  IsOptional,
   Min,
   ValidateNested,
 } from 'class-validator';
+
+class CompraLoteDto {
+  @IsInt()
+  @Min(1)
+  loteId: number;
+
+  @IsInt()
+  @Min(1)
+  cantidad: number;
+}
 
 class CompraDetalleDto {
   @IsInt()
@@ -17,6 +27,12 @@ class CompraDetalleDto {
   @IsNotEmpty()
   @Min(1)
   cantidad: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CompraLoteDto)
+  lotes?: CompraLoteDto[];
 }
 
 export class CreateCompraDto {

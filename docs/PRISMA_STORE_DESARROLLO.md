@@ -1,4 +1,4 @@
-# Ampliación STORE: punto de partida en desarrollo
+Ñ# Ampliación STORE: punto de partida en desarrollo
 
 Fecha de revisión: 2026-10-31.
 

@@ -7,12 +7,12 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --write \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"libs/catalogo/src/**/*.ts\" \"libs/inventario/src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/apps/gym-api/src/main",
-    "lint": "eslint \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"test/**/*.ts\" --fix",
+    "lint": "eslint \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"libs/catalogo/src/**/*.ts\" \"libs/inventario/src/**/*.ts\" \"test/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -83,7 +83,9 @@
     "roots": [
       "<rootDir>/apps/gym-api/src",
       "<rootDir>/libs/prisma/src",
-      "<rootDir>/libs/seguridad/src"
+      "<rootDir>/libs/seguridad/src",
+      "<rootDir>/libs/catalogo/src",
+      "<rootDir>/libs/inventario/src"
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
@@ -92,14 +94,18 @@
     "collectCoverageFrom": [
       "apps/gym-api/src/**/*.(t|j)s",
       "libs/prisma/src/**/*.(t|j)s",
-      "libs/seguridad/src/**/*.(t|j)s"
+      "libs/seguridad/src/**/*.(t|j)s",
+      "libs/catalogo/src/**/*.(t|j)s",
+      "libs/inventario/src/**/*.(t|j)s"
     ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/apps/gym-api/src/$1",
       "^@app/prisma$": "<rootDir>/libs/prisma/src",
-      "^@app/seguridad$": "<rootDir>/libs/seguridad/src"
+      "^@app/seguridad$": "<rootDir>/libs/seguridad/src",
+      "^@app/catalogo$": "<rootDir>/libs/catalogo/src",
+      "^@app/inventario$": "<rootDir>/libs/inventario/src"
     }
   }
 }

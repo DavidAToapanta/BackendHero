@@ -30,6 +30,26 @@
         "deleteOutDir": false
       }
     },
+    "inventario": {
+      "type": "library",
+      "root": "libs/inventario",
+      "entryFile": "index",
+      "sourceRoot": "libs/inventario/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/inventario/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
+    "catalogo": {
+      "type": "library",
+      "root": "libs/catalogo",
+      "entryFile": "index",
+      "sourceRoot": "libs/catalogo/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/catalogo/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
     "prisma": {
       "type": "library",
       "root": "libs/prisma",

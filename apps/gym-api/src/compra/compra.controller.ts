@@ -13,10 +13,14 @@ export class CompraController {
 
   @Post()
   @Roles(Role.ADMIN, Role.RECEPCIONISTA)
-  create(@Body() createCompraDto: CreateCompraDto, @Request() req) {
+  create(
+    @Body() createCompraDto: CreateCompraDto,
+    @Request() req: { user: { sub: number; tenantId?: number | null } },
+  ) {
     return this.compraService.create(
       createCompraDto,
       getTenantIdOrThrow(req.user),
+      req.user.sub,
     );
   }
 }

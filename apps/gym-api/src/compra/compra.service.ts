@@ -1,150 +1,144 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Compra, Prisma } from '@prisma/client';
+import {
+  Compra,
+  ModoInventario,
+  Prisma,
+  UserTenantEstado,
+} from '@prisma/client';
+import { InventarioLotesService, InventarioService } from '@app/inventario';
 import { PrismaService } from '@app/prisma';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateCompraDto } from './dto/create-compra.dto';
 
 @Injectable()
 export class CompraService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventario: InventarioService,
+    private readonly lotes: InventarioLotesService,
+  ) {}
 
-  private async getScopedTenantId(tenantId?: number) {
-    return resolveTenantIdOrDefault(this.prisma, tenantId);
-  }
-
-  async create(createCompraDto: CreateCompraDto, tenantId?: number) {
-    const scopedTenantId = await this.getScopedTenantId(tenantId);
-    const { clienteId, detalles } = createCompraDto;
-
+  async create(dto: CreateCompraDto, tenantId?: number, usuarioId?: number) {
+    const scopedTenantId = await resolveTenantIdOrDefault(
+      this.prisma,
+      tenantId,
+    );
+    const { clienteId, detalles } = dto;
     if (!detalles.length) {
       throw new BadRequestException(
         'La compra debe incluir al menos un producto',
       );
     }
 
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id: clienteId, tenantId: scopedTenantId },
-      select: { id: true },
-    });
-
-    if (!cliente) {
-      throw new NotFoundException('Cliente no encontrado');
-    }
-
-    const productoIds = [
-      ...new Set(detalles.map((detalle) => detalle.productoId)),
-    ];
-    const productos = await this.prisma.producto.findMany({
-      where: {
-        tenantId: scopedTenantId,
-        id: { in: productoIds },
-      },
-      select: {
-        id: true,
-        nombre: true,
-        precio: true,
-        stock: true,
-      },
-    });
-
-    if (productos.length !== productoIds.length) {
-      const productosEncontrados = new Set(
-        productos.map((producto) => producto.id),
-      );
-      const productoFaltante = productoIds.find(
-        (id) => !productosEncontrados.has(id),
-      );
-
-      throw new BadRequestException(
-        `Producto con ID ${productoFaltante} no encontrado`,
-      );
-    }
-
-    const cantidadesPorProducto = new Map<number, number>();
-    for (const detalle of detalles) {
-      cantidadesPorProducto.set(
-        detalle.productoId,
-        (cantidadesPorProducto.get(detalle.productoId) ?? 0) + detalle.cantidad,
-      );
-    }
-
-    const productosPorId = new Map(
-      productos.map((producto) => [producto.id, producto]),
-    );
-
-    for (const [productoId, cantidad] of cantidadesPorProducto.entries()) {
-      const producto = productosPorId.get(productoId);
-
-      if (!producto) {
-        throw new BadRequestException(
-          `Producto con ID ${productoId} no encontrado`,
-        );
-      }
-
-      if (producto.stock < cantidad) {
-        throw new BadRequestException(
-          `Stock insuficiente para el producto ${producto.nombre}`,
-        );
-      }
-    }
-
     return this.prisma.$transaction(async (tx) => {
-      const compras: Compra[] = [];
-      const stockDisponible = new Map(
-        productos.map((producto) => [producto.id, producto.stock]),
+      const cliente = await tx.cliente.findFirst({
+        where: { id: clienteId, tenantId: scopedTenantId },
+        select: { id: true },
+      });
+      if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+      const ids = [...new Set(detalles.map(({ productoId }) => productoId))];
+      const productos = await this.inventario.bloquearProductos(
+        tx,
+        scopedTenantId,
+        ids,
       );
+      const productosPorId = new Map(
+        productos.map((producto) => [producto.id, producto]),
+      );
+      const responsable = productos.some(
+        (producto) => producto.modoInventario === ModoInventario.LOTES,
+      )
+        ? await this.buscarResponsable(tx, scopedTenantId, usuarioId)
+        : undefined;
 
+      const compras: Compra[] = [];
+      const correlacionId = randomUUID();
       for (const detalle of detalles) {
-        const producto = productosPorId.get(detalle.productoId);
-        const stockActual = stockDisponible.get(detalle.productoId);
-
-        if (!producto || stockActual === undefined) {
+        const { productoId, cantidad, lotes } = detalle;
+        const producto = productosPorId.get(productoId);
+        if (!producto) {
           throw new BadRequestException(
-            `Producto con ID ${detalle.productoId} no encontrado`,
+            `Producto con ID ${productoId} no encontrado`,
           );
         }
-
-        if (stockActual < detalle.cantidad) {
+        if (producto.modoInventario === ModoInventario.LEGACY) {
+          if (lotes?.length) {
+            throw new BadRequestException(
+              'El producto legacy no admite selección de lotes',
+            );
+          }
+          await this.inventario.retirarLegacy(
+            tx,
+            scopedTenantId,
+            producto,
+            cantidad,
+          );
+        } else if (!lotes?.length || !responsable) {
           throw new BadRequestException(
-            `Stock insuficiente para el producto ${producto.nombre}`,
+            'Selecciona los lotes para completar la compra',
           );
         }
-
-        stockDisponible.set(detalle.productoId, stockActual - detalle.cantidad);
-
-        await tx.producto.update({
-          where: { id: detalle.productoId },
-          data: {
-            stock: {
-              decrement: detalle.cantidad,
-            },
-          },
-        });
 
         const compra = await tx.compra.create({
           data: {
             tenantId: scopedTenantId,
             clienteId,
-            productoId: detalle.productoId,
-            cantidad: detalle.cantidad,
-            // Compra conserva su importe Float y contrato legacy. El precio
-            // nuevo se calcula en Decimal antes de convertir ese resultado.
-            total: new Prisma.Decimal(producto.precio)
-              .mul(detalle.cantidad)
+            productoId,
+            cantidad,
+            total: producto.precio
+              .mul(cantidad)
               .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
               .toNumber(),
             fecha: new Date(),
           },
         });
 
+        if (lotes?.length && responsable) {
+          await this.lotes.retirarCompra(
+            tx,
+            {
+              tenantId: scopedTenantId,
+              responsableId: responsable.id,
+              clave: `gym:compra:${compra.id}`,
+              correlacionId,
+            },
+            compra,
+            lotes,
+          );
+        }
         compras.push(compra);
       }
-
       return compras;
     });
+  }
+
+  private async buscarResponsable(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    usuarioId?: number,
+  ) {
+    if (!usuarioId)
+      throw new ForbiddenException(
+        'La compra por lotes requiere un responsable',
+      );
+    const responsable = await tx.userTenant.findUnique({
+      where: {
+        usuarioId_tenantId: { usuarioId, tenantId },
+        estado: UserTenantEstado.ACTIVO,
+      },
+      select: { id: true },
+    });
+    if (!responsable)
+      throw new ForbiddenException(
+        'El responsable no tiene una membresía activa',
+      );
+    return responsable;
   }
 }
