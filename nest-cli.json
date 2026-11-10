@@ -20,6 +20,36 @@
         "tsConfigPath": "apps/gym-api/tsconfig.app.json"
       }
     },
+    "permisos": {
+      "type": "library",
+      "root": "libs/permisos",
+      "entryFile": "index",
+      "sourceRoot": "libs/permisos/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/permisos/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
+    "negocios": {
+      "type": "library",
+      "root": "libs/negocios",
+      "entryFile": "index",
+      "sourceRoot": "libs/negocios/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/negocios/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
+    "identidad": {
+      "type": "library",
+      "root": "libs/identidad",
+      "entryFile": "index",
+      "sourceRoot": "libs/identidad/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/identidad/tsconfig.lib.json",
+        "deleteOutDir": false
+      }
+    },
     "seguridad": {
       "type": "library",
       "root": "libs/seguridad",

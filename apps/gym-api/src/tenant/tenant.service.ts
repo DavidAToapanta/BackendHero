@@ -15,6 +15,11 @@ import {
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '@app/prisma';
+import {
+  MembresiasPersonalService,
+  ModulosNegocioService,
+  NegociosService,
+} from '@app/negocios';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateSaasPlanDto } from './dto/update-saas-plan.dto';
 
@@ -46,7 +51,12 @@ export class TenantService {
   private readonly defaultTenantName = 'Gym Principal';
   private readonly defaultTenantSlug = 'gym-principal';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly negocios: NegociosService,
+    private readonly modulos: ModulosNegocioService,
+    private readonly membresias: MembresiasPersonalService,
+  ) {}
 
   async create(dto: CreateTenantDto) {
     const nombre = dto.nombre.trim();
@@ -61,8 +71,8 @@ export class TenantService {
       await this.ensureUsuarioExists(dto.ownerUserId);
     }
 
-    return this.prisma.tenant.create({
-      data: {
+    return this.negocios.crear(
+      {
         nombre,
         slug,
         tipoNegocio: dto.tipoNegocio,
@@ -76,38 +86,23 @@ export class TenantService {
         descripcion: this.normalizeOptionalString(dto.descripcion),
         latitud: dto.latitud ?? null,
         longitud: dto.longitud ?? null,
-        modules: {
-          create: modules.map((module) => ({
-            module,
-            activo: true,
-          })),
-        },
-        users: dto.ownerUserId
-          ? {
-              create: {
-                usuarioId: dto.ownerUserId,
-                role: TenantRole.OWNER,
-                estado: UserTenantEstado.ACTIVO,
-              },
-            }
-          : undefined,
       },
-      include: tenantDetailInclude,
-    });
+      {
+        include: tenantDetailInclude,
+        inicial: { modulos: modules, propietarioId: dto.ownerUserId },
+      },
+    );
   }
 
   async findAll() {
-    return this.prisma.tenant.findMany({
-      orderBy: { id: 'asc' },
-      include: tenantDetailInclude,
-    });
+    return this.negocios.listar(tenantDetailInclude);
   }
 
   async findOne(id: number) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id },
-      include: tenantDetailInclude,
-    });
+    const tenant = await this.negocios.buscarDetalle(
+      { id },
+      tenantDetailInclude,
+    );
 
     if (!tenant) {
       throw new NotFoundException('Tenant no encontrado');
@@ -117,26 +112,13 @@ export class TenantService {
   }
 
   async updateSaasPlan(id: number, dto: UpdateSaasPlanDto) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id },
-      include: tenantDetailInclude,
-    });
-
-    if (!tenant) {
-      throw new NotFoundException('Tenant no encontrado');
-    }
+    const tenant = await this.findOne(id);
 
     if (tenant.saasPlan === dto.saasPlan) {
       return tenant;
     }
 
-    return this.prisma.tenant.update({
-      where: { id },
-      data: {
-        saasPlan: dto.saasPlan,
-      },
-      include: tenantDetailInclude,
-    });
+    return this.negocios.actualizarPlan(id, dto.saasPlan, tenantDetailInclude);
   }
 
   async rotateBridgeKey(id: number) {
@@ -160,10 +142,10 @@ export class TenantService {
   async findDefaultTenant() {
     await this.ensureLegacyDefaultTenant();
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: this.defaultTenantSlug },
-      include: tenantDetailInclude,
-    });
+    const tenant = await this.negocios.buscarDetalle(
+      { slug: this.defaultTenantSlug },
+      tenantDetailInclude,
+    );
 
     if (!tenant) {
       throw new NotFoundException('Tenant legacy por defecto no encontrado');
@@ -173,33 +155,16 @@ export class TenantService {
   }
 
   async ensureLegacyDefaultTenant(prisma: PrismaExecutor = this.prisma) {
-    const tenant = await prisma.tenant.upsert({
-      where: { slug: this.defaultTenantSlug },
-      update: {},
-      create: {
+    const tenant = await this.negocios.asegurarPorSlug(
+      {
         nombre: this.defaultTenantName,
         slug: this.defaultTenantSlug,
         tipoNegocio: TipoNegocio.GYM,
         estado: TenantEstado.ACTIVO,
       },
-    });
-
-    await prisma.tenantModule.upsert({
-      where: {
-        tenantId_module: {
-          tenantId: tenant.id,
-          module: ModuleKey.GYM,
-        },
-      },
-      update: {
-        activo: true,
-      },
-      create: {
-        tenantId: tenant.id,
-        module: ModuleKey.GYM,
-        activo: true,
-      },
-    });
+      prisma,
+    );
+    await this.modulos.asegurarActivo(tenant.id, ModuleKey.GYM, prisma);
 
     return tenant;
   }
@@ -217,24 +182,15 @@ export class TenantService {
 
     const tenant = await this.ensureLegacyDefaultTenant(prisma);
 
-    return prisma.userTenant.upsert({
-      where: {
-        usuarioId_tenantId: {
-          usuarioId,
-          tenantId: tenant.id,
-        },
-      },
-      update: {
-        role: tenantRole,
-        estado: UserTenantEstado.ACTIVO,
-      },
-      create: {
+    return this.membresias.asegurar(
+      {
         usuarioId,
         tenantId: tenant.id,
         role: tenantRole,
         estado: UserTenantEstado.ACTIVO,
       },
-    });
+      prisma,
+    );
   }
 
   private async resolveSlug(nombre: string, requestedSlug?: string) {
@@ -244,10 +200,7 @@ export class TenantService {
       if (!slug) {
         throw new BadRequestException('Slug invalido');
       }
-      const existing = await this.prisma.tenant.findUnique({
-        where: { slug },
-        select: { id: true },
-      });
+      const existing = await this.negocios.buscarIdPorSlug(slug);
 
       if (existing) {
         throw new BadRequestException('Ya existe un tenant con ese slug');
@@ -260,12 +213,7 @@ export class TenantService {
     let slug = slugBase;
     let suffix = 2;
 
-    while (
-      await this.prisma.tenant.findUnique({
-        where: { slug },
-        select: { id: true },
-      })
-    ) {
+    while (await this.negocios.buscarIdPorSlug(slug)) {
       slug = `${slugBase}-${suffix}`;
       suffix += 1;
     }
@@ -295,13 +243,11 @@ export class TenantService {
   ) {
     switch ((legacyRole || '').toLowerCase()) {
       case 'administrador': {
-        const ownerMembership = await prisma.userTenant.findFirst({
-          where: {
-            tenant: { slug: this.defaultTenantSlug },
-            role: TenantRole.OWNER,
-          },
-          select: { id: true },
-        });
+        const ownerMembership = await this.membresias.buscarIdPorRolEnNegocio(
+          this.defaultTenantSlug,
+          TenantRole.OWNER,
+          prisma,
+        );
 
         return ownerMembership ? TenantRole.ADMIN : TenantRole.OWNER;
       }

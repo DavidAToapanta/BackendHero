@@ -6,6 +6,9 @@
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../apps/gym-api/src/$1",
     "^@app/prisma$": "<rootDir>/../libs/prisma/src",
+    "^@app/identidad$": "<rootDir>/../libs/identidad/src",
+    "^@app/negocios$": "<rootDir>/../libs/negocios/src",
+    "^@app/permisos$": "<rootDir>/../libs/permisos/src",
     "^@app/seguridad$": "<rootDir>/../libs/seguridad/src",
     "^@app/catalogo$": "<rootDir>/../libs/catalogo/src",
     "^@app/inventario$": "<rootDir>/../libs/inventario/src"

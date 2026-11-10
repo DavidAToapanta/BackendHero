@@ -1,3 +1,5 @@
+import { IdentidadService, type AccountConflicts } from '@app/identidad';
+import { MembresiasPersonalService } from '@app/negocios';
 import {
   BadRequestException,
   Injectable,
@@ -41,16 +43,6 @@ const staffMembershipInclude = {
   },
 } satisfies Prisma.UserTenantInclude;
 
-const usuarioIdentidadSelect = {
-  id: true,
-  email: true,
-  userName: true,
-  nombres: true,
-  apellidos: true,
-  cedula: true,
-  fechaNacimiento: true,
-} satisfies Prisma.UsuarioSelect;
-
 const usuarioIdSelect = {
   id: true,
 } satisfies Prisma.UsuarioSelect;
@@ -61,29 +53,13 @@ type StaffMembership = Prisma.UserTenantGetPayload<{
   include: typeof staffMembershipInclude;
 }>;
 
-type UsuarioIdentidad = Prisma.UsuarioGetPayload<{
-  select: typeof usuarioIdentidadSelect;
-}>;
-
-type CoincidenciasUsuarioStaff = {
-  usuarioPorCedula: UsuarioIdentidad | null;
-  usuarioPorEmail: UsuarioIdentidad | null;
-  usuarioPorUserName: UsuarioIdentidad | null;
-};
-
-type UsuarioStaffData = {
-  nombres: string;
-  apellidos: string;
-  cedula: string;
-  fechaNacimiento?: string | null;
-  email?: string | null;
-  userName?: string | null;
-  password: string;
-};
-
 @Injectable()
 export class StaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly identidad: IdentidadService,
+    private readonly membresias: MembresiasPersonalService,
+  ) {}
 
   async create(dto: CreateStaffDto, tenantId?: number) {
     this.assertManagedFieldsNotProvided(dto);
@@ -109,7 +85,7 @@ export class StaffService {
       this.normalizeOptionalString(dto.email)?.toLowerCase() ?? null;
     const userName = this.normalizeOptionalString(dto.userName);
 
-    const coincidencias = await this.findUsuarioExistenteParaStaff({
+    const coincidencias = await this.identidad.findConflicts({
       cedula,
       email,
       userName,
@@ -119,21 +95,22 @@ export class StaffService {
 
     try {
       const membership = await this.prisma.$transaction(async (tx) => {
-        const usuario = await this.crearUsuarioSiHaceFalta(
-          {
-            nombres,
-            apellidos,
-            cedula,
-            fechaNacimiento,
-            email,
-            userName,
-            password: dto.password,
-          },
-          tx,
-          usuarioExistente,
-        );
+        const usuario =
+          usuarioExistente ??
+          (await this.identidad.createAccount(
+            {
+              nombres,
+              apellidos,
+              cedula,
+              fechaNacimiento,
+              email,
+              userName,
+              password: dto.password,
+            },
+            tx,
+          ));
 
-        const membershipExistente = await this.findMembershipByUsuarioYTenant(
+        const membershipExistente = await this.membresias.buscar(
           usuario.id,
           scopedTenantId,
           tx,
@@ -145,14 +122,15 @@ export class StaffService {
           );
         }
 
-        await tx.userTenant.create({
-          data: {
+        await this.membresias.vincular(
+          {
             usuarioId: usuario.id,
             tenantId: scopedTenantId,
             role: dto.tenantRole,
             estado: UserTenantEstado.ACTIVO,
           },
-        });
+          tx,
+        );
 
         await this.syncStaffProfileForRole(
           usuario.id,
@@ -234,10 +212,12 @@ export class StaffService {
         }
 
         if (dto.tenantRole) {
-          await tx.userTenant.update({
-            where: { id: membership.id },
-            data: { role: dto.tenantRole },
-          });
+          await this.membresias.cambiarRol(
+            membership.id,
+            scopedTenantId,
+            dto.tenantRole,
+            tx,
+          );
         }
 
         if (
@@ -293,10 +273,7 @@ export class StaffService {
       scopedTenantId,
     );
 
-    await this.prisma.userTenant.update({
-      where: { id: membership.id },
-      data: { estado },
-    });
+    await this.membresias.cambiarEstado(membership.id, scopedTenantId, estado);
 
     return this.findOne(usuarioId, scopedTenantId);
   }
@@ -409,47 +386,11 @@ export class StaffService {
     }
   }
 
-  private async findUsuarioExistenteParaStaff({
-    cedula,
-    email,
-    userName,
-  }: {
-    cedula: string;
-    email?: string | null;
-    userName?: string | null;
-  }): Promise<CoincidenciasUsuarioStaff> {
-    const [usuarioPorCedula, usuarioPorEmail, usuarioPorUserName] =
-      await Promise.all([
-        this.prisma.usuario.findUnique({
-          where: { cedula },
-          select: usuarioIdentidadSelect,
-        }),
-        email
-          ? this.prisma.usuario.findUnique({
-              where: { email },
-              select: usuarioIdentidadSelect,
-            })
-          : Promise.resolve(null),
-        userName
-          ? this.prisma.usuario.findUnique({
-              where: { userName },
-              select: usuarioIdentidadSelect,
-            })
-          : Promise.resolve(null),
-      ]);
-
-    return {
-      usuarioPorCedula,
-      usuarioPorEmail,
-      usuarioPorUserName,
-    };
-  }
-
   private validarConsistenciaDeUsuarioExistente({
     usuarioPorCedula,
     usuarioPorEmail,
     usuarioPorUserName,
-  }: CoincidenciasUsuarioStaff) {
+  }: AccountConflicts) {
     if (usuarioPorCedula) {
       if (usuarioPorEmail && usuarioPorEmail.id !== usuarioPorCedula.id) {
         throw new BadRequestException(
@@ -479,48 +420,6 @@ export class StaffService {
     }
 
     return null;
-  }
-
-  private async crearUsuarioSiHaceFalta(
-    data: UsuarioStaffData,
-    prismaClient: PrismaExecutor,
-    usuarioExistente?: UsuarioIdentidad | null,
-  ) {
-    if (usuarioExistente) {
-      return usuarioExistente;
-    }
-
-    const hashedPassword = await bcrypt.hash(data.password, 10);
-
-    return prismaClient.usuario.create({
-      data: {
-        nombres: data.nombres,
-        apellidos: data.apellidos,
-        cedula: data.cedula,
-        fechaNacimiento: data.fechaNacimiento ?? null,
-        email: data.email ?? null,
-        userName: data.userName ?? null,
-        password: hashedPassword,
-      },
-      select: usuarioIdentidadSelect,
-    });
-  }
-
-  private async findMembershipByUsuarioYTenant(
-    usuarioId: number,
-    tenantId: number,
-    prismaClient: PrismaExecutor = this.prisma,
-  ) {
-    return prismaClient.userTenant.findFirst({
-      where: { usuarioId, tenantId },
-      select: {
-        id: true,
-        usuarioId: true,
-        tenantId: true,
-        role: true,
-        estado: true,
-      },
-    });
   }
 
   private async findStaffMembershipOrThrow(

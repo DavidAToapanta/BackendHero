@@ -1,3 +1,4 @@
+import { IdentidadService, type AccountConflicts } from '@app/identidad';
 import {
   BadRequestException,
   Injectable,
@@ -5,31 +6,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@app/prisma';
-import * as bcrypt from 'bcrypt';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { RegisterClienteDto } from './dto/register-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
-
-const usuarioRegistroSelect = {
-  id: true,
-  cedula: true,
-  email: true,
-  userName: true,
-  nombres: true,
-  apellidos: true,
-  fechaNacimiento: true,
-} satisfies Prisma.UsuarioSelect;
-
-type UsuarioRegistro = Prisma.UsuarioGetPayload<{
-  select: typeof usuarioRegistroSelect;
-}>;
-
-type CoincidenciasUsuarioRegistro = {
-  usuarioPorCedula: UsuarioRegistro | null;
-  usuarioPorEmail: UsuarioRegistro | null;
-  usuarioPorUserName: UsuarioRegistro | null;
-};
 
 type ClienteRegistroData = {
   usuarioId: number;
@@ -40,21 +20,14 @@ type ClienteRegistroData = {
   tiempoEntrenar: number;
 };
 
-type UsuarioRegistroData = {
-  nombres: string;
-  apellidos: string;
-  cedula: string;
-  fechaNacimiento?: string | null;
-  email?: string | null;
-  userName?: string | null;
-  password: string;
-};
-
 type PrismaRegistroClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class ClienteService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly identidad: IdentidadService,
+  ) {}
 
   private async findClienteOrThrow(id: number, tenantId?: number) {
     const scopedTenantId = await resolveTenantIdOrDefault(
@@ -142,7 +115,7 @@ export class ClienteService {
     const userName = this.normalizeOptionalString(dto.userName);
     const fechaNacimiento = this.normalizeOptionalString(dto.fechaNacimiento);
 
-    const coincidencias = await this.findUsuarioExistenteParaRegistro({
+    const coincidencias = await this.identidad.findConflicts({
       cedula,
       email,
       userName,
@@ -152,19 +125,20 @@ export class ClienteService {
 
     try {
       const usuarioId = await this.prisma.$transaction(async (tx) => {
-        const usuario = await this.crearUsuarioSiHaceFalta(
-          {
-            nombres,
-            apellidos,
-            cedula,
-            fechaNacimiento,
-            email,
-            userName,
-            password: dto.password,
-          },
-          tx,
-          usuarioExistente,
-        );
+        const usuario =
+          usuarioExistente ??
+          (await this.identidad.createAccount(
+            {
+              nombres,
+              apellidos,
+              cedula,
+              fechaNacimiento,
+              email,
+              userName,
+              password: dto.password,
+            },
+            tx,
+          ));
 
         const clienteExistente = await this.findClienteByUsuarioYTenant(
           usuario.id,
@@ -600,47 +574,11 @@ export class ClienteService {
     });
   }
 
-  private async findUsuarioExistenteParaRegistro({
-    cedula,
-    email,
-    userName,
-  }: {
-    cedula: string;
-    email?: string | null;
-    userName?: string | null;
-  }): Promise<CoincidenciasUsuarioRegistro> {
-    const [usuarioPorCedula, usuarioPorEmail, usuarioPorUserName] =
-      await Promise.all([
-        this.prisma.usuario.findUnique({
-          where: { cedula },
-          select: usuarioRegistroSelect,
-        }),
-        email
-          ? this.prisma.usuario.findUnique({
-              where: { email },
-              select: usuarioRegistroSelect,
-            })
-          : Promise.resolve(null),
-        userName
-          ? this.prisma.usuario.findUnique({
-              where: { userName },
-              select: usuarioRegistroSelect,
-            })
-          : Promise.resolve(null),
-      ]);
-
-    return {
-      usuarioPorCedula,
-      usuarioPorEmail,
-      usuarioPorUserName,
-    };
-  }
-
   private validarConsistenciaDeUsuarioExistente({
     usuarioPorCedula,
     usuarioPorEmail,
     usuarioPorUserName,
-  }: CoincidenciasUsuarioRegistro): UsuarioRegistro | null {
+  }: AccountConflicts) {
     if (usuarioPorCedula) {
       if (usuarioPorEmail && usuarioPorEmail.id !== usuarioPorCedula.id) {
         throw new BadRequestException(
@@ -698,31 +636,6 @@ export class ClienteService {
         objetivos: data.objetivos,
         tiempoEntrenar: data.tiempoEntrenar,
       },
-    });
-  }
-
-  private async crearUsuarioSiHaceFalta(
-    data: UsuarioRegistroData,
-    prismaClient: PrismaRegistroClient = this.prisma,
-    usuarioExistente?: UsuarioRegistro | null,
-  ) {
-    if (usuarioExistente) {
-      return usuarioExistente;
-    }
-
-    const hashedPassword = await bcrypt.hash(data.password, 10);
-
-    return prismaClient.usuario.create({
-      data: {
-        nombres: data.nombres,
-        apellidos: data.apellidos,
-        cedula: data.cedula,
-        fechaNacimiento: data.fechaNacimiento ?? null,
-        email: data.email ?? null,
-        userName: data.userName ?? null,
-        password: hashedPassword,
-      },
-      select: usuarioRegistroSelect,
     });
   }
 

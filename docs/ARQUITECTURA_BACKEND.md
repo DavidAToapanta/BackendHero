@@ -9,8 +9,10 @@ conservando el contenido de sus archivos fuente y sus reglas de negocio.
 Los puntos de entrada son `apps/gym-api/src/main.ts` y
 `apps/gym-api/src/app.module.ts`. La infraestructura de conexión Prisma está en
 `libs/prisma/src/` y la seguridad técnica común en `libs/seguridad/src/`.
-`tienda-api` y las otras librerías continúan siendo espacios documentales;
-todavía no tienen servicios implementados ni despliegues propios.
+Identidad compartida vive en `libs/identidad/src/` y la gestión de negocios,
+módulos y vinculaciones de personal en `libs/negocios/src/`. Catálogo e inventario
+también tienen código compartido. `tienda-api` sigue reservado para la futura
+aplicación de tiendas.
 
 ## Organización actual
 
@@ -34,6 +36,13 @@ BackendHero/
 │   │   ├── src/                 Contexto, guard y configuración JWT
 │   │   ├── tsconfig.lib.json
 │   │   └── README.md
+│   ├── identidad/
+│   │   ├── src/                 Cuentas de Usuario y verificación de credenciales
+│   │   └── tsconfig.lib.json
+│   ├── negocios/                Negocios, módulos y vinculaciones del personal
+│   ├── permisos/                Catálogo, roles y asignaciones por negocio
+│   ├── catalogo/                Servicios de catálogo
+│   ├── inventario/              Servicios de inventario
 │   ├── contratos/
 │   │   └── README.md
 │   ├── utilidades/
@@ -79,9 +88,28 @@ conserva el mapeo de `req.user`. Login, selección de contexto, roles y el
 fallback de `gym-principal` permanecen en la aplicación. Se conservan acceso
 de un día, selección de diez minutos y la compatibilidad del socket.
 
-La librería no depende de Gym ni de Prisma. Jest, lint, cobertura y compilación
-incluyen ambas librerías. El informe y la lista de seguimiento del bloque están
+La librería no depende de Gym ni de Prisma. El informe y la lista de seguimiento están
 en [INFORME_SEGURIDAD_COMPARTIDA.md](INFORME_SEGURIDAD_COMPARTIDA.md).
+
+`@app/identidad` usa `@app/prisma` para buscar cuentas de `Usuario`,
+verificar credenciales, detectar coincidencias por identificador y crear cuentas
+dentro de la transacción del consumidor. Gym aplica las reglas de acceso,
+reutilización, roles y perfiles. Cuando se implemente, Tienda podrá importar
+`IdentidadModule` y aplicar sus propias reglas de acceso. El flujo y sus
+verificaciones se detallan en [INFORME_IDENTIDAD_COMPARTIDA.md](INFORME_IDENTIDAD_COMPARTIDA.md).
+
+`@app/negocios` usa `@app/prisma` para operar sobre `Tenant`, `TenantModule`
+y `UserTenant`. Cada aplicación mantiene sus controladores, políticas y
+transacciones. Gym conserva `StaffProfile`, el fallback de `gym-principal` y
+las membresías deportivas de `ClientePlan`. Los flujos y las pruebas se
+detallan en [INFORME_NEGOCIOS_COMPARTIDOS.md](INFORME_NEGOCIOS_COMPARTIDOS.md).
+
+`@app/permisos` ofrece preparación interna en `LEGACY` y evaluación de
+asignaciones vigentes en `PERMISOS`. Usa `@app/prisma` y comparte con Negocios
+el contrato de `UserTenant.versionAutorizacion`. Gym conserva sus rutas, guards
+y JWT actuales. La librería se prueba con un controlador exclusivo de la suite
+de integración. El alcance y la transición pendiente están en
+[INFORME_PERMISOS_COMPARTIDOS.md](INFORME_PERMISOS_COMPARTIDOS.md).
 
 Se conservan los métodos y rutas HTTP, entradas, respuestas, paginación y errores.
 También el login y `POST /auth/select-context`, los tokens, roles, aislamiento
@@ -90,7 +118,8 @@ cambios en el frontend ni en la dirección pública del backend.
 
 El esquema Prisma, las migraciones y los archivos de entorno permanecen en la
 raíz. Las variables siguen suministrándose al proceso: no se añade carga
-automática de `.env`. No se ejecutan migraciones como parte de este traslado.
+automática de `.env`. Las pruebas de Identidad con escritura usan una base local
+desechable preparada con las migraciones existentes.
 
 ## Arquitectura objetivo para tiendas y librerías
 

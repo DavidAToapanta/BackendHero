@@ -1,3 +1,4 @@
+import { MembresiasPersonalService } from '@app/negocios';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -50,6 +51,7 @@ describe('CompraService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CompraService,
+        MembresiasPersonalService,
         InventarioService,
         InventarioLotesService,
         { provide: PrismaService, useValue: mocks.prisma },

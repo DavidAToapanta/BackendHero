@@ -12,6 +12,9 @@
     "paths": {
       "src/*": ["./apps/gym-api/src/*"],
       "@app/prisma": ["./libs/prisma/src"],
+      "@app/identidad": ["./libs/identidad/src"],
+      "@app/negocios": ["./libs/negocios/src"],
+      "@app/permisos": ["./libs/permisos/src"],
       "@app/seguridad": ["./libs/seguridad/src"],
       "@app/catalogo": ["./libs/catalogo/src"],
       "@app/inventario": ["./libs/inventario/src"]

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import { IdentidadService } from '@app/identidad';
 import { PrismaService } from '@app/prisma';
 import { TenantService } from '../tenant/tenant.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
@@ -13,6 +13,7 @@ export class UsuariosService {
   constructor(
     private prisma: PrismaService,
     private tenantService: TenantService,
+    private readonly identidad: IdentidadService,
   ) {}
 
   async crear(dto: CreateUsuarioDto) {
@@ -22,21 +23,21 @@ export class UsuariosService {
 
     await this.validarCamposUnicos(dto);
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
     const rol = (dto.rol || '').toLowerCase();
 
-    const usuario = await this.prisma.$transaction(async (tx) => {
-      const usuarioCreado = await tx.usuario.create({
-        data: {
+    return this.prisma.$transaction(async (tx) => {
+      const usuarioCreado = await this.identidad.createAccount(
+        {
           email: dto.email?.trim().toLowerCase() || null,
           userName: dto.userName?.trim() || null,
-          password: hashedPassword,
+          password: dto.password,
           nombres: dto.nombres,
           apellidos: dto.apellidos,
           cedula: dto.cedula.trim(),
           fechaNacimiento: dto.fechaNacimiento?.trim() || null,
         },
-      });
+        tx,
+      );
 
       switch (rol) {
         case 'administrador':
@@ -117,10 +118,6 @@ export class UsuariosService {
 
       return usuarioCreado;
     });
-
-    const { password: passwordOmitido, ...result } = usuario;
-    void passwordOmitido;
-    return result;
   }
 
   async obtenerPorId(id: number) {
@@ -262,27 +259,12 @@ export class UsuariosService {
   }
 
   private async validarCamposUnicos(dto: CreateUsuarioDto) {
-    const [usuarioPorCedula, usuarioPorUserName, usuarioPorEmail] =
-      await Promise.all([
-        dto.cedula
-          ? this.prisma.usuario.findUnique({
-              where: { cedula: dto.cedula.trim() },
-              select: { id: true },
-            })
-          : Promise.resolve(null),
-        dto.userName
-          ? this.prisma.usuario.findUnique({
-              where: { userName: dto.userName.trim() },
-              select: { id: true },
-            })
-          : Promise.resolve(null),
-        dto.email
-          ? this.prisma.usuario.findUnique({
-              where: { email: dto.email.trim().toLowerCase() },
-              select: { id: true },
-            })
-          : Promise.resolve(null),
-      ]);
+    const { usuarioPorCedula, usuarioPorUserName, usuarioPorEmail } =
+      await this.identidad.findConflicts({
+        cedula: dto.cedula.trim(),
+        userName: dto.userName ? dto.userName.trim() : null,
+        email: dto.email ? dto.email.trim().toLowerCase() : null,
+      });
 
     if (usuarioPorCedula) {
       throw new BadRequestException('Ya existe un usuario con esa cedula');

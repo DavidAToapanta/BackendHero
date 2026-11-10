@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AsistenciaService } from '../../asistencia/asistencia.service';
 import { PrismaService } from '@app/prisma';
+import { NegociosService } from '@app/negocios';
 import { SyncZkbioDto, ZkbioEventDto } from './dto/sync-zkbio.dto';
 
 @Injectable()
@@ -8,14 +9,12 @@ export class ZkbioService {
   constructor(
     private readonly asistenciaService: AsistenciaService,
     private readonly prisma: PrismaService,
+    private readonly negocios: NegociosService,
   ) {}
 
   async getAccessState(tenantId: number) {
     const now = new Date();
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { id: true, saasPlan: true },
-    });
+    const tenant = await this.negocios.consultarPlan(tenantId);
 
     if (!tenant) {
       throw new BadRequestException('Tenant no encontrado');

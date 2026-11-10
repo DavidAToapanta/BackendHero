@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
+import { ModulosNegocioService } from '@app/negocios';
 import { ModuleKey, Prisma } from '@prisma/client';
 import { CatalogoService } from './catalogo.service';
 import { CategoriasProductoService } from './categorias-producto.service';
@@ -18,7 +19,10 @@ describe('Catálogo compartido', () => {
   };
   const client = prisma as unknown as PrismaService;
   const catalogo = new CatalogoService(client);
-  const categorias = new CategoriasProductoService(client);
+  const categorias = new CategoriasProductoService(
+    client,
+    new ModulosNegocioService(client),
+  );
   const imagenes = new ImagenesProductoService(client);
 
   beforeEach(() => {

@@ -1,3 +1,4 @@
+import { NegociosService } from '@app/negocios';
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ZkbioService } from './zkbio.service';
@@ -30,6 +31,7 @@ describe('ZkbioService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ZkbioService,
+        NegociosService,
         {
           provide: AsistenciaService,
           useValue: asistenciaService,

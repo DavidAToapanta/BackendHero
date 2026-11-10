@@ -1,3 +1,4 @@
+import { NegociosService } from '@app/negocios';
 import { OrigenAsistencia, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -33,6 +34,7 @@ describe('AsistenciaService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AsistenciaService,
+        NegociosService,
         {
           provide: PrismaService,
           useValue: prisma,

@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@app/prisma';
 import * as bcrypt from 'bcrypt';
+import { IdentidadService } from '@app/identidad';
 import { ClienteService } from './cliente.service';
 
 const makeRegistroDto = () => ({
@@ -46,7 +47,11 @@ describe('ClienteService', () => {
     );
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClienteService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ClienteService,
+        IdentidadService,
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
 
     service = module.get<ClienteService>(ClienteService);
@@ -121,6 +126,8 @@ describe('ClienteService', () => {
         nombres: true,
         apellidos: true,
         fechaNacimiento: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
     expect(prisma.cliente.create).toHaveBeenCalledWith({
@@ -279,6 +286,25 @@ describe('ClienteService', () => {
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it.each(['email', 'userName'] as const)(
+    'registrar rechaza reutilizar la cédula si el %s pertenece a otra cuenta',
+    async (field) => {
+      prisma.usuario.findUnique.mockImplementation(
+        ({ where }: Prisma.UsuarioFindUniqueArgs) => {
+          if (where.cedula) {
+            return { id: 40 };
+          }
+          return where[field] ? { id: 41 } : null;
+        },
+      );
+
+      await expect(service.registrar(makeRegistroDto(), 8)).rejects.toThrow(
+        `El ${field} ingresado ya pertenece a otro usuario`,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
 
   it('registrar rechaza tenantId enviado por el request', async () => {
     await expect(

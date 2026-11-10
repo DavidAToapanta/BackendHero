@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import { IdentidadService } from '@app/identidad';
 import { PrismaService } from '@app/prisma';
 import { TenantService } from '../tenant/tenant.service';
 import { UsuariosService } from './usuarios.service';
@@ -71,6 +72,7 @@ describe('UsuariosService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsuariosService,
+        IdentidadService,
         {
           provide: PrismaService,
           useValue: prisma,
@@ -99,7 +101,6 @@ describe('UsuariosService', () => {
       id: 1,
       email: 'admin@gym.test',
       userName: 'admin',
-      password: 'hashed',
       nombres: 'Admin',
       apellidos: 'Principal',
       cedula: '0102030405',
@@ -153,7 +154,6 @@ describe('UsuariosService', () => {
       id: 11,
       email: 'cliente@gym.test',
       userName: 'cliente',
-      password: 'hashed',
       nombres: 'Cliente',
       apellidos: 'Legacy',
       cedula: '0999999999',

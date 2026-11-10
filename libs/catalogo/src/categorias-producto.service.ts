@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
+import { ModulosNegocioService } from '@app/negocios';
 import { ModuleKey } from '@prisma/client';
 import { traducirErrorCatalogo } from './errores-catalogo';
 
@@ -13,7 +14,10 @@ const CATEGORIA_DUPLICADA =
 
 @Injectable()
 export class CategoriasProductoService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly modulos: ModulosNegocioService,
+  ) {}
 
   async findAll(tenantId: number, modulo: ModuleKey, activo?: boolean) {
     await this.validarModulo(tenantId, modulo);
@@ -91,10 +95,7 @@ export class CategoriasProductoService {
   }
 
   private async validarModulo(tenantId: number, modulo: ModuleKey) {
-    const habilitado = await this.prisma.tenantModule.findUnique({
-      where: { tenantId_module: { tenantId, module: modulo }, activo: true },
-      select: { id: true },
-    });
+    const habilitado = await this.modulos.estaActivo(tenantId, modulo);
     if (!habilitado) {
       throw new ForbiddenException(
         'El módulo no está habilitado para el negocio',

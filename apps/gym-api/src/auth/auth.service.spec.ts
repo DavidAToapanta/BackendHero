@@ -1,3 +1,8 @@
+import {
+  MembresiasPersonalService,
+  ModulosNegocioService,
+  NegociosService,
+} from '@app/negocios';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -9,6 +14,7 @@ import {
   UserTenantEstado,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { IdentidadService } from '@app/identidad';
 import { PrismaService } from '@app/prisma';
 import { AuthService } from './auth.service';
 
@@ -59,6 +65,10 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        MembresiasPersonalService,
+        ModulosNegocioService,
+        NegociosService,
+        IdentidadService,
         {
           provide: PrismaService,
           useValue: prisma,
@@ -115,16 +125,18 @@ describe('AuthService', () => {
       descripcion: ' Gym principal ',
     });
 
-    expect(prisma.usuario.create).toHaveBeenCalledWith({
-      data: {
-        cedula: '0102030405',
-        email: 'owner@gym.test',
-        userName: 'ana.owner',
-        password: 'hash-owner',
-        nombres: 'Ana',
-        apellidos: 'Perez',
-      },
-    });
+    expect(prisma.usuario.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          cedula: '0102030405',
+          email: 'owner@gym.test',
+          userName: 'ana.owner',
+          password: 'hash-owner',
+          nombres: 'Ana',
+          apellidos: 'Perez',
+        },
+      }),
+    );
     expect(prisma.tenant.create).toHaveBeenCalledWith({
       data: {
         nombre: 'Gym Central',

@@ -1,13 +1,17 @@
 # Librerías
 
-Esta carpeta contiene las librerías Prisma y seguridad técnica utilizadas por
-`gym-api`, además de espacios documentales para futuras extracciones.
-`tienda-api` todavía no tiene implementación.
+Esta carpeta contiene las librerías que usa `gym-api` y espacios reservados para
+futuras extracciones. `tienda-api` todavía no tiene implementación.
 
 | Carpeta | Propósito previsto |
 | --- | --- |
 | [prisma](./prisma/README.md) | Implementada: módulo y cliente de conexión a PostgreSQL mediante `@app/prisma`. |
-| [seguridad](./seguridad/README.md) | Implementada: contexto autenticado, guard JWT, configuración y estrategia técnica base mediante `@app/seguridad`. Identidad y gestión de negocios siguen pendientes. |
+| [seguridad](./seguridad/README.md) | Contexto autenticado, guard JWT, configuración y estrategia técnica base mediante `@app/seguridad`. |
+| [identidad](../docs/INFORME_IDENTIDAD_COMPARTIDA.md) | Búsqueda, verificación de credenciales, detección de coincidencias y creación de cuentas mediante `@app/identidad`. |
+| [negocios](../docs/INFORME_NEGOCIOS_COMPARTIDOS.md) | Negocios, módulos habilitados y vinculaciones de personal mediante `@app/negocios`. |
+| [permisos](../docs/INFORME_PERMISOS_COMPARTIDOS.md) | Base interna para catálogo, roles, asignaciones y autorización por negocio mediante `@app/permisos`. |
+| `catalogo` | Servicios compartidos de catálogo mediante `@app/catalogo`. |
+| `inventario` | Servicios compartidos de inventario mediante `@app/inventario`. |
 | [contratos](./contratos/README.md) | Interfaces y tipos de comunicación explícitos. |
 | [utilidades](./utilidades/README.md) | Funciones generales con comportamiento común. |
 | [facturacion](./facturacion/README.md) | Espacio para evaluar la lógica de facturación reutilizable. |

@@ -1,3 +1,8 @@
+import {
+  MembresiasPersonalService,
+  ModulosNegocioService,
+  NegociosService,
+} from '@app/negocios';
 import * as bcrypt from 'bcrypt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ModuleKey, SaasPlan, TenantRole, TipoNegocio } from '@prisma/client';
@@ -5,6 +10,7 @@ import { PrismaService } from '@app/prisma';
 import { TenantService } from './tenant.service';
 
 const makePrisma = () => ({
+  $transaction: jest.fn(),
   tenant: {
     create: jest.fn(),
     findMany: jest.fn(),
@@ -17,7 +23,9 @@ const makePrisma = () => ({
   },
   userTenant: {
     findFirst: jest.fn(),
-    upsert: jest.fn(),
+    createMany: jest.fn(),
+    updateManyAndReturn: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
   },
   usuario: {
     findUnique: jest.fn(),
@@ -30,10 +38,16 @@ describe('TenantService', () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    prisma.$transaction.mockImplementation(
+      (callback: (tx: typeof prisma) => unknown) => callback(prisma),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
+        MembresiasPersonalService,
+        ModulosNegocioService,
+        NegociosService,
         {
           provide: PrismaService,
           useValue: prisma,
@@ -96,31 +110,23 @@ describe('TenantService', () => {
     prisma.userTenant.findFirst.mockResolvedValue(null);
     prisma.tenant.upsert.mockResolvedValue({ id: 10 });
     prisma.tenantModule.upsert.mockResolvedValue({ id: 20 });
-    prisma.userTenant.upsert.mockResolvedValue({
+    prisma.userTenant.updateManyAndReturn.mockResolvedValue([]);
+    prisma.userTenant.findUniqueOrThrow.mockResolvedValue({
       id: 30,
       role: TenantRole.OWNER,
     });
 
     const result = await service.ensureLegacyMembership(5, 'administrador');
-    const membershipCalls = prisma.userTenant.upsert.mock.calls as Array<
-      [
+    expect(prisma.userTenant.createMany).toHaveBeenCalledWith({
+      data: [
         {
-          create: {
-            usuarioId: number;
-            tenantId: number;
-            role: TenantRole;
-          };
+          usuarioId: 5,
+          tenantId: 10,
+          role: TenantRole.OWNER,
+          estado: 'ACTIVO',
         },
-      ]
-    >;
-    const membershipArg = membershipCalls[0]?.[0];
-
-    expect(membershipArg).toBeDefined();
-    expect(membershipArg?.create).toEqual({
-      usuarioId: 5,
-      tenantId: 10,
-      role: TenantRole.OWNER,
-      estado: 'ACTIVO',
+      ],
+      skipDuplicates: true,
     });
     expect(result).toEqual({ id: 30, role: TenantRole.OWNER });
   });

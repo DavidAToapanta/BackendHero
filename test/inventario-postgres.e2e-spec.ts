@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { MembresiasPersonalService } from '@app/negocios';
 import {
   InventarioLotesService,
   InventarioService,
@@ -16,7 +17,12 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
   const inventario = new InventarioService();
   const lotes = new InventarioLotesService(inventario);
   const reservas = new ReservasInventarioService(inventario, lotes);
-  const compras = new CompraService(prisma, inventario, lotes);
+  const compras = new CompraService(
+    prisma,
+    inventario,
+    lotes,
+    new MembresiasPersonalService(prisma),
+  );
   let tenantId: number;
   let usuarioId: number;
   let clienteId: number;

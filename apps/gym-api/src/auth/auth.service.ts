@@ -13,7 +13,12 @@ import {
   TipoNegocio,
   UserTenantEstado,
 } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { IdentidadService, type TokenAccount } from '@app/identidad';
+import {
+  MembresiasPersonalService,
+  ModulosNegocioService,
+  NegociosService,
+} from '@app/negocios';
 import { PrismaService } from '@app/prisma';
 import { RegisterDto } from './dto/register.dto';
 import { SelectContextDto } from './dto/select-context.dto';
@@ -23,16 +28,6 @@ import {
   AuthAccessMode,
   ContextSelectionTokenPayload,
 } from './auth.types';
-
-type AuthenticatedUser = {
-  id: number;
-  email: string | null;
-  userName: string | null;
-  cedula: string;
-  password: string;
-};
-
-type TokenUser = Omit<AuthenticatedUser, 'password'>;
 
 type ContextSelectionResponse = {
   requiresContextSelection: true;
@@ -52,6 +47,10 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private readonly identidad: IdentidadService,
+    private readonly negocios: NegociosService,
+    private readonly modulos: ModulosNegocioService,
+    private readonly membresias: MembresiasPersonalService,
   ) {}
 
   async registerOwner(dto: RegisterDto) {
@@ -83,23 +82,22 @@ export class AuthService {
       dto.tenantSlug,
     );
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-
     try {
       await this.prisma.$transaction(async (tx) => {
-        const usuario = await tx.usuario.create({
-          data: {
+        const usuario = await this.identidad.createAccount(
+          {
             cedula,
             email,
             userName,
-            password: hashedPassword,
+            password: dto.password,
             nombres,
             apellidos,
           },
-        });
+          tx,
+        );
 
-        const tenant = await tx.tenant.create({
-          data: {
+        const tenant = await this.negocios.crear(
+          {
             nombre: tenantNombre,
             slug: tenantSlug,
             tipoNegocio: TipoNegocio.GYM,
@@ -114,24 +112,20 @@ export class AuthService {
             logoUrl: this.normalizeOptionalString(dto.logoUrl),
             descripcion: this.normalizeOptionalString(dto.descripcion),
           },
-        });
+          { tx },
+        );
 
-        await tx.userTenant.create({
-          data: {
+        await this.membresias.vincular(
+          {
             usuarioId: usuario.id,
             tenantId: tenant.id,
             role: TenantRole.OWNER,
             estado: UserTenantEstado.ACTIVO,
           },
-        });
+          tx,
+        );
 
-        await tx.tenantModule.create({
-          data: {
-            tenantId: tenant.id,
-            module: ModuleKey.GYM,
-            activo: true,
-          },
-        });
+        await this.modulos.registrarActivo(tenant.id, ModuleKey.GYM, tx);
       });
     } catch (error) {
       this.handleRegisterOwnerConstraintError(error);
@@ -177,7 +171,7 @@ export class AuthService {
   private async loginBase(
     cedula: string,
     password: string,
-  ): Promise<AuthenticatedUser> {
+  ): Promise<TokenAccount> {
     const normalizedCedula = this.normalizeRequiredString(
       cedula,
       'La cedula es obligatoria',
@@ -187,39 +181,22 @@ export class AuthService {
       'La contrasena es obligatoria',
     );
 
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { cedula: normalizedCedula },
-      select: {
-        id: true,
-        email: true,
-        userName: true,
-        cedula: true,
-        password: true,
-      },
-    });
-
-    if (!usuario) {
+    const result = await this.identidad.verifyCredentials(
+      normalizedCedula,
+      normalizedPassword,
+    );
+    if (result.status === 'account-not-found') {
       throw new UnauthorizedException('Cedula no encontrada');
     }
-
-    const valid = await bcrypt.compare(normalizedPassword, usuario.password);
-    if (!valid) {
+    if (result.status === 'invalid-password') {
       throw new UnauthorizedException('Contrasena incorrecta');
     }
 
-    return usuario;
+    return result.account;
   }
 
-  private async findTokenUserOrThrow(usuarioId: number): Promise<TokenUser> {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { id: usuarioId },
-      select: {
-        id: true,
-        email: true,
-        userName: true,
-        cedula: true,
-      },
-    });
+  private async findTokenUserOrThrow(usuarioId: number): Promise<TokenAccount> {
+    const usuario = await this.identidad.findById(usuarioId);
 
     if (!usuario) {
       throw new UnauthorizedException(
@@ -287,25 +264,8 @@ export class AuthService {
   private async buildStaffContexts(
     usuarioId: number,
   ): Promise<AvailableAuthContext[]> {
-    const memberships = await this.prisma.userTenant.findMany({
-      where: {
-        usuarioId,
-        estado: UserTenantEstado.ACTIVO,
-        tenant: {
-          estado: TenantEstado.ACTIVO,
-        },
-      },
-      select: {
-        tenantId: true,
-        role: true,
-        tenant: {
-          select: {
-            nombre: true,
-          },
-        },
-      },
-      orderBy: { tenantId: 'asc' },
-    });
+    const memberships =
+      await this.membresias.listarActivasParaUsuario(usuarioId);
 
     return memberships.map((membership) => ({
       type: 'STAFF',
@@ -400,7 +360,7 @@ export class AuthService {
   }
 
   private issueTokenForContext(
-    usuario: TokenUser,
+    usuario: TokenAccount,
     context: AvailableAuthContext,
     accessMode: AuthAccessMode,
   ) {
@@ -458,23 +418,8 @@ export class AuthService {
     email: string;
     userName?: string | null;
   }) {
-    const [usuarioPorCedula, usuarioPorUserName, usuarioPorEmail] =
-      await Promise.all([
-        this.prisma.usuario.findUnique({
-          where: { cedula },
-          select: { id: true },
-        }),
-        userName
-          ? this.prisma.usuario.findUnique({
-              where: { userName },
-              select: { id: true },
-            })
-          : Promise.resolve(null),
-        this.prisma.usuario.findUnique({
-          where: { email },
-          select: { id: true },
-        }),
-      ]);
+    const { usuarioPorCedula, usuarioPorUserName, usuarioPorEmail } =
+      await this.identidad.findConflicts({ cedula, email, userName });
 
     if (usuarioPorCedula) {
       throw new BadRequestException('Ya existe un usuario con esa cedula');
@@ -500,10 +445,7 @@ export class AuthService {
         throw new BadRequestException('Slug invalido');
       }
 
-      const existing = await this.prisma.tenant.findUnique({
-        where: { slug },
-        select: { id: true },
-      });
+      const existing = await this.negocios.buscarIdPorSlug(slug);
 
       if (existing) {
         throw new BadRequestException('Ya existe un tenant con ese slug');
@@ -516,12 +458,7 @@ export class AuthService {
     let slug = slugBase;
     let suffix = 2;
 
-    while (
-      await this.prisma.tenant.findUnique({
-        where: { slug },
-        select: { id: true },
-      })
-    ) {
+    while (await this.negocios.buscarIdPorSlug(slug)) {
       slug = `${slugBase}-${suffix}`;
       suffix += 1;
     }

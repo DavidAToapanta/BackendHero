@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { OrigenAsistencia, Prisma, SaasPlan } from '@prisma/client';
 import { PrismaService } from '@app/prisma';
+import { NegociosService } from '@app/negocios';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 
 type BiometricAttendanceStatus =
@@ -16,7 +17,10 @@ type BiometricAttendanceStatus =
 
 @Injectable()
 export class AsistenciaService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly negocios: NegociosService,
+  ) {}
 
   private async getScopedTenantId(tenantId?: number) {
     return resolveTenantIdOrDefault(this.prisma, tenantId);
@@ -182,10 +186,7 @@ export class AsistenciaService {
     dispositivoSn?: string | null;
     biometricoPersonId: string;
   }): Promise<{ status: BiometricAttendanceStatus; asistencia?: unknown }> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: input.tenantId },
-      select: { id: true, saasPlan: true },
-    });
+    const tenant = await this.negocios.consultarPlan(input.tenantId);
 
     if (!tenant) {
       throw new NotFoundException('Tenant no encontrado');

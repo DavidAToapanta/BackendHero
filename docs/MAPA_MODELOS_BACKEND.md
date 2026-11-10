@@ -93,18 +93,18 @@ En la columna «Carpeta», agrega `apps/tienda-api/src/` al principio. Las carpe
 
 ## Compartido · 11 modelos
 
-Estas rutas completas son destinos propuestos para código común. Cada app conserva sus controladores, DTO y políticas específicas. `libs/catalogo/` es una carpeta nueva propuesta. `EventoSalida`, `AuditoriaOperacion` e `idempotencia/` tienen su primer consumidor previsto en Tienda, donde conviene implementarlos inicialmente.
+Identidad, negocios, permisos y catálogo tienen librerías implementadas. Permisos ofrece una base interna mientras Gym sigue en `LEGACY`. Cada app conserva sus controladores, DTO y políticas específicas. `EventoSalida`, `AuditoriaOperacion` e `idempotencia/` tienen su primer consumidor previsto en Tienda.
 
 | Modelo | Carpeta propuesta | Responsabilidad y punto de partida |
 | --- | --- | --- |
-| `Usuario` | `libs/seguridad/identidad/` | Cuenta global y credenciales. Gym las gestiona hoy desde `auth/` y `usuarios/`. |
-| `Tenant` | `libs/seguridad/tenant/` | Identidad, tipo y estado del negocio. Gym lo gestiona desde `tenant/` y el alta en `auth/`. |
-| `TenantModule` | `libs/seguridad/tenant/` | Habilitación de `GYM` y `STORE` por negocio. Se configura hoy desde `tenant/` y `auth/`. |
-| `UserTenant` | `libs/seguridad/membresias/` | Relación de personal entre cuenta y negocio, estado y rol legacy. Hoy intervienen `auth/`, `tenant/` y `staff/`. |
-| `Permiso` | `libs/seguridad/permisos/` | Catálogo global de permisos definidos por la aplicación y asociados a un módulo. |
-| `RolNegocio` | `libs/seguridad/permisos/` | Rol protegido o configurable de un tenant. |
-| `RolPermiso` | `libs/seguridad/permisos/` | Permisos que forman parte de un rol del negocio. |
-| `AsignacionRol` | `libs/seguridad/permisos/` | Rol asignado a una membresía. El diseño admite una asignación por membresía. |
+| `Usuario` | `libs/identidad/` | Cuenta global y credenciales. Gym comparte las consultas y altas mediante `@app/identidad`. |
+| `Tenant` | `libs/negocios/` | Datos y plan del negocio. Gym coordina su gestión desde `tenant/` y `auth/`. |
+| `TenantModule` | `libs/negocios/` | Habilitación de `GYM` y `STORE` por negocio. Catálogo consulta el estado del módulo. |
+| `UserTenant` | `libs/negocios/` | Vinculación de personal entre cuenta y negocio, estado y rol. Gym conserva las reglas de contexto y los perfiles laborales. |
+| `Permiso` | `libs/permisos/` | Catálogo global de permisos definidos por la aplicación y asociados a un módulo. |
+| `RolNegocio` | `libs/permisos/` | Rol protegido o configurable de un negocio. |
+| `RolPermiso` | `libs/permisos/` | Permisos de un rol. Sus cambios actualizan la versión de autorización de las membresías afectadas. |
+| `AsignacionRol` | `libs/permisos/` | Rol vigente de una membresía y quién lo asignó. |
 | `Producto` | `libs/catalogo/` | Identidad, datos y precio vigente del producto por tenant. Gym lo gestiona hoy desde `producto/` y modifica stock desde `compra/`. |
 | `CategoriaProducto` | `libs/catalogo/` | Clasificación de productos por tenant y módulo `GYM` o `STORE`. |
 | `ProductoImagen` | `libs/catalogo/` | Imágenes y orden de presentación del mismo producto. |
@@ -115,7 +115,7 @@ Estas rutas completas son destinos propuestos para código común. Cada app cons
 
 ### Negocio e identidad
 
-- Una tienda es un `Tenant` con `tipoNegocio = STORE`. Un negocio `MIXTO` puede habilitar ambos módulos con `TenantModule`. En Tienda puedes tener un `tiendas/tiendas.controller.ts` para sus endpoints de configuración y delegar el manejo común del negocio al servicio de tenant. La guía asigna `Tenant` a `libs` porque representa tanto tiendas como gimnasios.
+- Una tienda es un `Tenant` con `tipoNegocio = STORE`. Un negocio `MIXTO` puede habilitar ambos módulos con `TenantModule`. Cuando exista el módulo de configuración de Tienda, su controlador podrá delegar las operaciones comunes a `NegociosModule`.
 - `Usuario` es la cuenta común. `Cliente` es el perfil deportivo. `ClienteComercial` es la ficha del comprador, con enlace opcional a `Cliente` dentro del mismo tenant. Para dar acceso al portal, Tienda verifica `VinculacionClienteUsuario` y comprueba la coherencia de titularidad cuando hay un perfil Gym vinculado.
 - Conserva el flujo de login y selección de contexto al añadir clientes de tienda. En rutas protegidas, obtén `tenantId` del contexto autenticado y comprueba el módulo habilitado y el acceso al recurso. Gym sigue usando el rol de `UserTenant` con el guard actual en modo `LEGACY`. La transición a `PERMISOS` requiere adaptar JWT, selección de contexto, guards y gestión de personal antes de habilitarla.
 

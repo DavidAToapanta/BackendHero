@@ -1,9 +1,11 @@
+import { MembresiasPersonalService } from '@app/negocios';
 import { BadRequestException } from '@nestjs/common';
 import { TenantRole, UserTenantEstado } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@app/prisma';
 import { StaffService } from './staff.service';
 import * as bcrypt from 'bcrypt';
+import { IdentidadService } from '@app/identidad';
 
 type LegacyStaffProfileFixture = {
   id: number;
@@ -54,7 +56,7 @@ const makePrisma = () => ({
     findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
-    update: jest.fn(),
+    updateManyAndReturn: jest.fn(),
   },
   staffProfile: {
     findFirst: jest.fn(),
@@ -107,6 +109,8 @@ describe('StaffService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StaffService,
+        MembresiasPersonalService,
+        IdentidadService,
         {
           provide: PrismaService,
           useValue: prisma,
@@ -331,6 +335,9 @@ describe('StaffService', () => {
   });
 
   it('inactiva y reactiva la membresia staff del tenant actual', async () => {
+    prisma.userTenant.updateManyAndReturn.mockResolvedValue([
+      makeStaffDetail(),
+    ]);
     prisma.userTenant.findFirst
       .mockResolvedValueOnce(makeStaffDetail())
       .mockResolvedValueOnce({
@@ -346,13 +353,23 @@ describe('StaffService', () => {
     await service.inactivar(20, 7);
     await service.reactivar(20, 7);
 
-    expect(prisma.userTenant.update).toHaveBeenNthCalledWith(1, {
-      where: { id: 30 },
-      data: { estado: UserTenantEstado.INACTIVO },
+    expect(prisma.userTenant.updateManyAndReturn).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: 30,
+        tenantId: 7,
+        estado: { not: UserTenantEstado.INACTIVO },
+      },
+      data: {
+        estado: UserTenantEstado.INACTIVO,
+        versionAutorizacion: { increment: 1 },
+      },
     });
-    expect(prisma.userTenant.update).toHaveBeenNthCalledWith(2, {
-      where: { id: 30 },
-      data: { estado: UserTenantEstado.ACTIVO },
+    expect(prisma.userTenant.updateManyAndReturn).toHaveBeenNthCalledWith(2, {
+      where: { id: 30, tenantId: 7, estado: { not: UserTenantEstado.ACTIVO } },
+      data: {
+        estado: UserTenantEstado.ACTIVO,
+        versionAutorizacion: { increment: 1 },
+      },
     });
   });
 });

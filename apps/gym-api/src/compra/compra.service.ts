@@ -5,13 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Compra,
-  ModoInventario,
-  Prisma,
-  UserTenantEstado,
-} from '@prisma/client';
+import { Compra, ModoInventario, Prisma } from '@prisma/client';
 import { InventarioLotesService, InventarioService } from '@app/inventario';
+import { MembresiasPersonalService } from '@app/negocios';
 import { PrismaService } from '@app/prisma';
 import { resolveTenantIdOrDefault } from '../tenant/tenant-context.util';
 import { CreateCompraDto } from './dto/create-compra.dto';
@@ -22,6 +18,7 @@ export class CompraService {
     private readonly prisma: PrismaService,
     private readonly inventario: InventarioService,
     private readonly lotes: InventarioLotesService,
+    private readonly membresias: MembresiasPersonalService,
   ) {}
 
   async create(dto: CreateCompraDto, tenantId?: number, usuarioId?: number) {
@@ -128,13 +125,11 @@ export class CompraService {
       throw new ForbiddenException(
         'La compra por lotes requiere un responsable',
       );
-    const responsable = await tx.userTenant.findUnique({
-      where: {
-        usuarioId_tenantId: { usuarioId, tenantId },
-        estado: UserTenantEstado.ACTIVO,
-      },
-      select: { id: true },
-    });
+    const responsable = await this.membresias.buscarActiva(
+      usuarioId,
+      tenantId,
+      tx,
+    );
     if (!responsable)
       throw new ForbiddenException(
         'El responsable no tiene una membresía activa',
