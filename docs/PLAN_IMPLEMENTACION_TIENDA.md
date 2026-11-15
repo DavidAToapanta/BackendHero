@@ -6,6 +6,8 @@ Marca cada casilla cuando esté disponible la evidencia indicada al cierre de su
 
 El reparto entre los dos desarrolladores, los contratos y el orden de merge están en la [guía de trabajo en equipo](./TRABAJO_EQUIPO_TIENDA.md).
 
+Para ejecutar ese reparto, usar el [plan detallado por persona](./TAREAS_POR_PERSONA_TIENDA.md): A01–A14 para ti, B01–B17 para Voncho. Cada tarea indica carpetas, modelos Prisma, entregable, dependencia concreta del compañero, cómo avanzar mientras llega y prueba de cierre. C00 define los contratos iniciales y H0–H4 los puntos de integración. El desarrollo puede avanzar en paralelo; validar un flujo completo exige integrar sus dependencias reales.
+
 ## 0. Base disponible y arranque independiente
 
 - [x] Confirmar que Gym es el proyecto Nest por defecto.

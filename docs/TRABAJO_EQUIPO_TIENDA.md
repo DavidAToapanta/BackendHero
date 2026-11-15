@@ -2,6 +2,10 @@
 
 Esta guía organiza la implementación de la aplicación interna de Tienda entre tú y Voncho. Propone responsables por carpeta, entregas pequeñas y contratos para integrar ambas ramas. El reparto es una propuesta basada en las dependencias del código y se puede intercambiar por entregas completas.
 
+El trabajo concreto de cada persona está en el [plan detallado por tareas](./TAREAS_POR_PERSONA_TIENDA.md): **A01–A14 para ti y B01–B17 para Voncho**. Cada tarea identifica carpetas, modelos, implementación, entregable, dependencia del compañero, trabajo posible mientras llega y prueba de cierre. Esta guía conserva las reglas comunes de ejecución e integración.
+
+Ambos pueden desarrollar en paralelo desde los contratos iniciales C00. Una dependencia pendiente puede impedir validar el flujo real, pero permite avanzar con servicios y pruebas basados en el contrato. Los mocks se usan en pruebas; una tarea queda terminada después de integrar sus dependencias reales. Los hitos H0–H4 del plan detallado indican cuándo se valida cada recorrido conjunto.
+
 El resultado esperado es que el personal pueda iniciar sesión, gestionar productos e inventario, vender, cobrar, cerrar caja, gestionar crédito y consultar el Panel. El portal del comprador, carrito, pedidos, despacho y abonos en línea pertenecen a la etapa posterior de la aplicación del cliente. La ficha comercial del cliente sí forma parte de la operación interna para crédito y comprobantes.
 
 ## Punto de partida para ambos
@@ -9,15 +13,16 @@ El resultado esperado es que el personal pueda iniciar sesión, gestionar produc
 - [x] Hay 18 recursos Nest en `apps/tienda-api/src`, registrados en `AppModule`.
 - [x] El proyecto `tienda-api` está registrado en Nest. Su puerto por defecto es `8081` y compila en `build/tienda-api`. Gym usa `8080` y `dist`.
 - [x] Existen esquema, migraciones y librerías comunes. Las rutas generadas responden `501` mientras se implementa cada caso de uso.
-- [ ] Publicar en Git la estructura, configuración y documentación que están pendientes de commit en la copia local revisada. Ambos deben partir del mismo commit publicado.
+- [ ] Verificar que ambos recibieron el mismo commit publicado con estructura, configuración y documentación. La copia local revisada tiene la base versionada; confirmar su disponibilidad en el remoto antes de compartirla.
 - [ ] Verificar en cada computadora la base de desarrollo, las migraciones y el arranque real. Las pruebas previas con Prisma simulado verifican el arranque técnico.
 
 Lecturas necesarias para empezar, en este orden.
 
 1. [Plan de implementación](./PLAN_IMPLEMENTACION_TIENDA.md), para seguir los hitos funcionales.
-2. [Diseño de STORE](./DISENO_BASE_DATOS_STORE.md), especialmente identidad y permisos, catálogo e inventario, ventas y cartera, devoluciones, caja, comprobantes y auditoría.
-3. [Esquema Prisma](../prisma/schema.prisma) y [migraciones](../prisma/migrations/), para consultar campos, relaciones, claves únicas y garantías SQL. Los triggers y restricciones también forman parte del contrato de datos.
-4. [Estado del esquema](./ESQUEMA_STORE_IMPLEMENTADO.md), [permisos compartidos](./INFORME_PERMISOS_COMPARTIDOS.md) e [inventario compartido](../libs/inventario/README.md).
+2. [Tareas por persona](./TAREAS_POR_PERSONA_TIENDA.md), para elegir trabajo y conocer las entregas necesarias del compañero.
+3. [Diseño de STORE](./DISENO_BASE_DATOS_STORE.md), especialmente identidad y permisos, catálogo e inventario, ventas y cartera, devoluciones, caja, comprobantes y auditoría.
+4. [Esquema Prisma](../prisma/schema.prisma) y [migraciones](../prisma/migrations/), para consultar campos, relaciones, claves únicas y garantías SQL. Los triggers y restricciones también forman parte del contrato de datos.
+5. [Estado del esquema](./ESQUEMA_STORE_IMPLEMENTADO.md), [permisos compartidos](./INFORME_PERMISOS_COMPARTIDOS.md) e [inventario compartido](../libs/inventario/README.md).
 
 El [mapa de modelos](./MAPA_MODELOS_BACKEND.md) ayuda a localizar responsabilidades. Algunas asignaciones reflejan una etapa anterior a la extracción de inventario. Gym ya consume `@app/inventario` para compras por lotes. Al decidir una implementación, contrastar el mapa con el código actual.
 
@@ -68,7 +73,7 @@ Carpetas `clientes/`, `ventas/`, `cobros/` y `caja/`.
 - En `caja/`, administrar cajas y turnos, apertura, fondo inicial, movimientos, efectivo contado, cierre y diferencia. Modelos `Caja`, `TurnoCaja` y `MovimientoCaja`.
 - En `ventas/`, coordinar la venta de mostrador, recibir selección de productos y lotes, calcular precios y totales en servidor y conservar los datos históricos de cada línea. Modelos `Venta`, `DetalleVenta` y `AsignacionLoteVenta`.
 - En `cobros/`, registrar efectivo, transferencia u otros métodos admitidos, y aplicar el cobro a venta o cuenta. Modelos `Cobro`, `AplicacionCobro`, `ReversionAplicacionCobro` y `Reembolso`.
-- Implementar idempotencia de la venta con `SolicitudIdempotente`. Reclamar la clave y confirmar el resultado de forma consistente, incluidos reintentos simultáneos y fallos parciales. Empezar con un servicio interno de `ventas/` y extraerlo cuando otra operación necesite el mismo comportamiento.
+- Implementar pronto la idempotencia con `SolicitudIdempotente` en el módulo local propuesto `comun/idempotencia/` de Tienda, tarea B01. Ventas, cobros, entradas y bajas consumirán el mismo contrato. Reclamar la clave y confirmar el resultado de forma consistente, incluidos reintentos simultáneos y fallos parciales. Este módulo depende de Prisma y contratos técnicos, sin importar los módulos comerciales que lo consumen.
 - Proteger cada ruta con el acceso entregado por tu compañero e incorporar la auditoría en la transacción. Solicitar las operaciones de inventario a través de `@app/inventario`.
 
 ### Crédito, anulaciones y comprobantes
@@ -89,7 +94,7 @@ Carpetas `panel/` y `finanzas/`.
 
 - En `panel/`, componer indicadores de operación, deudores, personal y actividad para el Panel administrativo. Consumir los servicios de consulta de los módulos responsables de cada dato.
 - En `ventas/`, ofrecer tendencias semanales y mensuales, productos más vendidos, ticket promedio, ventas por cajero y filtros por cajero, categoría y producto.
-- En `finanzas/`, consultar dinero recibido, costos, gastos y pérdidas por periodo. Usar `GastoComercial` para egresos comerciales. Su gestión puede comenzar en un servicio interno de finanzas y extraerse a `gastos/` cuando se implemente esa sección.
+- En `finanzas/`, consultar dinero recibido, costos, gastos y pérdidas por periodo. La tarea B13 implementa registro y consulta de `GastoComercial` en un servicio/controlador dedicado dentro de finanzas. El modelo actual carece de estado o reversión del gasto; definir la regla y posible migración antes de habilitar correcciones que afecten a caja o reportes.
 - Calcular ventas netas, costo vendido y utilidad con sus fuentes correspondientes. Un abono es dinero recibido; la venta original ya está registrada. Registrar las bajas a costo y evitar duplicar su pérdida en otro gasto.
 - Exportar Excel y PDF con los mismos datos autorizados que las consultas. Los periodos comerciales usan `America/Guayaquil`. El límite de dos días corresponde a la consulta de auditoría; los reportes admiten los periodos acordados de día, semana o meses.
 
@@ -112,11 +117,11 @@ Mantener las reglas comerciales específicas en Tienda. Compartir una utilidad c
 
 Antes de implementar endpoints que se llamen entre sí, publicar un PR pequeño con los siguientes acuerdos. Cada propietario documenta sus rutas al lado de su recurso en un `README.md`, con ejemplos de solicitud, respuesta, errores y permisos. Esta ubicación permite editar contratos en paralelo.
 
-- [ ] **Tú** defines el contexto autenticado y el guard público. Usuario, tenant y membresía se resuelven desde la sesión verificada. Un ID de producto, cliente, lote o turno siempre se comprueba dentro de ese negocio.
-- [ ] **Ambos** fijan códigos de permiso, formatos de respuesta, paginación, filtros, zona horaria y representación de importes. Como propuesta inicial, usar cadenas decimales en JSON para importes y `Prisma.Decimal` para cálculos, cantidades enteras y fechas ISO con zona explícita.
-- [ ] **Tú** documentas las firmas existentes de inventario y lo que falta para bajas y devoluciones. Ya existen `OperacionInventario`, `SeleccionLote` y `LoteEntrada` en la API pública de `@app/inventario`.
+- [ ] **Tú** defines el contexto autenticado y el guard público. Usuario, tenant y membresía se resuelven desde la sesión verificada. `responsableId` comercial y de inventario referencia `UserTenant.id`; auditoría distingue `usuarioId` y `membresiaId`. Un ID de producto, cliente, lote o turno siempre se comprueba dentro de ese negocio.
+- [ ] **Ambos** fijan códigos de permiso, formatos de respuesta, paginación, filtros, zona horaria y representación de importes. Como propuesta inicial, usar cadenas decimales en JSON y `Prisma.Decimal` para cálculos: importes comerciales con 2 decimales y costos históricos/tasa de impuesto con 4, según Prisma. Definir el redondeo, cantidades enteras, fechas ISO con zona explícita y serialización BigInt como texto.
+- [ ] **Tú** documentas las firmas existentes de inventario y lo que falta para bajas y devoluciones. Ya existen `OperacionInventario`, `SeleccionLote` y `LoteEntrada` en la API pública de `@app/inventario`. `retirarVenta(tx, operacion, detalleVentaId)` requiere que Voncho haya creado el detalle y sus asignaciones de lotes con costos confiables; no crea las asignaciones.
 - [ ] **Voncho** define el contrato de caja y cobros que utilizará la venta, con contexto y cliente transaccional como parámetros. Las operaciones internas participan en la transacción que abre la venta.
-- [ ] **Tú** entregas la firma de escritura de auditoría con `Prisma.TransactionClient`, tenant, actor, rol, acción, entidad, motivo y correlación.
+- [ ] **Tú** entregas pronto la firma de escritura de auditoría con `Prisma.TransactionClient`, tenant, actor, rol, acción, entidad, motivo y correlación. Para una operación con varios productos, registrar filas por producto con igual correlación y agruparlas al consultar; `AuditoriaOperacion` tiene un `productoId` por fila.
 - [ ] **Voncho** propone el alcance de las claves de idempotencia y la respuesta a reintentos. Misma clave y contenido devuelve el resultado previo; contenido distinto produce conflicto. Las claves se delimitan por tenant y operación.
 
 Para una venta completa, Voncho abre `prisma.$transaction`. Dentro coordina turno, productos bloqueados, venta y detalles, asignación manual de lotes, salida mediante inventario, cobro y aplicación, cuenta financiada cuando corresponda, movimiento de efectivo, auditoría y resultado idempotente. Ambos acuerdan un orden de bloqueos coherente con cierre de turno, devolución y ajuste de inventario. El inventario ya exige bloquear productos en orden de ID.
@@ -134,23 +139,23 @@ Reglas verificables de aceptación.
 
 ## Entregas y orden de merge
 
-Cada casilla corresponde a un PR integrable. El otro compañero revisa el contrato, las pruebas y los efectos en las librerías. Una entrega se cierra cuando llega a la rama de integración y ambos pueden usarla en su base local.
+El orden siguiente resume los hitos. El desglose para asignar PR y registrar avances está en [Tareas por persona](./TAREAS_POR_PERSONA_TIENDA.md). Cada PR deja una entrega revisable y puede ser menor que una tarea completa. El otro compañero revisa el contrato, las pruebas y los efectos en las librerías. Una tarea se cierra cuando llega a la rama de integración y ambos pueden usarla en su base local con sus dependencias reales.
 
 ### Base común
 
-- [ ] **Tú** publicas la estructura actual y esta guía. **Voncho** confirma el commit recibido.
+- [ ] **Tú** verificas la estructura publicada y entregas la guía actualizada. **Voncho** confirma el commit recibido.
 - [ ] **Ambos** preparan PostgreSQL local y el juego de prueba reproducible, con dos tiendas y un negocio Gym o mixto, usuarios con permisos distintos, productos, lotes, cliente comercial y caja.
-- [ ] **Ambos** integran los contratos mínimos de acceso, inventario, caja, cobros y auditoría antes de la venta completa.
+- [ ] **Ambos** publican los contratos C00 de acceso, inventario, caja, cobros, auditoría e idempotencia antes de sus consumidores. Las implementaciones se desarrollan en paralelo y se integran antes de validar la venta completa.
 
 ### Primer bloque en paralelo
 
-- [ ] **Tú** entregas login, selección de negocio, acceso y gestión inicial del personal. Después integras catálogo, categorías y búsqueda por código.
-- [ ] **Voncho** entrega fichas comerciales y apertura/cierre de caja. Puede desarrollar servicios y pruebas con el contexto acordado mientras llega el guard. Las rutas funcionales se integran con autorización efectiva.
+- [ ] **Tú** entregas login, selección de negocio, acceso y escritura de auditoría A05. Después integras personal, catálogo, categorías y búsqueda por código. El listado del historial se desarrolla en A12 sin retrasar el escritor que consume Voncho.
+- [ ] **Voncho** entrega B01 idempotencia, fichas comerciales y apertura/cierre de caja. Puede desarrollar servicios y pruebas con el contexto acordado mientras llega el guard. Las rutas funcionales se integran con autorización efectiva.
 
 ### Segundo bloque en paralelo
 
 - [ ] **Tú** entregas entradas, apertura a lotes, bajas justificadas, operaciones públicas de salida e historial de auditoría.
-- [ ] **Voncho** entrega cobros, aplicaciones y la estructura transaccional de venta e idempotencia. Integra la venta completa después de recibir la salida de inventario y auditoría.
+- [ ] **Voncho** entrega cobros, aplicaciones y la estructura transaccional de venta usando B01. Integra la venta completa después de recibir la salida de inventario y auditoría.
 - [ ] **Ambos** demuestran el recorrido login → producto → entrada → apertura de caja → venta → saldo → cierre, usando los endpoints reales.
 
 ### Tercer bloque en paralelo
