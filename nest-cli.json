@@ -20,6 +20,16 @@
         "tsConfigPath": "apps/gym-api/tsconfig.app.json"
       }
     },
+    "tienda-api": {
+      "type": "application",
+      "root": "apps/tienda-api",
+      "entryFile": "main",
+      "sourceRoot": "apps/tienda-api/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/tienda-api/tsconfig.app.json",
+        "deleteOutDir": true
+      }
+    },
     "permisos": {
       "type": "library",
       "root": "libs/permisos",

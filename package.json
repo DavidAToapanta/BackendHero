@@ -82,6 +82,7 @@
     "rootDir": ".",
     "roots": [
       "<rootDir>/apps/gym-api/src",
+      "<rootDir>/apps/tienda-api/src",
       "<rootDir>/libs/prisma/src",
       "<rootDir>/libs/seguridad/src",
       "<rootDir>/libs/identidad/src",
@@ -96,6 +97,7 @@
     },
     "collectCoverageFrom": [
       "apps/gym-api/src/**/*.(t|j)s",
+      "apps/tienda-api/src/**/*.(t|j)s",
       "libs/prisma/src/**/*.(t|j)s",
       "libs/seguridad/src/**/*.(t|j)s",
       "libs/identidad/src/**/*.(t|j)s",
