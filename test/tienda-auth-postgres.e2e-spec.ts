@@ -47,6 +47,7 @@ import type {
   SeleccionTienda,
 } from '../apps/tienda-api/src/auth/auth.types';
 import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
+import { fechaComercial } from '../apps/tienda-api/src/comun/fecha-comercial';
 import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
 import { reservarPedidoEnsayo } from './fixtures/tienda';
 
@@ -945,7 +946,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(eventos[0].correlacionId).not.toBe(eventos[2].correlacionId);
   });
 
-  it('emite, consulta y descarga un solo comprobante por venta', async () => {
+  it('emite un solo comprobante por venta y consulta sus datos históricos', async () => {
     const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
     const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
     const tenantId = tienda.id;
@@ -953,13 +954,21 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     const lector = await crearPerfilComercial(
       tenantId,
       'LECTURA',
-      ['store.receipts.read'],
+      ['store.receipts.read', 'store.sales.read'],
       'EMPLEADO',
     );
     const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
     const bearer = { type: 'bearer' } as const;
     const cliente = await prisma.clienteComercial.create({
       data: { tenantId, nombres: 'Cliente de ensayo' },
+    });
+    const categoria = await prisma.categoriaProducto.create({
+      data: {
+        tenantId,
+        nombre: 'Categoría al vender',
+        nombreNormalizado: 'categoría al vender',
+        modulo: 'STORE',
+      },
     });
     const producto = await prisma.producto.create({
       data: {
@@ -994,6 +1003,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
           tenantId,
           responsableId: operacion.responsableId,
           origen: 'CAJA',
+          fecha: new Date('2026-11-02T04:59:59.999Z'),
           clienteComercialId: cliente.id,
           subtotal: 10,
           total: 10,
@@ -1006,6 +1016,8 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
           ventaId: creada.id,
           productoId: producto.id,
           nombreProducto: producto.nombre,
+          categoriaId: categoria.id,
+          categoriaNombre: categoria.nombre,
           cantidad: 1,
           precioUnitario: 10,
           subtotal: 10,
@@ -1072,6 +1084,86 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       where: { id: producto.id },
       data: { nombre: 'Producto actualizado', precio: 20 },
     });
+    await prisma.categoriaProducto.update({
+      where: { id: categoria.id },
+      data: {
+        nombre: 'Categoría actualizada',
+        nombreNormalizado: 'categoría actualizada',
+      },
+    });
+    const filtros = {
+      desde: '2026-11-01',
+      hasta: '2026-11-09',
+      productoId: producto.id,
+      categoriaId: categoria.id,
+      cajeroId: owner.context.membresiaId,
+    };
+    await http().get('/ventas').query(filtros).expect(401);
+    const ventas = await http()
+      .get('/ventas')
+      .query({ ...filtros, estado: 'COMPLETADA' })
+      .auth(lector.accessToken, bearer)
+      .expect(200);
+    expect(ventas.body).toEqual([
+      expect.objectContaining({ id: venta.id, total: '10' }),
+    ]);
+    const ventaDetalle = await http()
+      .get(`/ventas/${venta.id}`)
+      .auth(lector.accessToken, bearer)
+      .expect(200);
+    expect(ventaDetalle.body).toMatchObject({
+      detalleVenta_venta: [
+        {
+          nombreProducto: producto.nombre,
+          categoriaNombre: categoria.nombre,
+          precioUnitario: '10',
+          asignacionLoteVenta_detalleVenta: [{ cantidad: 1 }],
+        },
+      ],
+    });
+    expect(ventaDetalle.body).not.toHaveProperty('claveIdempotencia');
+    await http()
+      .get(`/ventas/${venta.id}`)
+      .auth(externo.accessToken, bearer)
+      .expect(404);
+    await http()
+      .get('/ventas/analisis')
+      .query(filtros)
+      .auth(lector.accessToken, bearer)
+      .expect(403);
+    const analisis = await http()
+      .get('/ventas/analisis')
+      .query(filtros)
+      .auth(owner.accessToken, bearer)
+      .expect(200);
+    expect(analisis.body).toEqual({
+      series: [
+        { periodo: '2026-10-26', neto: '10', ventas: 1 },
+        { periodo: '2026-11-02', neto: '0', ventas: 0 },
+      ],
+      productos: [{ productoId: producto.id, neto: '10', unidades: 1 }],
+      cajeros: [
+        { responsableId: owner.context.membresiaId, neto: '10', ventas: 1 },
+      ],
+      neto: '10',
+      ventas: 1,
+      ticketPromedio: '10',
+    });
+    const vacio = await http()
+      .get('/ventas/analisis')
+      .query({ ...filtros, granularidad: 'mes' })
+      .auth(externo.accessToken, bearer)
+      .expect(200);
+    expect(vacio.body).toMatchObject({
+      ventas: 0,
+      ticketPromedio: '0',
+      series: [{ periodo: '2026-11-01', neto: '0', ventas: 0 }],
+    });
+    await http()
+      .get('/ventas')
+      .query({ ...filtros, desde: '2026-02-30' })
+      .auth(owner.accessToken, bearer)
+      .expect(400);
     const detalle = await http()
       .get(ruta)
       .auth(lector.accessToken, bearer)
@@ -3429,6 +3521,28 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       ],
       aplicaciones: [{ monto: '5.2' }],
     });
+    const filtrosAnalisis = {
+      desde: fechaComercial(detalleVenta.fecha),
+      hasta: fechaComercial(new Date(Date.now() + 86_400_000)),
+      productoId,
+      cajeroId: vendedor.context.membresiaId,
+      granularidad: 'mes',
+    };
+    const consultarAnalisis = (): request.Test =>
+      http()
+        .get('/ventas/analisis')
+        .auth(owner.accessToken, bearer)
+        .query(filtrosAnalisis);
+    const netoConDevoluciones = await consultarAnalisis().expect(200);
+    expect(netoConDevoluciones.body).toMatchObject({
+      neto: '5.2',
+      ventas: 1,
+      ticketPromedio: '5.2',
+      productos: [{ productoId, neto: '5.2', unidades: 1 }],
+      cajeros: [
+        { responsableId: vendedor.context.membresiaId, neto: '5.2', ventas: 1 },
+      ],
+    });
     const [pagoRemanente] = (
       vistaRetorno.body as { aplicaciones: { id: number }[] }
     ).aplicaciones;
@@ -3465,6 +3579,27 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       anulada.body as object,
     );
     await anular(sinRetorno).expect(409);
+    const netoTrasAnulacion = await consultarAnalisis().expect(200);
+    expect(netoTrasAnulacion.body).toMatchObject({
+      neto: '0',
+      ventas: 0,
+      ticketPromedio: '0',
+      productos: [],
+      cajeros: [],
+    });
+    const ventasAnuladas = await http()
+      .get('/ventas')
+      .auth(owner.accessToken, bearer)
+      .query({
+        desde: filtrosAnalisis.desde,
+        hasta: filtrosAnalisis.hasta,
+        productoId,
+        estado: 'ANULADA',
+      })
+      .expect(200);
+    expect(ventasAnuladas.body).toMatchObject([
+      { id: ventaId, estado: 'ANULADA' },
+    ]);
     expect(await prisma.reembolso.count({ where: { tenantId, ventaId } })).toBe(
       3,
     );

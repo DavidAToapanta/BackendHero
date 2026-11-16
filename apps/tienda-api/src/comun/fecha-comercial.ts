@@ -24,3 +24,12 @@ export function inicioFechaComercial(fecha: string) {
   }
   return inicio;
 }
+
+export function periodoComercial(periodo: { desde: string; hasta: string }) {
+  const desde = inicioFechaComercial(periodo.desde);
+  const hasta = inicioFechaComercial(periodo.hasta);
+  if (hasta <= desde || hasta.getTime() - desde.getTime() > 366 * 86400000) {
+    throw new BadRequestException('El período debe abarcar entre 1 y 366 días');
+  }
+  return { desde, hasta };
+}

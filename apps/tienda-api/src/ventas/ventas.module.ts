@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { InventarioModule } from '@app/inventario';
+import { PrismaModule } from '@app/prisma';
 import { AccesosModule } from '../accesos/accesos.module';
 import { AuditoriaEscrituraModule } from '../auditoria/auditoria-escritura';
 import { CajaModule } from '../caja/caja.module';
@@ -10,11 +11,13 @@ import { CobrosModule } from '../cobros/cobros.module';
 import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { DevolucionesModule } from '../devoluciones/devoluciones.module';
 import { VentaMostradorService } from './venta-mostrador.service';
+import { ConsultaVentasService } from './consulta-ventas.service';
 import { VentasService } from './ventas.service';
 import { VentasController } from './ventas.controller';
 
 @Module({
   imports: [
+    PrismaModule,
     AccesosModule,
     AuditoriaEscrituraModule,
     CajaModule,
@@ -27,6 +30,7 @@ import { VentasController } from './ventas.controller';
     DevolucionesModule,
   ],
   controllers: [VentasController],
-  providers: [VentasService, VentaMostradorService],
+  providers: [VentasService, VentaMostradorService, ConsultaVentasService],
+  exports: [ConsultaVentasService],
 })
 export class VentasModule {}
