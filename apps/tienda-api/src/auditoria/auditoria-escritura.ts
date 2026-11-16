@@ -33,6 +33,7 @@ export const ACCIONES_AUDITORIA = {
   CAJA_CERRAR: 'caja.cerrar',
   COBROS_REGISTRAR: 'cobros.registrar',
   COBROS_APLICAR: 'cobros.aplicar',
+  GASTOS_REGISTRAR: 'gastos.registrar',
 } as const;
 
 export type AccionAuditoria =

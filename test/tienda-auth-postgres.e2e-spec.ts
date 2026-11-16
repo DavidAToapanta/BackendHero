@@ -934,6 +934,124 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(eventos[0].correlacionId).not.toBe(eventos[2].correlacionId);
   });
 
+  it('registra gastos por HTTP y descuenta efectivo de caja una sola vez', async () => {
+    const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const owner = await crearPerfilComercial(tienda.id, 'OWNER', [], 'OWNER');
+    const lector = await crearPerfilComercial(
+      tienda.id,
+      'LECTURA',
+      ['store.expenses.read'],
+      'EMPLEADO',
+    );
+    const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
+    const bearer = { type: 'bearer' } as const;
+    const caja = await http()
+      .post('/caja')
+      .auth(owner.accessToken, bearer)
+      .send({ codigo: 'G01', nombre: 'Caja de gastos' })
+      .expect(201);
+    const apertura = await http()
+      .post(`/caja/${(caja.body as { id: number }).id}/turnos`)
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '20' })
+      .expect(201);
+    const turnoId = (apertura.body as { recursoId: number }).recursoId;
+    const ruta = '/finanzas/gastos';
+    const gasto = {
+      concepto: 'Compra de insumos',
+      categoria: 'Limpieza',
+      monto: '3.50',
+      metodo: 'EFECTIVO',
+      turnoId,
+      fecha: '2026-05-01T09:00:00-05:00',
+    };
+    const registrar = (token: string, clave: string, datos: object = gasto) =>
+      http()
+        .post(ruta)
+        .auth(token, bearer)
+        .set('Idempotency-Key', clave)
+        .send(datos);
+    await http().get(ruta).expect(401);
+    await registrar(lector.accessToken, randomUUID()).expect(403);
+    await registrar(externo.accessToken, randomUUID()).expect(404);
+    await registrar(owner.accessToken, randomUUID(), {
+      ...gasto,
+      tenantId: otra.id,
+    }).expect(400);
+    await registrar(owner.accessToken, randomUUID(), {
+      ...gasto,
+      turnoId: undefined,
+    }).expect(400);
+    await registrar(owner.accessToken, randomUUID(), {
+      ...gasto,
+      monto: '0',
+    }).expect(400);
+    await registrar(owner.accessToken, randomUUID(), {
+      ...gasto,
+      monto: '21',
+    }).expect(409);
+    const clave = randomUUID();
+    const registrado = await registrar(owner.accessToken, clave).expect(201);
+    await registrar(owner.accessToken, clave, {
+      ...gasto,
+      monto: '3.5',
+    }).expect(201, registrado.body as object);
+    await registrar(owner.accessToken, randomUUID(), {
+      ...gasto,
+      metodo: 'TRANSFERENCIA',
+      turnoId: undefined,
+      monto: '4',
+      fecha: '2026-05-02T09:00:00-05:00',
+    }).expect(201);
+    await http().get(ruta).auth(externo.accessToken, bearer).expect(200, []);
+    const consulta = await http()
+      .get(ruta)
+      .auth(lector.accessToken, bearer)
+      .query({
+        desde: '2026-05-01T00:00:00-05:00',
+        hasta: '2026-05-02T00:00:00-05:00',
+        limite: 1,
+      })
+      .expect(200);
+    const id = (registrado.body as { recursoId: number }).recursoId;
+    expect(consulta.body).toMatchObject([{ id, monto: '3.5', turnoId }]);
+    await http()
+      .get(ruta)
+      .auth(lector.accessToken, bearer)
+      .query({ desde: '2026-05-02T00:00:00Z', hasta: '2026-05-01T00:00:00Z' })
+      .expect(400);
+    expect(
+      await prisma.gastoComercial.count({ where: { tenantId: tienda.id } }),
+    ).toBe(2);
+    const movimientos = await prisma.movimientoCaja.findMany({
+      where: { tenantId: tienda.id, turnoId },
+    });
+    expect(movimientos).toMatchObject([
+      { tipo: 'SALIDA', gastoId: id, monto: new Prisma.Decimal('3.50') },
+    ]);
+    const eventos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId: tienda.id,
+        accion: ACCIONES_AUDITORIA.GASTOS_REGISTRAR,
+      },
+    });
+    expect(eventos).toHaveLength(2);
+    expect(eventos.find(({ entidadId }) => entidadId === id)).toMatchObject({
+      entidadTipo: 'GastoComercial',
+      rolCodigo: 'OWNER',
+      membresiaId: owner.context.membresiaId,
+    });
+    await http()
+      .post(`/caja/turnos/${turnoId}/cierre`)
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ efectivoContado: '16.50' })
+      .expect(200);
+    await registrar(owner.accessToken, randomUUID()).expect(409);
+  });
+
   it('conserva el acceso de Gym en un negocio MIXTO durante la prueba de modo y módulo STORE', async () => {
     const { credenciales, usuario } =
       await registrarPersonal('clave-a03-ensayo');
