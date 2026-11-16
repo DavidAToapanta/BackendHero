@@ -1,0 +1,49 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
+export interface ContextoOperacionTienda {
+  tenantId: number;
+  usuarioId: number;
+  membresiaId: number;
+  auditar(
+    tx: Prisma.TransactionClient,
+    evento: {
+      accion: string;
+      recursoTipo: string;
+      recursoId: number;
+      motivo?: string;
+      productos?: readonly number[];
+      correlacionId?: string;
+    },
+  ): Promise<void>;
+}
+
+export function textoObligatorio(valor: string, campo: string): string {
+  const texto = valor.trim();
+  if (!texto) throw new BadRequestException(`${campo} es obligatorio`);
+  return texto;
+}
+
+export function conflictoUnicidad(error: unknown, mensaje: string): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  ) {
+    throw new ConflictException(mensaje);
+  }
+  throw error;
+}
+
+export function paginacion(pagina = 1, limite = 25) {
+  if (
+    !Number.isInteger(pagina) ||
+    pagina < 1 ||
+    pagina > 1_000_000 ||
+    !Number.isInteger(limite) ||
+    limite < 1 ||
+    limite > 100
+  ) {
+    throw new BadRequestException('Paginación inválida');
+  }
+  return { skip: (pagina - 1) * limite, take: limite };
+}
