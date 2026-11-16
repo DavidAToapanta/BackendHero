@@ -2149,7 +2149,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toMatchObject({ stock: saldos._sum.cantidadFisica });
   }, 20000);
 
-  it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
+  it('vende en mostrador y devuelve mercancía apta y dañada con reembolso', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
@@ -2586,7 +2586,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     const cajero = await crearPerfilComercial(
       tenantId,
       'CAJERO',
-      ['store.cash.open', 'store.sales.create'],
+      ['store.cash.open', 'store.sales.create', 'store.returns.write'],
       'CAJERO',
     );
     const abrirTurno = async (codigo: string, operador: AccesoTienda) => {
@@ -2708,17 +2708,121 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect((await escanear('001234').expect(200)).body).toMatchObject({
       stockDisponible: 0,
     });
+    const asignacionVentaId =
+      detalleVenta.detalleVenta_venta[0].asignacionLoteVenta_detalleVenta[0].id;
+    const [pagoOriginal] = await prisma.aplicacionCobro.findMany({
+      where: { tenantId, ventaId },
+      select: { id: true },
+    });
+    const retorno = {
+      ventaId,
+      motivo: 'Resultado de inspección',
+      turnos: { reembolso: turnoVendido },
+      lineas: [{ asignacionVentaId, cantidad: 1, destino: 'REINTEGRO_APTO' }],
+    };
+    const liberar = (aplicacionId: number, monto = '5.20') => [
+      { aplicacionId, monto, reembolso: { metodo: 'EFECTIVO' } },
+    ];
+    const devolver = (
+      body: object,
+      clave = randomUUID(),
+      token = vendedor.accessToken,
+    ): request.Test =>
+      http()
+        .post('/devoluciones')
+        .auth(token, bearer)
+        .set('Idempotency-Key', clave)
+        .send(body);
+    const datosApta = { ...retorno, liberar: liberar(pagoOriginal.id) };
+    await devolver(datosApta, randomUUID(), accessToken).expect(403);
+    await devolver({
+      ...datosApta,
+      liberar: liberar(pagoOriginal.id, '5.21'),
+    }).expect(409);
+    const claveApta = randomUUID();
+    const apta = await devolver(datosApta, claveApta).expect(201);
+    await devolver(datosApta, claveApta).expect(201, apta.body as object);
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      stockDisponible: 1,
+    });
+
+    const [aplicacionRestante] = await prisma.aplicacionCobro.findMany({
+      where: {
+        tenantId,
+        ventaId,
+        reversionAplicacionCobro_aplicacion: { none: {} },
+      },
+      select: { id: true },
+    });
+    const datosDaniada = {
+      ...retorno,
+      lineas: [{ asignacionVentaId, cantidad: 1, destino: 'BAJA_NO_APTO' }],
+      liberar: liberar(aplicacionRestante.id),
+    };
+    const daniada = await devolver(datosDaniada).expect(201);
+    const { recursoId: idDaniada } = daniada.body as { recursoId: number };
+    const consulta = await http()
+      .get(`/devoluciones/${idDaniada}`)
+      .auth(owner.accessToken, bearer)
+      .expect(200);
+    expect(consulta.body).toMatchObject({
+      total: '5.2',
+      detalleDevolucionVenta_devolucion: [
+        { cantidad: 1, destino: 'BAJA_NO_APTO' },
+      ],
+      reembolso_devolucion: [{ metodo: 'EFECTIVO', monto: '5.2' }],
+    });
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      stockDisponible: 1,
+    });
+    const [detalleDaniado] = (
+      consulta.body as {
+        detalleDevolucionVenta_devolucion: { id: number }[];
+      }
+    ).detalleDevolucionVenta_devolucion;
+    const whereRetorno = { tenantId, detalleDevolucionId: detalleDaniado.id };
+    expect(
+      await prisma.movimientoInventario.count({
+        where: { ...whereRetorno, tipo: 'DEVOLUCION', deltaFisico: 1 },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.movimientoInventario.count({
+        where: { ...whereRetorno, tipo: 'BAJA', deltaFisico: -1 },
+      }),
+    ).toBe(1);
+    await devolver({
+      ...retorno,
+      lineas: [{ asignacionVentaId, cantidad: 2, destino: 'REINTEGRO_APTO' }],
+      liberar: liberar(aplicacionRestante.id),
+    }).expect(409);
+    const lista = await http()
+      .get('/devoluciones')
+      .query({ ventaId })
+      .auth(owner.accessToken, bearer)
+      .expect(200);
+    expect(lista.body).toHaveLength(2);
+    const vistaRetorno = await http()
+      .get(`/devoluciones/ventas/${ventaId}`)
+      .auth(owner.accessToken, bearer)
+      .expect(200);
+    expect(vistaRetorno.body).toMatchObject({
+      asignaciones: [
+        { asignacionVentaId, cantidadVendida: 3, cantidadRestante: 1 },
+      ],
+      aplicaciones: [{ monto: '5.2' }],
+    });
     await http()
       .post(`/caja/turnos/${turnoVendido}/cierre`)
       .auth(owner.accessToken, bearer)
       .set('Idempotency-Key', randomUUID())
-      .send({ efectivoContado: '20.60', motivo: 'Cierre de ensayo' })
+      .send({ efectivoContado: '10.20', motivo: 'Cierre de ensayo' })
       .expect(200);
     expect(
       await prisma.turnoCaja.findUniqueOrThrow({ where: { id: turnoVendido } }),
     ).toMatchObject({
       estado: 'CERRADO',
-      efectivoEsperado: new Prisma.Decimal('20.60'),
+      efectivoEsperado: new Prisma.Decimal('10.20'),
       diferencia: new Prisma.Decimal(0),
     });
   }, 25000);
@@ -3067,6 +3171,47 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
           .expect(200)
       ).body,
     ).toMatchObject({ estado: 'CONFIRMADO', montoDisponible: '15' });
+    const [asignacionCredito] = await prisma.asignacionLoteVenta.findMany({
+      where: { tenantId, ventaId: idParcial },
+      select: { id: true },
+    });
+    const [abonoVigente] = await prisma.aplicacionCobro.findMany({
+      where: {
+        tenantId,
+        ventaId: idParcial,
+        reversionAplicacionCobro_aplicacion: { none: {} },
+      },
+      select: { id: true },
+    });
+    await http()
+      .post('/devoluciones')
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        ventaId: idParcial,
+        motivo: 'Devolución de venta financiada',
+        lineas: [
+          {
+            asignacionVentaId: asignacionCredito.id,
+            cantidad: 1,
+            destino: 'REINTEGRO_APTO',
+          },
+        ],
+        liberar: [
+          {
+            aplicacionId: abonoVigente.id,
+            monto: '20',
+            reembolso: { metodo: 'TRANSFERENCIA' },
+          },
+        ],
+      })
+      .expect(201);
+    expect((await cartera('/' + cuenta.id).expect(200)).body).toMatchObject({
+      estado: 'PAGADA',
+      saldo: '0',
+      importeExigible: '0',
+      importeFinanciadoInicial: '80',
+    });
     expect(await prisma.venta.count({ where: { tenantId } })).toBe(2);
   });
 

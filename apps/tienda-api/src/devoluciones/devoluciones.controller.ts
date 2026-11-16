@@ -1,45 +1,81 @@
+import { randomUUID } from 'node:crypto';
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
+  Headers,
   Param,
-  Delete,
+  Post,
+  Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
+import { RequierePermisoTienda } from '../accesos/accesos.module';
+import { AuditoriaEscrituraService } from '../auditoria/auditoria-escritura';
+import { ContextoTiendaActual, type ContextoTienda } from '../auth';
+import { DevolucionesOperacionService } from './devoluciones-operacion.service';
 import { DevolucionesService } from './devoluciones.service';
-import { CreateDevolucionDto } from './dto/create-devolucion.dto';
-import { UpdateDevolucionDto } from './dto/update-devolucion.dto';
+import {
+  CreateDevolucionDto,
+  DevolucionParamDto,
+  ListaDevolucionesDto,
+} from './dto/create-devolucion.dto';
 
 @Controller('devoluciones')
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class DevolucionesController {
-  constructor(private readonly devolucionesService: DevolucionesService) {}
+  constructor(
+    private readonly consultas: DevolucionesService,
+    private readonly operaciones: DevolucionesOperacionService,
+    private readonly auditoria: AuditoriaEscrituraService,
+  ) {}
 
   @Post()
-  create(@Body() createDevolucionDto: CreateDevolucionDto) {
-    return this.devolucionesService.create(createDevolucionDto);
+  @RequierePermisoTienda('store.returns.write')
+  devolver(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Body() datos: CreateDevolucionDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    const correlacionId = randomUUID();
+    return this.operaciones.devolver(
+      this.auditoria.paraOperacion(contexto, correlacionId),
+      { ...datos, liberar: datos.liberar ?? [] },
+      clave,
+      correlacionId,
+    );
   }
 
   @Get()
-  findAll() {
-    return this.devolucionesService.findAll();
+  @RequierePermisoTienda('store.returns.read')
+  listar(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() filtros: ListaDevolucionesDto,
+  ) {
+    return this.consultas.listar(contexto.tenantId, filtros);
+  }
+
+  @Get('ventas/:id')
+  @RequierePermisoTienda('store.returns.read')
+  consultarVenta(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: DevolucionParamDto,
+  ) {
+    return this.consultas.consultarVenta(contexto.tenantId, id);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.devolucionesService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateDevolucionDto: UpdateDevolucionDto,
+  @RequierePermisoTienda('store.returns.read')
+  obtener(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: DevolucionParamDto,
   ) {
-    return this.devolucionesService.update(+id, updateDevolucionDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.devolucionesService.remove(+id);
+    return this.consultas.obtener(contexto.tenantId, id);
   }
 }
