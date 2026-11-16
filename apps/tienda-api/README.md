@@ -14,8 +14,11 @@ Para trabajar con recarga automática, ejecutar `npm run start:dev -- tienda-api
 desde la raíz. Tienda compila en `build/tienda-api` y Gym en `dist`, así que
 pueden recompilarse en terminales separadas.
 
-Los recursos comerciales generados responden `501 Not Implemented` hasta que
-se implemente cada operación con las reglas del negocio.
+Las rutas de [clientes comerciales](./src/clientes/README.md),
+[caja](./src/caja/README.md) y [cobros](./src/cobros/README.md)
+usan el contexto y los permisos de Tienda.
+Cada escritura registra su auditoría dentro de la transacción. Los recursos
+que aún esperan implementación responden `501 Not Implemented`.
 
 El objetivo es un despliegue independiente del gimnasio, utilizando el PostgreSQL
 existente. Los datos comunes y las responsabilidades de escritura se delimitarán

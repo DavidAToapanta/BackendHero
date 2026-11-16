@@ -4,7 +4,6 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  NotImplementedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
@@ -13,8 +12,6 @@ import {
   paginacion,
   textoObligatorio,
 } from '../comun/operacion-tienda';
-import { CreateClienteDto } from './dto/create-cliente.dto';
-import { UpdateClienteDto } from './dto/update-cliente.dto';
 
 export interface FichaClienteComercial {
   nombres: string;
@@ -205,30 +202,5 @@ export class ClientesService {
         'La identificación o el cliente de Gym ya está vinculado',
       );
     }
-  }
-
-  create(createClienteDto: CreateClienteDto): never {
-    void createClienteDto;
-    throw new NotImplementedException();
-  }
-
-  findAll(): never {
-    throw new NotImplementedException();
-  }
-
-  findOne(id: number): never {
-    void id;
-    throw new NotImplementedException();
-  }
-
-  update(id: number, updateClienteDto: UpdateClienteDto): never {
-    void id;
-    void updateClienteDto;
-    throw new NotImplementedException();
-  }
-
-  remove(id: number): never {
-    void id;
-    throw new NotImplementedException();
   }
 }
