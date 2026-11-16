@@ -7,7 +7,7 @@ import {
   type LineaSalidaVenta,
 } from '@app/inventario';
 import { PrismaService } from '@app/prisma';
-import { EstadoPedido, Prisma } from '@prisma/client';
+import { DestinoDevolucionVenta, EstadoPedido, Prisma } from '@prisma/client';
 import { CompraService } from '../apps/gym-api/src/compra/compra.service';
 
 const suite =
@@ -96,7 +96,11 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
     });
   }
 
-  async function abrirLote(productoId: number, cantidad: number) {
+  async function abrirLote(
+    productoId: number,
+    cantidad: number,
+    costo = '0.5',
+  ) {
     const resultado = await prisma.$transaction((tx) =>
       lotes.registrarEntrada(
         tx,
@@ -104,7 +108,7 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
         productoId,
         'APERTURA',
         'Conciliación',
-        [{ codigo: 'L1', cantidad, costoUnitario: new Prisma.Decimal('0.5') }],
+        [{ codigo: 'L1', cantidad, costoUnitario: new Prisma.Decimal(costo) }],
       ),
     );
     return resultado.lotes[0];
@@ -165,6 +169,75 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
       if (opciones.abortar) throw new Error('Abortar después de retirar');
       return venta;
     });
+  }
+
+  async function ventaParaDevolucion(cantidad: number) {
+    const producto = await productoConStock(cantidad);
+    const lote = await abrirLote(producto.id, cantidad, '1.2345');
+    const venta = await vender([
+      {
+        productoId: producto.id,
+        cantidad,
+        lotes: [{ loteId: lote.id, cantidad }],
+      },
+    ]);
+    const asignacion = await prisma.asignacionLoteVenta.findFirstOrThrow({
+      where: { tenantId, ventaId: venta.id },
+    });
+    return { producto, lote, venta, asignacion };
+  }
+
+  async function devolver(
+    tx: Prisma.TransactionClient,
+    asignacion: Awaited<ReturnType<typeof ventaParaDevolucion>>['asignacion'],
+    cantidad: number,
+    destino: DestinoDevolucionVenta,
+    retorno = operacion(),
+    costoUnitario = asignacion.costoUnitario,
+  ) {
+    const {
+      id: asignacionVentaId,
+      ventaId,
+      detalleVentaId,
+      productoId,
+      loteId,
+    } = asignacion;
+    await lotes.bloquearVentaParaDevolucion(tx, tenantId, ventaId);
+    const devolucion = await tx.devolucionVenta.create({
+      data: {
+        tenantId,
+        ventaId,
+        responsableId,
+        estado: 'APROBADA',
+        aprobadaAt: new Date(),
+        aprobadaPorId: responsableId,
+        subtotal: 0,
+        total: 0,
+        motivo: 'Retorno de ensayo',
+        claveIdempotencia: retorno.clave,
+      },
+    });
+    const detalle = await tx.detalleDevolucionVenta.create({
+      data: {
+        tenantId,
+        devolucionId: devolucion.id,
+        asignacionVentaId,
+        ventaId,
+        detalleVentaId,
+        productoId,
+        loteId,
+        cantidad,
+        destino,
+        subtotal: 0,
+        total: 0,
+        costoUnitario,
+        costoTotal: costoUnitario.mul(cantidad),
+      },
+    });
+    return {
+      detalle,
+      movimientos: await lotes.aplicarDevolucion(tx, retorno, detalle.id),
+    };
   }
 
   it.each(['LEGACY', 'LOTES'])(
@@ -571,5 +644,204 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
     expect(
       await prisma.loteInventario.findUniqueOrThrow({ where: { id: lote.id } }),
     ).toMatchObject({ cantidadFisica: 0 });
+  });
+
+  it('procesa retornos parciales con costo original y contabiliza la devolución dañada una sola vez', async () => {
+    const { asignacion, lote, producto } = await ventaParaDevolucion(3);
+    await prisma.loteInventario.update({
+      where: { id: lote.id },
+      data: { costoUnitario: '9' },
+    });
+    await expect(
+      prisma.$transaction((tx) =>
+        devolver(
+          tx,
+          asignacion,
+          1,
+          'REINTEGRO_APTO',
+          operacion(),
+          new Prisma.Decimal(9),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'La devolución no coincide con la salida y costo originales',
+    });
+    const apto = await prisma.$transaction((tx) =>
+      devolver(tx, asignacion, 1, 'REINTEGRO_APTO'),
+    );
+    expect(apto.movimientos.movimientoBajaId).toBeNull();
+    await prisma.loteInventario.update({
+      where: { id: lote.id },
+      data: { vencimiento: new Date('2020-01-01T00:00:00Z') },
+    });
+    await expect(
+      prisma.$transaction((tx) =>
+        devolver(tx, asignacion, 1, 'REINTEGRO_APTO'),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'El lote vencido requiere una baja explícita',
+    });
+    const noApto = await prisma.$transaction((tx) =>
+      devolver(tx, asignacion, 1, 'BAJA_NO_APTO'),
+    );
+    for (const retorno of [apto, noApto]) {
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await lotes.bloquearVentaParaDevolucion(
+            tx,
+            tenantId,
+            asignacion.ventaId,
+          );
+          return lotes.aplicarDevolucion(tx, operacion(), retorno.detalle.id);
+        }),
+      ).resolves.toEqual(retorno.movimientos);
+    }
+    await expect(
+      prisma.$transaction((tx) => devolver(tx, asignacion, 2, 'BAJA_NO_APTO')),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'La cantidad excede lo pendiente de devolver',
+    });
+    const movimientos = await prisma.movimientoInventario.findMany({
+      where: {
+        tenantId,
+        productoId: producto.id,
+        detalleDevolucionId: { not: null },
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(
+      movimientos.map(({ tipo, deltaFisico, costoTotal }) => [
+        tipo,
+        deltaFisico,
+        costoTotal?.toFixed(4),
+      ]),
+    ).toEqual([
+      ['DEVOLUCION', 1, '1.2345'],
+      ['DEVOLUCION', 1, '1.2345'],
+      ['BAJA', -1, '1.2345'],
+    ]);
+    const [, devolucion, baja] = movimientos;
+    expect(baja).toMatchObject({
+      correlacionId: devolucion.correlacionId,
+      detalleDevolucionId: noApto.detalle.id,
+      motivo: 'Retorno de ensayo',
+    });
+    await expect(
+      lotes.consultarTotalPerdidas(
+        prisma,
+        tenantId,
+        baja.fecha,
+        new Date(baja.fecha.getTime() + 1),
+      ),
+    ).resolves.toEqual({ totalPerdidas: '1.2345' });
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 1, stockReservado: 0 });
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: lote.id } }),
+    ).toMatchObject({ cantidadFisica: 1 });
+
+    const tiendaAjena = await prisma.tenant.create({
+      data: { nombre: 'Otra tienda', slug: randomUUID(), tipoNegocio: 'STORE' },
+    });
+    await expect(
+      prisma.$transaction((tx) =>
+        lotes.bloquearVentaParaDevolucion(
+          tx,
+          tiendaAjena.id,
+          asignacion.ventaId,
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      prisma.$transaction((tx) =>
+        lotes.aplicarDevolucion(
+          tx,
+          { ...operacion(), tenantId: tiendaAjena.id },
+          noApto.detalle.id,
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it.each(['REINTEGRO_APTO', 'BAJA_NO_APTO'] as const)(
+    'revierte el retorno %s junto con la escritura del coordinador',
+    async (destino) => {
+      const { asignacion, producto, lote } = await ventaParaDevolucion(1);
+      const retorno = operacion();
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await devolver(tx, asignacion, 1, destino, retorno);
+          throw new Error('Fallo del coordinador');
+        }),
+      ).rejects.toThrow('Fallo del coordinador');
+      expect(
+        await prisma.devolucionVenta.count({
+          where: { tenantId, claveIdempotencia: retorno.clave },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.detalleDevolucionVenta.count({
+          where: { tenantId, asignacionVentaId: asignacion.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.movimientoInventario.count({
+          where: {
+            tenantId,
+            productoId: producto.id,
+            detalleDevolucionId: { not: null },
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+      ).toMatchObject({ stock: 0 });
+      expect(
+        await prisma.loteInventario.findUniqueOrThrow({
+          where: { id: lote.id },
+        }),
+      ).toMatchObject({ cantidadFisica: 0 });
+      await expect(
+        prisma.$transaction((tx) =>
+          devolver(tx, asignacion, 1, destino, retorno),
+        ),
+      ).resolves.toBeDefined();
+    },
+  );
+
+  it('serializa dos devoluciones por la última unidad pendiente', async () => {
+    const { asignacion, venta, producto, lote } = await ventaParaDevolucion(1);
+    const ejecutar = () =>
+      prisma.$transaction((tx) =>
+        devolver(tx, asignacion, 1, 'REINTEGRO_APTO'),
+      );
+    const resultados = await Promise.allSettled([ejecutar(), ejecutar()]);
+    expect(resultados.map(({ status }) => status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    expect(
+      resultados.find(({ status }) => status === 'rejected'),
+    ).toMatchObject({
+      reason: {
+        status: 409,
+        message: 'La cantidad excede lo pendiente de devolver',
+      },
+    });
+    expect(
+      await prisma.devolucionVenta.count({
+        where: { tenantId, ventaId: venta.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 1, stockReservado: 0 });
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: lote.id } }),
+    ).toMatchObject({ cantidadFisica: 1 });
   });
 });

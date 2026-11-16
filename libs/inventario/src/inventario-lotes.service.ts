@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  DestinoDevolucionVenta,
+  EstadoDevolucionVenta,
   LoteInventario,
   ModoInventario,
   Prisma,
@@ -17,6 +19,7 @@ import type {
   LineaSalidaVenta,
   LineaSalidaValidada,
   OperacionInventario,
+  ResultadoDevolucionInventario,
   SeleccionLote,
 } from './inventario.types';
 
@@ -347,6 +350,192 @@ export class InventarioLotesService {
       );
     }
     await this.descontarSaldos(tx, producto, detalle.cantidad, 0);
+  }
+
+  async bloquearVentaParaDevolucion(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    ventaId: number,
+  ): Promise<void> {
+    const [venta] = await tx.$queryRaw<{ id: number }[]>`
+      SELECT id FROM "Venta"
+      WHERE "tenantId" = ${tenantId} AND id = ${ventaId}
+      FOR UPDATE
+    `;
+    if (!venta) throw new NotFoundException('Venta no encontrada');
+  }
+
+  async aplicarDevolucion(
+    tx: Prisma.TransactionClient,
+    operacion: OperacionInventario,
+    detalleDevolucionId: number,
+  ): Promise<ResultadoDevolucionInventario> {
+    const { tenantId } = operacion;
+    const detalle = await tx.detalleDevolucionVenta.findUnique({
+      where: { tenantId_id: { tenantId, id: detalleDevolucionId } },
+      include: {
+        devolucion: { select: { estado: true, motivo: true } },
+        asignacionVenta: {
+          include: {
+            movimientoInventario_asignacionVenta: {
+              where: { tipo: { in: ['VENTA', 'CONSUMO_RESERVA'] } },
+            },
+          },
+        },
+      },
+    });
+    if (!detalle)
+      throw new NotFoundException('Detalle de devolución no encontrado');
+    const {
+      productoId,
+      loteId,
+      cantidad,
+      asignacionVenta,
+      destino,
+      devolucion,
+    } = detalle;
+    const producto = await this.inventario.bloquearProducto(
+      tx,
+      tenantId,
+      productoId,
+    );
+    if (
+      devolucion.estado !== EstadoDevolucionVenta.APROBADA ||
+      producto.modoInventario !== ModoInventario.LOTES
+    ) {
+      throw new ConflictException(
+        'El retorno exige una devolución aprobada e inventario por lotes',
+      );
+    }
+
+    const salidas = asignacionVenta.movimientoInventario_asignacionVenta;
+    const [salida] = salidas;
+    const costoUnitario = asignacionVenta.costoUnitario;
+    const costoTotal = costoUnitario.mul(cantidad);
+    if (
+      salidas.length !== 1 ||
+      salida.deltaFisico !== -asignacionVenta.cantidad ||
+      !salida.costoUnitario?.eq(costoUnitario) ||
+      !salida.costoTotal?.eq(asignacionVenta.costoTotal) ||
+      !detalle.costoUnitario.eq(costoUnitario) ||
+      !detalle.costoTotal.eq(costoTotal)
+    ) {
+      throw new ConflictException(
+        'La devolución no coincide con la salida y costo originales',
+      );
+    }
+
+    const noApto = destino === DestinoDevolucionVenta.BAJA_NO_APTO;
+    const movimientos = await tx.movimientoInventario.findMany({
+      where: { tenantId, detalleDevolucionId },
+    });
+    if (movimientos.length) {
+      const reintegro = movimientos.find(
+        ({ tipo }) => tipo === TipoMovimientoInventario.DEVOLUCION,
+      );
+      const baja = movimientos.find(
+        ({ tipo }) => tipo === TipoMovimientoInventario.BAJA,
+      );
+      if (
+        movimientos.length !== (noApto ? 2 : 1) ||
+        reintegro?.deltaFisico !== cantidad ||
+        (noApto &&
+          (baja?.deltaFisico !== -cantidad ||
+            baja.correlacionId !== reintegro.correlacionId)) ||
+        movimientos.some(
+          (movimiento) =>
+            movimiento.deltaReservado !== 0 ||
+            !movimiento.costoUnitario?.eq(costoUnitario) ||
+            !movimiento.costoTotal?.eq(costoTotal),
+        )
+      ) {
+        throw new ConflictException(
+          'El historial del detalle de devolución no concilia',
+        );
+      }
+      return {
+        movimientoDevolucionId: reintegro.id,
+        movimientoBajaId: baja?.id ?? null,
+      };
+    }
+
+    const otras = await tx.detalleDevolucionVenta.aggregate({
+      where: {
+        tenantId,
+        asignacionVentaId: asignacionVenta.id,
+        id: { not: detalleDevolucionId },
+        devolucion: { estado: EstadoDevolucionVenta.APROBADA },
+      },
+      _sum: { cantidad: true },
+    });
+    const pendiente = asignacionVenta.cantidad - (otras._sum.cantidad ?? 0);
+    if (cantidad > pendiente) {
+      throw new ConflictException(
+        'La cantidad excede lo pendiente de devolver',
+      );
+    }
+
+    if (!noApto) {
+      const where = {
+        tenantId_id_productoId: { tenantId, id: loteId, productoId },
+      };
+      const lote = await tx.loteInventario.findUniqueOrThrow({
+        where,
+        select: { vencimiento: true },
+      });
+      if (lote.vencimiento && lote.vencimiento <= new Date()) {
+        throw new ConflictException(
+          'El lote vencido requiere una baja explícita',
+        );
+      }
+      if (producto.stock + cantidad > maxEnteroPrisma) {
+        throw new ConflictException('El stock resultante excede el límite');
+      }
+      await tx.loteInventario.update({
+        where,
+        data: { cantidadFisica: { increment: cantidad } },
+      });
+      await tx.producto.update({
+        where: { tenantId_id: { tenantId, id: productoId } },
+        data: { stock: { increment: cantidad } },
+      });
+    }
+
+    const origen = {
+      productoId,
+      loteId,
+      detalleDevolucionId,
+      deltaReservado: 0,
+      costoUnitario,
+      costoTotal,
+      motivo: devolucion.motivo.trim(),
+    };
+    const reintegro = await this.registrarMovimiento(
+      tx,
+      operacion,
+      {
+        ...origen,
+        tipo: TipoMovimientoInventario.DEVOLUCION,
+        deltaFisico: cantidad,
+      },
+      `devolucion:${detalleDevolucionId}`,
+    );
+    const baja = noApto
+      ? await this.registrarMovimiento(
+          tx,
+          operacion,
+          {
+            ...origen,
+            tipo: TipoMovimientoInventario.BAJA,
+            deltaFisico: -cantidad,
+          },
+          `devolucion:${detalleDevolucionId}:baja`,
+        )
+      : null;
+    return {
+      movimientoDevolucionId: reintegro.id,
+      movimientoBajaId: baja?.id ?? null,
+    };
   }
 
   async ajustarLote(
