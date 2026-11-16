@@ -357,9 +357,87 @@ export class InventarioLotesService {
     delta: number,
     motivo: string,
   ) {
-    if (!Number.isInteger(delta) || !delta || !motivo.trim()) {
+    const { lote } = await this.registrarAjuste(
+      tx,
+      operacion,
+      productoId,
+      loteId,
+      delta,
+      motivo,
+    );
+    return lote;
+  }
+
+  registrarAjuste(
+    tx: Prisma.TransactionClient,
+    operacion: OperacionInventario,
+    productoId: number,
+    loteId: number,
+    delta: number,
+    motivo: string,
+  ) {
+    return this.modificarSaldoLote(tx, operacion, productoId, loteId, {
+      tipo: 'AJUSTE',
+      delta,
+      motivo,
+    });
+  }
+
+  registrarBaja(
+    tx: Prisma.TransactionClient,
+    operacion: OperacionInventario,
+    productoId: number,
+    loteId: number,
+    cantidad: number,
+    motivo: string,
+  ) {
+    if (!enteroPositivo(cantidad)) {
       throw new BadRequestException(
-        'El ajuste exige un cambio entero y un motivo',
+        'La baja exige una cantidad entera positiva',
+      );
+    }
+    return this.modificarSaldoLote(tx, operacion, productoId, loteId, {
+      tipo: 'BAJA',
+      delta: -cantidad,
+      motivo,
+    });
+  }
+
+  async consultarTotalPerdidas(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    desde: Date,
+    hasta: Date,
+  ): Promise<{ totalPerdidas: string }> {
+    if (!(desde < hasta)) {
+      throw new BadRequestException('desde debe ser anterior a hasta');
+    }
+    const { _sum } = await tx.movimientoInventario.aggregate({
+      where: {
+        tenantId,
+        tipo: TipoMovimientoInventario.BAJA,
+        fecha: { gte: desde, lt: hasta },
+      },
+      _sum: { costoTotal: true },
+    });
+    return { totalPerdidas: _sum.costoTotal?.toFixed(4) ?? '0.0000' };
+  }
+
+  private async modificarSaldoLote(
+    tx: Prisma.TransactionClient,
+    operacion: OperacionInventario,
+    productoId: number,
+    loteId: number,
+    {
+      tipo,
+      delta,
+      motivo,
+    }: { tipo: 'AJUSTE' | 'BAJA'; delta: number; motivo: string },
+  ) {
+    const justificacion = motivo.trim();
+    if (!enteroPositivo(Math.abs(delta)) || !justificacion) {
+      throw new BadRequestException(
+        'El movimiento exige un cambio entero y un motivo',
       );
     }
     const { tenantId } = operacion;
@@ -369,15 +447,25 @@ export class InventarioLotesService {
       productoId,
     );
     if (producto.modoInventario !== ModoInventario.LOTES) {
-      throw new ConflictException('El ajuste requiere inventario por lotes');
+      throw new ConflictException(
+        'El movimiento requiere inventario por lotes',
+      );
     }
     const where = {
       tenantId_id_productoId: { tenantId, id: loteId, productoId },
     };
     const lote = await tx.loteInventario.findUnique({ where });
-    if (!lote || lote.cantidadFisica + delta < 0) {
-      throw new BadRequestException(
-        'Lote ajeno al producto o sin stock suficiente',
+    if (!lote) throw new NotFoundException('Lote no encontrado');
+    if (lote.cantidadFisica + delta < 0) {
+      throw new ConflictException('Saldo insuficiente en el lote');
+    }
+    const costoTotal = lote.costoUnitario.mul(Math.abs(delta));
+    if (
+      producto.stock + delta > maxEnteroPrisma ||
+      costoTotal.gte(limiteCosto)
+    ) {
+      throw new ConflictException(
+        'El stock o costo del movimiento excede el límite',
       );
     }
     const ahora = new Date();
@@ -390,7 +478,9 @@ export class InventarioLotesService {
         (await this.stockApto(tx, producto, ahora)) + delta <
           producto.stockReservado)
     ) {
-      throw new ConflictException('El ajuste afectaría unidades reservadas');
+      throw new ConflictException(
+        'El movimiento afectaría unidades reservadas',
+      );
     }
     const actualizado = await tx.loteInventario.update({
       where,
@@ -400,22 +490,22 @@ export class InventarioLotesService {
       where: { tenantId_id: { tenantId, id: productoId } },
       data: { stock: { increment: delta } },
     });
-    await this.registrarMovimiento(
+    const movimiento = await this.registrarMovimiento(
       tx,
       operacion,
       {
-        tipo: TipoMovimientoInventario.AJUSTE,
+        tipo,
         productoId,
         loteId,
         deltaFisico: delta,
         deltaReservado: 0,
-        motivo: motivo.trim(),
+        motivo: justificacion,
         costoUnitario: lote.costoUnitario,
-        costoTotal: lote.costoUnitario.mul(Math.abs(delta)),
+        costoTotal,
       },
       `lote:${loteId}`,
     );
-    return actualizado;
+    return { lote: actualizado, movimiento };
   }
 
   async validarDisponible(

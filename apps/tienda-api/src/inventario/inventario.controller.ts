@@ -18,6 +18,11 @@ import {
   ProductosInventarioDto,
 } from './dto/consulta-inventario.dto';
 import { RegistrarEntradaInventarioDto } from './dto/entrada-inventario.dto';
+import {
+  AjusteInventarioDto,
+  BajaInventarioDto,
+  LoteParamDto,
+} from './dto/movimiento-inventario.dto';
 import { InventarioService } from './inventario.service';
 
 @Controller('inventario')
@@ -91,6 +96,40 @@ export class InventarioController {
       'ENTRADA',
       clave,
       datos,
+    );
+  }
+
+  @Post('productos/:productoId/lotes/:loteId/ajustes')
+  @RequierePermisoTienda('store.inventory.adjust')
+  registrarAjuste(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId, loteId }: LoteParamDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @Body() datos: AjusteInventarioDto,
+  ) {
+    return this.inventario.registrarMovimientoLote(
+      contexto,
+      productoId,
+      loteId,
+      clave,
+      { tipo: 'AJUSTE', ...datos },
+    );
+  }
+
+  @Post('productos/:productoId/lotes/:loteId/bajas')
+  @RequierePermisoTienda('store.inventory.loss')
+  registrarBaja(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId, loteId }: LoteParamDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @Body() datos: BajaInventarioDto,
+  ) {
+    return this.inventario.registrarMovimientoLote(
+      contexto,
+      productoId,
+      loteId,
+      clave,
+      { tipo: 'BAJA', ...datos },
     );
   }
 }
