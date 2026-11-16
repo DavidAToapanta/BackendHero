@@ -1,45 +1,58 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
+  Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
+import { RequierePermisoTienda } from '../accesos/accesos.module';
+import { ContextoTiendaActual, type ContextoTienda } from '../auth';
+import { ProductoParamDto } from '../comun/consulta-tienda.dto';
+import {
+  LotesInventarioDto,
+  MovimientosInventarioDto,
+  ProductosInventarioDto,
+} from './dto/consulta-inventario.dto';
 import { InventarioService } from './inventario.service';
-import { CreateInventarioDto } from './dto/create-inventario.dto';
-import { UpdateInventarioDto } from './dto/update-inventario.dto';
 
 @Controller('inventario')
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class InventarioController {
-  constructor(private readonly inventarioService: InventarioService) {}
+  constructor(private readonly inventario: InventarioService) {}
 
-  @Post()
-  create(@Body() createInventarioDto: CreateInventarioDto) {
-    return this.inventarioService.create(createInventarioDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.inventarioService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.inventarioService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateInventarioDto: UpdateInventarioDto,
+  @Get('productos')
+  @RequierePermisoTienda('store.inventory.read')
+  listarProductos(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() filtros: ProductosInventarioDto,
   ) {
-    return this.inventarioService.update(+id, updateInventarioDto);
+    return this.inventario.listarProductos(contexto, filtros);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.inventarioService.remove(+id);
+  @Get('productos/:productoId/lotes')
+  @RequierePermisoTienda('store.inventory.read')
+  listarLotes(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoParamDto,
+    @Query() filtros: LotesInventarioDto,
+  ) {
+    return this.inventario.listarLotes(contexto, productoId, filtros);
+  }
+
+  @Get('productos/:productoId/movimientos')
+  @RequierePermisoTienda('store.inventory.read')
+  listarMovimientos(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoParamDto,
+    @Query() filtros: MovimientosInventarioDto,
+  ) {
+    return this.inventario.listarMovimientos(contexto, productoId, filtros);
   }
 }

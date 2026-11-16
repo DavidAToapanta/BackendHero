@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   LoteInventario,
@@ -13,6 +14,8 @@ import {
 import { InventarioService, ProductoInventario } from './inventario.service';
 import type {
   LoteEntrada,
+  LineaSalidaVenta,
+  LineaSalidaValidada,
   OperacionInventario,
   SeleccionLote,
 } from './inventario.types';
@@ -20,6 +23,9 @@ import type {
 type OrigenSalida =
   | { compraLegacyId: number }
   | { asignacionVentaId: number; reservaId?: number };
+
+const enteroPositivo = (valor: number) =>
+  Number.isInteger(valor) && valor > 0 && valor <= 2147483647;
 
 @Injectable()
 export class InventarioLotesService {
@@ -163,6 +169,114 @@ export class InventarioLotesService {
     await this.descontarSaldos(tx, producto, compra.cantidad, 0);
   }
 
+  async validarSeleccionVenta(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    lineas: readonly LineaSalidaVenta[],
+  ): Promise<LineaSalidaValidada[]> {
+    if (lineas.length === 0)
+      throw new BadRequestException('Selecciona al menos una línea de venta');
+    const porProducto = new Map<
+      number,
+      { cantidad: number; lotes: Map<number, number> }
+    >();
+    const loteIds = new Set<number>();
+    for (const { productoId, cantidad, lotes } of lineas) {
+      const ids = new Set(lotes.map(({ loteId }) => loteId));
+      if (
+        !enteroPositivo(productoId) ||
+        !enteroPositivo(cantidad) ||
+        ids.size !== lotes.length ||
+        lotes.some(
+          (lote) =>
+            !enteroPositivo(lote.loteId) || !enteroPositivo(lote.cantidad),
+        ) ||
+        lotes.reduce((total, lote) => total + lote.cantidad, 0) !== cantidad
+      ) {
+        throw new BadRequestException(
+          'Selecciona lotes distintos por la cantidad total de cada línea',
+        );
+      }
+
+      const acumulado = porProducto.get(productoId) ?? {
+        cantidad: 0,
+        lotes: new Map(),
+      };
+      acumulado.cantidad += cantidad;
+      for (const lote of lotes) {
+        loteIds.add(lote.loteId);
+        acumulado.lotes.set(
+          lote.loteId,
+          (acumulado.lotes.get(lote.loteId) ?? 0) + lote.cantidad,
+        );
+      }
+      porProducto.set(productoId, acumulado);
+    }
+    const productos = await this.inventario.bloquearProductos(tx, tenantId, [
+      ...porProducto.keys(),
+    ]);
+    if (productos.length !== porProducto.size)
+      throw new NotFoundException('Producto no encontrado');
+    for (const producto of productos) this.validarProductoActivo(producto);
+
+    const ahora = new Date();
+    const seleccionados = await tx.loteInventario.findMany({
+      where: { tenantId, id: { in: [...loteIds] } },
+      select: {
+        id: true,
+        productoId: true,
+        vencimiento: true,
+        cantidadFisica: true,
+        costoUnitario: true,
+      },
+    });
+    const porLote = new Map(seleccionados.map((lote) => [lote.id, lote]));
+    for (const [productoId, { lotes }] of porProducto) {
+      for (const [loteId, cantidad] of lotes) {
+        const lote = porLote.get(loteId);
+        if (lote?.productoId !== productoId)
+          throw new NotFoundException('Lote no encontrado para el producto');
+        if (lote.vencimiento !== null && lote.vencimiento <= ahora) {
+          throw new BadRequestException('El lote seleccionado está vencido');
+        }
+        if (lote.cantidadFisica < cantidad)
+          throw new BadRequestException(
+            'Stock insuficiente en el lote seleccionado',
+          );
+      }
+    }
+
+    const disponibles = await this.consultarDisponibles(
+      tx,
+      tenantId,
+      productos,
+      ahora,
+    );
+    for (const producto of productos) {
+      if (
+        porProducto.get(producto.id)!.cantidad >
+        (disponibles.get(producto.id) ?? 0)
+      ) {
+        throw new BadRequestException(
+          `Stock disponible insuficiente para el producto ${producto.nombre}`,
+        );
+      }
+    }
+    return lineas.map(({ productoId, cantidad, lotes }) => ({
+      productoId,
+      cantidad,
+      lotes: lotes.map(({ loteId, cantidad }) => {
+        const { costoUnitario } = porLote.get(loteId)!;
+        return {
+          loteId,
+          cantidad,
+          costoUnitario,
+          costoTotal: costoUnitario.mul(cantidad),
+        };
+      }),
+    }));
+  }
+
   async retirarVenta(
     tx: Prisma.TransactionClient,
     operacion: OperacionInventario,
@@ -213,6 +327,7 @@ export class InventarioLotesService {
           asignacionVentaId: asignacion.id,
         },
         ahora,
+        asignacion,
       );
     }
     await this.descontarSaldos(tx, producto, detalle.cantidad, 0);
@@ -391,6 +506,10 @@ export class InventarioLotesService {
     { loteId, cantidad }: SeleccionLote,
     origen: OrigenSalida,
     ahora: Date,
+    costoEsperado?: {
+      costoUnitario: Prisma.Decimal;
+      costoTotal: Prisma.Decimal;
+    },
   ) {
     if (!Number.isInteger(cantidad) || cantidad <= 0) {
       throw new BadRequestException(
@@ -412,6 +531,16 @@ export class InventarioLotesService {
       throw new BadRequestException(
         'Lote vencido, ajeno al producto o sin stock suficiente',
       );
+    const costoTotal = lote.costoUnitario.mul(cantidad);
+    if (
+      costoEsperado &&
+      (!lote.costoUnitario.equals(costoEsperado.costoUnitario) ||
+        !costoTotal.equals(costoEsperado.costoTotal))
+    ) {
+      throw new ConflictException(
+        'El costo de la asignación no coincide con el costo del lote',
+      );
+    }
 
     await tx.loteInventario.update({
       where: { tenantId_id_productoId: { tenantId, id: loteId, productoId } },
@@ -432,9 +561,11 @@ export class InventarioLotesService {
         deltaFisico: -cantidad,
         deltaReservado: consumeReserva ? -cantidad : 0,
         costoUnitario: lote.costoUnitario,
-        costoTotal: lote.costoUnitario.mul(cantidad),
+        costoTotal,
       },
-      `lote:${loteId}`,
+      'asignacionVentaId' in origen && !consumeReserva
+        ? `asignacion:${origen.asignacionVentaId}`
+        : `lote:${loteId}`,
     );
   }
 

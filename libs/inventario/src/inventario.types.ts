@@ -15,3 +15,16 @@ export type LoteEntrada = {
 };
 
 export type SeleccionLote = { loteId: number; cantidad: number };
+
+export type LineaSalidaVenta = {
+  productoId: number;
+  cantidad: number;
+  lotes: readonly SeleccionLote[];
+};
+
+export type LineaSalidaValidada = Omit<LineaSalidaVenta, 'lotes'> & {
+  lotes: (SeleccionLote & {
+    costoUnitario: Prisma.Decimal;
+    costoTotal: Prisma.Decimal;
+  })[];
+};

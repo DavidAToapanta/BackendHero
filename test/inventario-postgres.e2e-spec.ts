@@ -4,6 +4,7 @@ import {
   InventarioLotesService,
   InventarioService,
   ReservasInventarioService,
+  type LineaSalidaVenta,
 } from '@app/inventario';
 import { PrismaService } from '@app/prisma';
 import { EstadoPedido, Prisma } from '@prisma/client';
@@ -107,6 +108,63 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
       ),
     );
     return resultado.lotes[0];
+  }
+
+  function vender(
+    lineas: LineaSalidaVenta[],
+    opciones: {
+      alterarCosto?: boolean;
+      abortar?: boolean;
+      clave?: string;
+    } = {},
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const salida = { ...operacion(), clave: opciones.clave ?? randomUUID() };
+      const seleccion = await lotes.validarSeleccionVenta(tx, tenantId, lineas);
+      const venta = await tx.venta.create({
+        data: {
+          tenantId,
+          responsableId,
+          origen: 'CAJA',
+          subtotal: 0,
+          total: 0,
+          claveIdempotencia: salida.clave,
+        },
+      });
+      const detalleIds: number[] = [];
+      for (const linea of seleccion) {
+        const detalle = await tx.detalleVenta.create({
+          data: {
+            tenantId,
+            ventaId: venta.id,
+            productoId: linea.productoId,
+            nombreProducto: 'Producto de ensayo K03',
+            cantidad: linea.cantidad,
+            precioUnitario: 0,
+            subtotal: 0,
+            total: 0,
+          },
+        });
+        detalleIds.push(detalle.id);
+        await tx.asignacionLoteVenta.createMany({
+          data: linea.lotes.map((lote) => ({
+            ...lote,
+            tenantId,
+            productoId: linea.productoId,
+            ventaId: venta.id,
+            detalleVentaId: detalle.id,
+            ...(opciones.alterarCosto && {
+              costoUnitario: lote.costoUnitario.plus('0.0001'),
+              costoTotal: lote.costoUnitario.plus('0.0001').mul(lote.cantidad),
+            }),
+          })),
+        });
+      }
+      for (const detalleId of detalleIds)
+        await lotes.retirarVenta(tx, salida, detalleId);
+      if (opciones.abortar) throw new Error('Abortar después de retirar');
+      return venta;
+    });
   }
 
   it.each(['LEGACY', 'LOTES'])(
@@ -213,6 +271,22 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
       ],
     };
     await expect(
+      prisma.$transaction((tx) =>
+        lotes.validarSeleccionVenta(tx, tenantId, [
+          {
+            productoId: producto.id,
+            cantidad: 1,
+            lotes: [{ loteId: lote.id, cantidad: 1 }],
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining(
+        'Stock disponible insuficiente',
+      ) as unknown,
+    });
+    await expect(
       compras.create(payload, tenantId, usuarioId),
     ).rejects.toMatchObject({ status: 400 });
     expect(
@@ -241,5 +315,184 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
       stock: 1,
       stockReservado: 0,
     });
+  });
+
+  it('valida el acumulado de un lote y guarda movimientos distintos para dos líneas de venta', async () => {
+    const producto = await productoConStock(8);
+    const costoUnitario = new Prisma.Decimal('0.4321');
+    const {
+      lotes: [principal],
+    } = await prisma.$transaction((tx) =>
+      lotes.registrarEntrada(
+        tx,
+        operacion(),
+        producto.id,
+        'APERTURA',
+        'Ensayo K03',
+        [
+          { codigo: 'PRINCIPAL', cantidad: 6, costoUnitario },
+          { codigo: 'OTRO', cantidad: 2, costoUnitario },
+        ],
+      ),
+    );
+    const linea = (cantidad: number) => ({
+      productoId: producto.id,
+      cantidad,
+      lotes: [{ loteId: principal.id, cantidad }],
+    });
+    await expect(vender([linea(3), linea(4)])).rejects.toMatchObject({
+      status: 400,
+      message: 'Stock insuficiente en el lote seleccionado',
+    });
+    await expect(vender([{ ...linea(3), cantidad: 4 }])).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(vender([linea(1)], { alterarCosto: true })).rejects.toThrow(
+      'Lote vencido o costo historico incorrecto',
+    );
+    const clave = randomUUID();
+    await expect(vender([linea(1)], { abortar: true, clave })).rejects.toThrow(
+      'Abortar después de retirar',
+    );
+    expect(
+      await prisma.venta.count({
+        where: { tenantId, claveIdempotencia: clave },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 8 });
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({
+        where: { id: principal.id },
+      }),
+    ).toMatchObject({ cantidadFisica: 6 });
+
+    const venta = await vender([linea(3), linea(3)]);
+    const asignaciones = await prisma.asignacionLoteVenta.findMany({
+      where: { tenantId, ventaId: venta.id },
+      orderBy: { id: 'asc' },
+    });
+    expect(asignaciones).toHaveLength(2);
+    expect(
+      new Set(asignaciones.map(({ detalleVentaId }) => detalleVentaId)).size,
+    ).toBe(2);
+    expect(
+      asignaciones.map(({ costoUnitario, costoTotal }) => [
+        costoUnitario.toFixed(4),
+        costoTotal.toFixed(4),
+      ]),
+    ).toEqual([
+      ['0.4321', '1.2963'],
+      ['0.4321', '1.2963'],
+    ]);
+    const movimientos = await prisma.movimientoInventario.findMany({
+      where: { tenantId, productoId: producto.id, tipo: 'VENTA' },
+      orderBy: { id: 'asc' },
+    });
+    expect(
+      movimientos.map(({ claveIdempotencia, deltaFisico }) => [
+        claveIdempotencia,
+        deltaFisico,
+      ]),
+    ).toEqual(
+      asignaciones.map(({ id }) => [
+        venta.claveIdempotencia + ':asignacion:' + id,
+        -3,
+      ]),
+    );
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({
+        where: { id: principal.id },
+      }),
+    ).toMatchObject({ cantidadFisica: 0 });
+  });
+
+  it('rechaza lotes vencidos, lotes de otro producto y selecciones de otro tenant', async () => {
+    const producto = await productoConStock(2);
+    const {
+      lotes: [vencido],
+    } = await prisma.$transaction((tx) =>
+      lotes.registrarEntrada(
+        tx,
+        operacion(),
+        producto.id,
+        'APERTURA',
+        'Ensayo K03',
+        [
+          {
+            codigo: 'VENCIDO',
+            cantidad: 1,
+            costoUnitario: new Prisma.Decimal(1),
+            vencimiento: new Date(Date.now() - 60000),
+          },
+          {
+            codigo: 'VIGENTE',
+            cantidad: 1,
+            costoUnitario: new Prisma.Decimal(1),
+          },
+        ],
+      ),
+    );
+    const otro = await productoConStock(1);
+    const loteAjeno = await abrirLote(otro.id, 1);
+    const tiendaAjena = await prisma.tenant.create({
+      data: {
+        slug: randomUUID(),
+        nombre: 'Otro negocio',
+        tipoNegocio: 'STORE',
+      },
+    });
+    const seleccionar = (loteId: number, negocio = tenantId) =>
+      prisma.$transaction((tx) =>
+        lotes.validarSeleccionVenta(tx, negocio, [
+          {
+            productoId: producto.id,
+            cantidad: 1,
+            lotes: [{ loteId, cantidad: 1 }],
+          },
+        ]),
+      );
+    await expect(seleccionar(vencido.id)).rejects.toMatchObject({
+      status: 400,
+      message: 'El lote seleccionado está vencido',
+    });
+    await expect(seleccionar(loteAjeno.id)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(seleccionar(vencido.id, tiendaAjena.id)).rejects.toMatchObject(
+      { status: 404 },
+    );
+  });
+
+  it('solo permite una salida de la última unidad entre dos ventas concurrentes', async () => {
+    const producto = await productoConStock(1);
+    const lote = await abrirLote(producto.id, 1);
+    const lineas = [
+      {
+        productoId: producto.id,
+        cantidad: 1,
+        lotes: [{ loteId: lote.id, cantidad: 1 }],
+      },
+    ];
+    const resultados = await Promise.allSettled([
+      vender(lineas),
+      vender(lineas),
+    ]);
+    expect(resultados.map(({ status }) => status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    expect(
+      resultados.find(({ status }) => status === 'rejected'),
+    ).toMatchObject({ reason: { status: 400 } });
+    expect(
+      await prisma.movimientoInventario.count({
+        where: { tenantId, productoId: producto.id, tipo: 'VENTA' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 0 });
   });
 });

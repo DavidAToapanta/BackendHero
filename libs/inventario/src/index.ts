@@ -6,4 +6,6 @@ export type {
   LoteEntrada,
   OperacionInventario,
   SeleccionLote,
+  LineaSalidaVenta,
+  LineaSalidaValidada,
 } from './inventario.types';

@@ -1658,7 +1658,9 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     );
     const permisoCatalogo = permisos.filter(
       ({ codigo }) =>
-        codigo === 'store.catalog.read' || codigo === 'store.catalog.write',
+        codigo === 'store.catalog.read' ||
+        codigo === 'store.catalog.write' ||
+        codigo === 'store.inventory.read',
     );
     async function operador(id: number) {
       const { usuario, credenciales } = await registrarPersonal();
@@ -1942,6 +1944,98 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       stockReservado: 2,
       stockDisponible: 3,
       modoInventario: 'LOTES',
+    });
+
+    const inventarioUrl = '/inventario/productos';
+    const lotesUrl = inventarioUrl + '/' + productoId + '/lotes';
+    const movimientosUrl = inventarioUrl + '/' + productoId + '/movimientos';
+    const existencias = await http()
+      .get(inventarioUrl)
+      .auth(accessToken, bearer)
+      .query({ q: 'BEB-1', activo: true, limite: 1 })
+      .expect(200);
+    expect(existencias.body).toMatchObject({
+      data: [
+        { productoId, stockFisico: 8, stockReservado: 2, stockDisponible: 3 },
+      ],
+      meta: { total: 1, limite: 1 },
+    });
+    const soloVendibles = await http()
+      .get(lotesUrl)
+      .auth(accessToken, bearer)
+      .expect(200);
+    const { data: lotesMostrador } = soloVendibles.body as {
+      data: Record<string, unknown>[];
+    };
+    expect(lotesMostrador).toHaveLength(1);
+    expect(lotesMostrador[0]).toEqual({
+      loteId: lotesMostrador[0].loteId,
+      codigo: 'VIGENTE',
+      vencimiento: null,
+      cantidadDisponible: 3,
+    });
+    const vencidos = await http()
+      .get(lotesUrl)
+      .auth(accessToken, bearer)
+      .query({ soloVendibles: false, limite: 1 })
+      .expect(200);
+    expect(vencidos.body).toMatchObject({
+      data: [{ codigo: 'VENCIDO', cantidadDisponible: 0 }],
+      meta: { total: 2, paginas: 2 },
+    });
+    await http().get(lotesUrl).auth(tokenAjeno, bearer).expect(404);
+    await http().get(movimientosUrl).auth(tokenAjeno, bearer).expect(404);
+    await http()
+      .get(lotesUrl)
+      .auth(accessToken, bearer)
+      .query({ incluirCostos: true })
+      .expect(403);
+    await http()
+      .get(movimientosUrl)
+      .auth(accessToken, bearer)
+      .query({ incluirCostos: true })
+      .expect(403);
+    const historial = await http()
+      .get(movimientosUrl)
+      .auth(accessToken, bearer)
+      .query({
+        tipo: 'ENTRADA',
+        limite: 1,
+        desde: new Date(ahora - 10000).toISOString(),
+      })
+      .expect(200);
+    const historialPublico = historial.body as { data: object[] };
+    expect(historial.body).toMatchObject({ meta: { total: 2, paginas: 2 } });
+    expect(historialPublico.data[0]).not.toHaveProperty('costoUnitario');
+    expect(historialPublico.data[0]).not.toHaveProperty('costoTotal');
+    expect(historialPublico.data[0]).not.toHaveProperty('claveIdempotencia');
+
+    const asignacion = await prisma.asignacionRol.findUniqueOrThrow({
+      where: {
+        tenantId_membresiaId: { tenantId, membresiaId: context.membresiaId },
+      },
+    });
+    const costo = permisos.find(
+      ({ codigo }) => codigo === 'store.inventory.cost.read',
+    )!;
+    await prisma.rolPermiso.create({
+      data: { tenantId, rolId: asignacion.rolId, permisoId: costo.id },
+    });
+    const lotesConCosto = await http()
+      .get(lotesUrl)
+      .auth(accessToken, bearer)
+      .query({ incluirCostos: true })
+      .expect(200);
+    expect(lotesConCosto.body).toMatchObject({
+      data: [{ costoUnitario: '1.0000' }],
+    });
+    const movimientosConCosto = await http()
+      .get(movimientosUrl)
+      .auth(accessToken, bearer)
+      .query({ incluirCostos: true, tipo: 'ENTRADA', limite: 1 })
+      .expect(200);
+    expect(movimientosConCosto.body).toMatchObject({
+      data: [{ costoUnitario: '1.0000', costoTotal: '3.0000', deltaFisico: 3 }],
     });
 
     const auditoria = jest

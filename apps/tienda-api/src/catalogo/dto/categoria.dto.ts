@@ -10,38 +10,28 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
+import {
+  booleanoHttp,
+  enteroHttp,
+  PaginaTiendaDto,
+  presente,
+} from '../../comun/consulta-tienda.dto';
 
-export const presente = (_dto: object, valor: unknown) => valor !== undefined;
-export const enteroHttp = ({ value }: { value: unknown }) =>
-  typeof value === 'string' && /^[0-9]+$/.test(value) ? Number(value) : value;
+export {
+  enteroHttp,
+  presente,
+  ProductoParamDto as ProductoCategoriaParamDto,
+} from '../../comun/consulta-tienda.dto';
 
-export class PaginacionCatalogoDto {
+export class PaginacionCatalogoDto extends PaginaTiendaDto {
   @ValidateIf(presente)
   @IsString()
   @MaxLength(120)
   q?: string;
-
-  @Transform(enteroHttp)
-  @ValidateIf(presente)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PRISMA_INT)
-  pagina?: number;
-
-  @Transform(enteroHttp)
-  @ValidateIf(presente)
-  @IsInt()
-  @Min(1)
-  @Max(50)
-  limite?: number;
 }
 
 export class ListaCategoriasDto extends PaginacionCatalogoDto {
-  @Transform(({ value }: { value: unknown }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
+  @Transform(booleanoHttp)
   @ValidateIf(presente)
   @IsBoolean()
   activo?: boolean;
@@ -70,14 +60,6 @@ export class CategoriaParamDto {
   @Min(1)
   @Max(MAX_PRISMA_INT)
   categoriaId: number;
-}
-
-export class ProductoCategoriaParamDto {
-  @Transform(enteroHttp)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PRISMA_INT)
-  productoId: number;
 }
 
 export class AsignarCategoriaDto {
