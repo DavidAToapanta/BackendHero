@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '@app/prisma';
 import { DestinoDevolucionVenta, EstadoPedido, Prisma } from '@prisma/client';
 import { CompraService } from '../apps/gym-api/src/compra/compra.service';
+import { reservarPedidoEnsayo } from './fixtures/tienda';
 
 const suite =
   process.env.INVENTARIO_POSTGRES_E2E === '1' ? describe : describe.skip;
@@ -293,46 +294,9 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
   it('protege stock reservado y lo devuelve al cancelar el pedido', async () => {
     const producto = await productoConStock(2);
     const lote = await abrirLote(producto.id, 2);
-    const comprador = await prisma.clienteComercial.create({
-      data: { tenantId, nombres: 'Ensayo' },
-    });
-    const confirmadoAt = new Date();
-    const { pedido, reserva } = await prisma.$transaction(async (tx) => {
-      const clave = randomUUID();
-      const pedido = await tx.pedido.create({
-        data: {
-          tenantId,
-          clienteComercialId: comprador.id,
-          numero: clave,
-          claveIdempotencia: clave,
-          confirmadoAt,
-          reservaHasta: new Date(confirmadoAt.getTime() + 600_000),
-          subtotal: 2.5,
-          total: 2.5,
-        },
-      });
-      const detalle = await tx.detallePedido.create({
-        data: {
-          tenantId,
-          pedidoId: pedido.id,
-          productoId: producto.id,
-          nombreProducto: producto.nombre,
-          cantidad: 2,
-          precioUnitario: 1.25,
-          subtotal: 2.5,
-          total: 2.5,
-        },
-      });
-      return {
-        pedido,
-        reserva: await reservas.reservar(
-          tx,
-          operacion(),
-          pedido.id,
-          detalle.id,
-        ),
-      };
-    });
+    const { pedido, reserva } = await prisma.$transaction((tx) =>
+      reservarPedidoEnsayo(tx, reservas, operacion(), producto, 2),
+    );
     const payload = {
       clienteId,
       detalles: [
