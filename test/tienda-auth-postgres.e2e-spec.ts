@@ -2723,7 +2723,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
   }, 25000);
 
-  it('confirma crédito parcial y total con una cuenta por venta', async () => {
+  it('confirma crédito, consulta cartera y concilia abonos concurrentes', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
@@ -2885,6 +2885,92 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(
       await prisma.loteInventario.findUniqueOrThrow({ where: { id: loteId } }),
     ).toMatchObject({ cantidadFisica: 0 });
+
+    const cuenta = cuentas[0];
+    await prisma.cuentaPorCobrar.update({
+      where: { id: cuenta.id },
+      data: { vencimiento: new Date('2000-01-01T20:00:00.000Z') },
+    });
+    const ownerAjeno = await crearPerfilComercial(
+      ajeno.id,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    const cartera = (ruta = '', operador = owner) =>
+      http()
+        .get('/cartera' + ruta)
+        .auth(operador.accessToken, bearer);
+    await cartera('', cajero).expect(403);
+    await cartera('/' + cuenta.id, ownerAjeno).expect(404);
+    await cartera().query({ vencida: 'no' }).expect(400);
+    const vencidas = await cartera()
+      .query({ vencida: true, hasta: '2000-01-01' })
+      .expect(200);
+    expect(vencidas.body).toEqual([
+      expect.objectContaining({ id: cuenta.id, saldo: '80' }),
+    ]);
+    const resumen = await cartera('/resumen')
+      .query({ clienteComercialId: cliente.id })
+      .expect(200);
+    expect(resumen.body).toEqual({
+      saldoVigente: '100',
+      saldoVencido: '80',
+      saldoPendiente: '180',
+    });
+    const detalleVencido = await cartera('/' + cuenta.id).expect(200);
+    expect(
+      (detalleVencido.body as { diasMora: number }).diasMora,
+    ).toBeGreaterThan(0);
+
+    const abonar = (monto: string, clave: string) =>
+      http()
+        .post('/cobros')
+        .auth(owner.accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send({
+          cuentaId: cuenta.id,
+          ventaId: idParcial,
+          metodo: 'TRANSFERENCIA',
+          monto,
+        });
+    const claveAbono = randomUUID();
+    const otraClaveAbono = randomUUID();
+    const abonos = await Promise.all([
+      abonar('60', claveAbono),
+      abonar('60', otraClaveAbono),
+    ]);
+    expect(abonos.map(({ status }) => status).sort()).toEqual([201, 409]);
+    await abonar(
+      '60',
+      abonos[0].status === 201 ? claveAbono : otraClaveAbono,
+    ).expect(201);
+    const detalleParcial = await cartera('/' + cuenta.id).expect(200);
+    expect(detalleParcial.body).toMatchObject({
+      estado: 'ABIERTA',
+      saldo: '20',
+    });
+    await abonar('20', randomUUID()).expect(201);
+    const pagada = await cartera('/' + cuenta.id).expect(200);
+    expect(pagada.body).toMatchObject({
+      estado: 'PAGADA',
+      saldo: '0',
+      diasMora: 0,
+      aplicacionCobro_cuenta: [{ monto: '60' }, { monto: '20' }],
+    });
+    expect(
+      (pagada.body as { aplicacionCobro_cuenta: object[] })
+        .aplicacionCobro_cuenta[0],
+    ).not.toHaveProperty('claveIdempotencia');
+    await cartera('/deudores').expect(200, [
+      { clienteComercialId: cliente.id, saldoPendiente: '100' },
+    ]);
+    await cartera('/resumen', ownerAjeno).expect(200, {
+      saldoVigente: '0',
+      saldoVencido: '0',
+      saldoPendiente: '0',
+    });
+    expect(await prisma.venta.count({ where: { tenantId } })).toBe(2);
   });
 
   it('localiza una venta por ambos productos y revierte venta, existencias y auditoría juntas', async () => {

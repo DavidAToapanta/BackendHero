@@ -10,6 +10,7 @@ import { CuentasService } from '../cartera/cuentas.service';
 import { CatalogoService } from '../catalogo/catalogo.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { CobrosOperacionService } from '../cobros/cobros-operacion.service';
+import { fechaComercial, inicioFechaComercial } from '../comun/fecha-comercial';
 import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
 import {
   importeTienda,
@@ -19,24 +20,6 @@ import type {
   CreateVentaCreditoDto,
   CreateVentaDto,
 } from './dto/create-venta.dto';
-
-const zonaComercial = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: 'America/Guayaquil',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-function fechaVencimiento(fecha: string) {
-  const inicio = new Date(fecha + 'T00:00:00-05:00');
-  if (
-    !Number.isFinite(inicio.getTime()) ||
-    inicio.toISOString().slice(0, 10) !== fecha
-  ) {
-    throw new BadRequestException('El vencimiento debe ser una fecha válida');
-  }
-  return inicio;
-}
 
 @Injectable()
 export class VentaMostradorService {
@@ -59,7 +42,9 @@ export class VentaMostradorService {
     const { tenantId, usuarioId, membresiaId } = contexto;
     const { turnoId, clienteComercialId, pago } = datos;
     const credito = 'vencimiento' in datos ? datos : null;
-    const vencimiento = credito ? fechaVencimiento(credito.vencimiento) : null;
+    const vencimiento = credito
+      ? inicioFechaComercial(credito.vencimiento)
+      : null;
     const lineas = datos.lineas
       .map(({ productoId, cantidad, lotes }) => ({
         productoId,
@@ -99,7 +84,7 @@ export class VentaMostradorService {
         },
       },
       async (tx, claveRecurso) => {
-        if (credito && credito.vencimiento < zonaComercial.format(new Date())) {
+        if (credito && credito.vencimiento < fechaComercial(new Date())) {
           throw new BadRequestException(
             'El vencimiento debe ser hoy o una fecha futura',
           );

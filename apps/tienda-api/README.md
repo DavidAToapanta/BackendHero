@@ -15,7 +15,8 @@ desde la raíz. Tienda compila en `build/tienda-api` y Gym en `dist`, así que
 pueden recompilarse en terminales separadas.
 
 Las rutas de [clientes comerciales](./src/clientes/README.md),
-[caja](./src/caja/README.md), [cobros](./src/cobros/README.md) y
+[caja](./src/caja/README.md), [cobros](./src/cobros/README.md),
+[cartera](./src/cartera/README.md) y
 [ventas de contado](./src/ventas/README.md)
 usan el contexto y los permisos de Tienda.
 Cada escritura registra su auditoría dentro de la transacción. Los recursos
