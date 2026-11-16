@@ -91,4 +91,40 @@ las filas con la misma acción, tipo de entidad e ID de entidad representan un
 evento. Para filtrar por producto, primero encuentra las operaciones con una
 fila del producto en el tenant autenticado. Luego recupera todas las filas
 de esas operaciones dentro del mismo tenant, incluidos sus otros productos.
-La paginación cuenta operaciones. A12 implementa esta lectura en el historial.
+La paginación cuenta operaciones.
+
+## A12 · Historial y actividad reciente
+
+Las tres rutas requieren el Bearer de Tienda y `store.audit.read`.
+
+- `GET /auditoria?desde=2026-11-14T00:00:00-05:00&hasta=2026-11-16T00:00:00-05:00`
+  devuelve `{ data, meta: { pagina, limite, total, paginas } }`. El intervalo
+  `[desde, hasta)` admite hasta 48 horas y exige zona explícita. Las fechas
+  se aceptan con precisión de hasta milisegundos. El Panel calcula los
+  límites en `America/Guayaquil`. Pueden consultarse fechas antiguas.
+- El listado admite `productoId`, `rolCodigo`, `actor` (`USUARIO` o `SISTEMA`),
+  `usuarioId` y `accion`. El producto puede estar en cualquier evento de la
+  operación. Los otros filtros deben coincidir en un mismo evento. La página
+  inicial es 1, el límite por defecto es 20 y el máximo es 50.
+- `GET /auditoria/:correlacionId` devuelve la operación completa con
+  `productoIds` y `eventos`. Cada evento reúne sus productos y expone la
+  entidad `{ tipo, id }`, el motivo y los metadatos autorizados. Los
+  metadatos publicados son `tipo` y `loteIds` para entradas, `loteId` y
+  `cantidad` para bajas, `loteId` y `delta` para ajustes y `turnoId` y
+  `modalidad` para ventas. Los demás eventos presentan `datos: null`.
+- `GET /auditoria/actividad-reciente` devuelve `{ data }` con hasta 10
+  operaciones de cualquier fecha. Cada resumen tiene `correlacionId`,
+  `fecha`, `accion`, `actor` y `rol`. `correlacionId` sirve para abrir el
+  detalle. El rol se conserva desde la escritura. Para el nombre del actor
+  se usan los nombres y apellidos visibles de su ficha actual.
+
+La fila más reciente de cada correlación determina su fecha, acción y orden
+en el listado. Los empates se ordenan por ID de fila descendente. Los filtros
+pueden encontrar un evento anterior dentro de esa misma operación.
+Los errores de validación devuelven `400` y una correlación inexistente para
+el tenant autenticado devuelve `404`.
+
+B16 importa `AuditoriaModule` e inyecta `AuditoriaService`. Usa
+`actividadReciente(contexto)` con el contexto autenticado. El servicio exige
+`store.audit.read` y el Panel comprueba `store.panel.read` para su propia ruta.
+Los saldos y movimientos contables se consultan en Inventario y Caja.

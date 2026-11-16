@@ -1712,6 +1712,7 @@ model AuditoriaOperacion {
   @@index([tenantId, rolCodigo, createdAt])
   @@index([tenantId, productoId, createdAt])
   @@index([tenantId, entidadTipo, entidadId, createdAt], map: "AuditoriaOperacion_idx_f8f5db49a6")
+  @@index([tenantId, correlacionId, createdAt, id], map: "AuditoriaOperacion_tenant_correlacion_fecha_id_idx")
 }
 
 model SolicitudIdempotente {
