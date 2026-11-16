@@ -310,45 +310,8 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
   it('aplica permisos de STORE al negocio autenticado y revoca sesiones al editar un rol', async () => {
     const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
     const ajeno = await crearNegocio();
-    const catalogo = await prisma.$transaction((tx) =>
-      app.get(PermisosService).registrarCatalogo(tx),
-    );
-
-    async function perfil(
-      codigo: string,
-      permisos: readonly CodigoPermisoTienda[],
-      base: 'OWNER' | 'ADMIN' | 'CAJERO' | 'EMPLEADO',
-    ) {
-      const { usuario, credenciales } = await registrarPersonal();
-      const membresia = await prisma.userTenant.create({
-        data: { usuarioId: usuario.id, tenantId: tienda.id, role: base },
-      });
-      const protegido = codigo === 'OWNER' || codigo === 'ADMIN';
-      const rol = await prisma.rolNegocio.create({
-        data: {
-          tenantId: tienda.id,
-          codigo,
-          nombre: codigo,
-          protegido,
-          equivalenciaLegacy: protegido ? base : null,
-          rolPermiso_rol: {
-            createMany: {
-              data: catalogo
-                .filter(({ codigo }) =>
-                  permisos.some((permiso) => permiso === codigo),
-                )
-                .map(({ id }) => ({ permisoId: id })),
-            },
-          },
-        },
-      });
-      await prisma.asignacionRol.create({
-        data: { tenantId: tienda.id, membresiaId: membresia.id, rolId: rol.id },
-      });
-      return { rol, credenciales, ...(await loginTienda(credenciales)) };
-    }
-
-    const cajero = await perfil(
+    const cajero = await crearPerfilComercial(
+      tienda.id,
       'CAJERO',
       [
         'store.sales.create',
@@ -357,13 +320,19 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       ],
       'CAJERO',
     );
-    const bodeguero = await perfil(
+    const bodeguero = await crearPerfilComercial(
+      tienda.id,
       'BODEGUERO',
       ['store.inventory.read', 'store.inventory.receive'],
       'EMPLEADO',
     );
-    const administrador = await perfil('ADMIN', ['store.sales.void'], 'ADMIN');
-    const owner = await perfil('OWNER', [], 'OWNER');
+    const administrador = await crearPerfilComercial(
+      tienda.id,
+      'ADMIN',
+      ['store.sales.void'],
+      'ADMIN',
+    );
+    const owner = await crearPerfilComercial(tienda.id, 'OWNER', [], 'OWNER');
     const venta = `/ensayo-accesos/ventas/${tienda.id}`;
     const abonos = '/ensayo-accesos/abonos';
     const anulaciones = '/ensayo-accesos/anulaciones';
@@ -403,6 +372,180 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     );
     await consultar(venta, sesionNueva.accessToken).expect(200);
     await consultar(abonos, sesionNueva.accessToken).expect(403);
+  });
+
+  async function crearPerfilComercial(
+    tenantId: number,
+    codigo: string,
+    permisos: readonly CodigoPermisoTienda[],
+    base: 'OWNER' | 'ADMIN' | 'CAJERO' | 'EMPLEADO',
+  ) {
+    const { usuario, credenciales } = await registrarPersonal();
+    const catalogo = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const membresia = await prisma.userTenant.create({
+      data: { tenantId, usuarioId: usuario.id, role: base },
+    });
+    const protegido = codigo === 'OWNER' || codigo === 'ADMIN';
+    const rol = await prisma.rolNegocio.create({
+      data: {
+        tenantId,
+        codigo,
+        nombre: codigo,
+        protegido,
+        equivalenciaLegacy: protegido ? base : null,
+        rolPermiso_rol: {
+          createMany: {
+            data: catalogo
+              .filter(({ codigo }) =>
+                permisos.some((permiso) => permiso === codigo),
+              )
+              .map(({ id }) => ({ permisoId: id })),
+          },
+        },
+      },
+    });
+    await prisma.asignacionRol.create({
+      data: { tenantId, membresiaId: membresia.id, rolId: rol.id },
+    });
+    return { rol, credenciales, ...(await loginTienda(credenciales)) };
+  }
+
+  it('habilita clientes con permisos efectivos, aislamiento de negocio y auditoría real', async () => {
+    const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const owner = await crearPerfilComercial(tienda.id, 'OWNER', [], 'OWNER');
+    const cajero = await crearPerfilComercial(
+      tienda.id,
+      'CAJERO',
+      ['store.customers.read'],
+      'CAJERO',
+    );
+    const bodeguero = await crearPerfilComercial(
+      tienda.id,
+      'BODEGUERO',
+      ['store.inventory.read'],
+      'EMPLEADO',
+    );
+    const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
+    const ficha = {
+      nombres: 'Ana de Mostrador',
+      tipoIdentificacion: 'cedula',
+      identificacion: '00123456',
+    };
+    await http().get('/clientes').expect(401);
+    await http()
+      .get('/clientes')
+      .auth(bodeguero.accessToken, { type: 'bearer' })
+      .expect(403);
+    await http()
+      .post('/clientes')
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .send(ficha)
+      .expect(403);
+    await http()
+      .post('/clientes')
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send({ ...ficha, tenantId: otra.id })
+      .expect(400);
+    const creada = await http()
+      .post('/clientes')
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send(ficha)
+      .expect(201);
+    const { id } = creada.body as { id: number };
+    const ruta = `/clientes/${id}`;
+    expect(creada.body).toMatchObject({
+      tenantId: tienda.id,
+      identificacion: '00123456',
+      tipoIdentificacion: 'CEDULA',
+    });
+    await http()
+      .post('/clientes')
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send(ficha)
+      .expect(409);
+    await http()
+      .get(ruta)
+      .auth(externo.accessToken, { type: 'bearer' })
+      .expect(404);
+    await http()
+      .patch(ruta)
+      .auth(externo.accessToken, { type: 'bearer' })
+      .send({ nombres: 'Alterado' })
+      .expect(404);
+    await http()
+      .get('/clientes?tenantId=' + otra.id)
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(400);
+    await http()
+      .get(ruta)
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(200);
+    const lista = await http()
+      .get('/clientes?q=ANA&activo=true&pagina=1&limite=1')
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(lista.body).toMatchObject([{ id }]);
+    await http()
+      .patch(ruta)
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send({ nombres: null })
+      .expect(400);
+    const editada = await http()
+      .patch(ruta)
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send({
+        apellidos: 'Ensayo',
+        tipoIdentificacion: null,
+        identificacion: null,
+      })
+      .expect(200);
+    expect(editada.body).toMatchObject({
+      id,
+      apellidos: 'Ensayo',
+      tipoIdentificacion: null,
+      identificacion: null,
+    });
+    const desactivada = await http()
+      .delete(ruta)
+      .auth(owner.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(desactivada.body).toMatchObject({ id, activo: false });
+    await http()
+      .delete(ruta)
+      .auth(owner.accessToken, { type: 'bearer' })
+      .expect(200);
+    await http()
+      .get('/clientes?activo=true')
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(200, []);
+
+    const eventos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId: tienda.id,
+        entidadTipo: 'ClienteComercial',
+        entidadId: id,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(eventos.map(({ accion }) => accion)).toEqual([
+      ACCIONES_AUDITORIA.CLIENTES_REGISTRAR,
+      ACCIONES_AUDITORIA.CLIENTES_EDITAR,
+      ACCIONES_AUDITORIA.CLIENTES_DESACTIVAR,
+    ]);
+    for (const evento of eventos) {
+      expect(evento).toMatchObject({
+        tenantId: tienda.id,
+        usuarioId: owner.context.usuarioId,
+        membresiaId: owner.context.membresiaId,
+        rolCodigo: 'OWNER',
+      });
+    }
+    expect(
+      new Set(eventos.map(({ correlacionId }) => correlacionId)).size,
+    ).toBe(3);
   });
 
   it('conserva el acceso de Gym en un negocio MIXTO durante la prueba de modo y módulo STORE', async () => {
