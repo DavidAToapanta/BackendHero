@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { InventarioLotesService } from '@app/inventario';
-import { PermisosService } from '@app/permisos';
+import {
+  InventarioLotesService,
+  type OperacionInventario,
+} from '@app/inventario';
+import { PermisosService, type CodigoPermisoTienda } from '@app/permisos';
 import { PrismaService } from '@app/prisma';
 import {
   BadRequestException,
@@ -13,7 +16,11 @@ import {
   AuditoriaEscrituraService,
 } from '../auditoria/auditoria-escritura';
 import type { ContextoTienda } from '../auth';
-import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
+import {
+  IdempotenciaService,
+  type RecursoIdempotente,
+  type SolicitudIdempotenteTienda,
+} from '../comun/idempotencia/idempotencia.service';
 import { conflictoUnicidad, paginacion } from '../comun/operacion-tienda';
 import type {
   LotesInventarioDto,
@@ -21,10 +28,19 @@ import type {
   ProductosInventarioDto,
 } from './dto/consulta-inventario.dto';
 import type { RegistrarEntradaInventarioDto } from './dto/entrada-inventario.dto';
+import type {
+  AjusteInventarioDto,
+  BajaInventarioDto,
+} from './dto/movimiento-inventario.dto';
 
 const lectura = 'store.inventory.read';
 const recepcion = 'store.inventory.receive';
 const lecturaConCostos = [lectura, 'store.inventory.cost.read'] as const;
+
+type MovimientoLote =
+  | ({ tipo: 'AJUSTE' } & AjusteInventarioDto)
+  | ({ tipo: 'BAJA' } & BajaInventarioDto);
+
 const stockSelect = {
   id: true,
   tenantId: true,
@@ -59,15 +75,13 @@ export class InventarioService {
     private readonly auditoria: AuditoriaEscrituraService,
   ) {}
 
-  async registrarEntrada(
+  registrarEntrada(
     contexto: ContextoTienda,
     productoId: number,
     tipo: 'APERTURA' | 'ENTRADA',
     clave: string | undefined,
     datos: RegistrarEntradaInventarioDto,
   ) {
-    await this.permisos.autorizar(contexto, recepcion);
-    const { tenantId, usuarioId, membresiaId: responsableId } = contexto;
     const motivo = datos.motivo.trim();
     const referenciaExterna = datos.referenciaExterna?.trim() ?? null;
     const lotes = datos.lotes.map(
@@ -86,63 +100,114 @@ export class InventarioService {
       },
     );
 
-    try {
-      return await this.idempotencia.ejecutar(
-        {
-          tenantId,
-          usuarioId,
-          operacion:
-            tipo === 'APERTURA' ? 'inventario.apertura' : 'inventario.entrada',
-          clave,
-          datos: {
+    return this.escribir(
+      contexto,
+      recepcion,
+      'La entrada de inventario ya está registrada',
+      {
+        operacion:
+          tipo === 'APERTURA' ? 'inventario.apertura' : 'inventario.entrada',
+        clave,
+        datos: {
+          productoId,
+          motivo,
+          referenciaExterna,
+          lotes: lotes.map((lote) => ({
+            ...lote,
+            costoUnitario: lote.costoUnitario.toFixed(4),
+            vencimiento: lote.vencimiento?.toISOString() ?? null,
+          })),
+        },
+      },
+      async (tx, operacion) => {
+        const { entrada, lotes: lotesCreados } =
+          await this.inventario.registrarEntrada(
+            tx,
+            operacion,
             productoId,
+            tipo,
             motivo,
-            referenciaExterna,
-            lotes: lotes.map((lote) => ({
-              ...lote,
-              costoUnitario: lote.costoUnitario.toFixed(4),
-              vencimiento: lote.vencimiento?.toISOString() ?? null,
-            })),
-          },
-        },
-        async (tx, claveRecurso) => {
-          await this.permisos.autorizar(contexto, recepcion, tx);
-          const correlacionId = randomUUID();
-          const { entrada, lotes: lotesCreados } =
-            await this.inventario.registrarEntrada(
-              tx,
-              { tenantId, responsableId, clave: claveRecurso, correlacionId },
-              productoId,
-              tipo,
-              motivo,
-              lotes,
-              {
-                referenciaExterna: referenciaExterna ?? undefined,
-                exigirVigencia: true,
-              },
-            );
-          await this.auditoria.registrar(tx, contexto, {
-            accion: ACCIONES_AUDITORIA.INVENTARIO_ENTRADA,
-            entidadTipo: 'EntradaInventario',
-            entidadId: entrada.id,
-            motivo,
-            correlacionId,
-            productoIds: [productoId],
-            datos: {
-              tipo,
-              referenciaExterna,
-              loteIds: lotesCreados.map(({ id }) => id),
+            lotes,
+            {
+              referenciaExterna: referenciaExterna ?? undefined,
+              exigirVigencia: true,
             },
-          });
-          return {
-            recursoTipo: 'EntradaInventario',
-            recursoId: entrada.id,
-          };
-        },
-      );
-    } catch (error) {
-      conflictoUnicidad(error, 'La entrada de inventario ya está registrada');
-    }
+          );
+        await this.auditoria.registrar(tx, contexto, {
+          accion: ACCIONES_AUDITORIA.INVENTARIO_ENTRADA,
+          entidadTipo: 'EntradaInventario',
+          entidadId: entrada.id,
+          motivo,
+          correlacionId: operacion.correlacionId,
+          productoIds: [productoId],
+          datos: {
+            tipo,
+            referenciaExterna,
+            loteIds: lotesCreados.map(({ id }) => id),
+          },
+        });
+        return { recursoTipo: 'EntradaInventario', recursoId: entrada.id };
+      },
+    );
+  }
+
+  registrarMovimientoLote(
+    contexto: ContextoTienda,
+    productoId: number,
+    loteId: number,
+    clave: string | undefined,
+    datos: MovimientoLote,
+  ) {
+    const ajuste = datos.tipo === 'AJUSTE';
+    const motivo = datos.motivo.trim();
+    const accion = ajuste
+      ? ACCIONES_AUDITORIA.INVENTARIO_AJUSTE
+      : ACCIONES_AUDITORIA.INVENTARIO_BAJA;
+    const cantidad = {
+      [ajuste ? 'delta' : 'cantidad']: ajuste ? datos.delta : datos.cantidad,
+    };
+    return this.escribir(
+      contexto,
+      ajuste ? 'store.inventory.adjust' : 'store.inventory.loss',
+      'El movimiento de inventario ya está registrado',
+      {
+        operacion: accion,
+        clave,
+        datos: { productoId, loteId, motivo, ...cantidad },
+      },
+      async (tx, operacion) => {
+        const { movimiento } = ajuste
+          ? await this.inventario.registrarAjuste(
+              tx,
+              operacion,
+              productoId,
+              loteId,
+              datos.delta,
+              motivo,
+            )
+          : await this.inventario.registrarBaja(
+              tx,
+              operacion,
+              productoId,
+              loteId,
+              datos.cantidad,
+              motivo,
+            );
+        await this.auditoria.registrar(tx, contexto, {
+          accion,
+          entidadTipo: 'MovimientoInventario',
+          entidadId: movimiento.id,
+          motivo,
+          correlacionId: operacion.correlacionId,
+          productoIds: [productoId],
+          datos: { loteId, ...cantidad },
+        });
+        return {
+          recursoTipo: 'MovimientoInventario',
+          recursoId: movimiento.id,
+        };
+      },
+    );
   }
 
   listarProductos(
@@ -355,5 +420,35 @@ export class InventarioService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
+  }
+
+  private async escribir(
+    contexto: ContextoTienda,
+    permiso: CodigoPermisoTienda,
+    mensajeConflicto: string,
+    solicitud: Omit<SolicitudIdempotenteTienda, 'tenantId' | 'usuarioId'>,
+    operacion: (
+      tx: Prisma.TransactionClient,
+      datos: OperacionInventario,
+    ) => Promise<RecursoIdempotente>,
+  ) {
+    await this.permisos.autorizar(contexto, permiso);
+    const { tenantId, usuarioId, membresiaId: responsableId } = contexto;
+    try {
+      return await this.idempotencia.ejecutar(
+        { tenantId, usuarioId, ...solicitud },
+        async (tx, clave) => {
+          await this.permisos.autorizar(contexto, permiso, tx);
+          return operacion(tx, {
+            tenantId,
+            responsableId,
+            clave,
+            correlacionId: randomUUID(),
+          });
+        },
+      );
+    } catch (error) {
+      conflictoUnicidad(error, mensajeConflicto);
+    }
   }
 }

@@ -289,6 +289,43 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
     await expect(
       compras.create(payload, tenantId, usuarioId),
     ).rejects.toMatchObject({ status: 400 });
+    const entradaVencida = await prisma.$transaction((tx) =>
+      lotes.registrarEntrada(
+        tx,
+        operacion(),
+        producto.id,
+        'ENTRADA',
+        'Ensayo',
+        [
+          {
+            codigo: 'VENCIDO',
+            cantidad: 1,
+            costoUnitario: new Prisma.Decimal('0.5'),
+            vencimiento: new Date('2020-01-01T00:00:00Z'),
+          },
+        ],
+      ),
+    );
+    await expect(
+      prisma.$transaction((tx) =>
+        lotes.registrarBaja(tx, operacion(), producto.id, lote.id, 1, 'Daño'),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'El movimiento afectaría unidades reservadas',
+    });
+    await expect(
+      prisma.$transaction((tx) =>
+        lotes.registrarBaja(
+          tx,
+          operacion(),
+          producto.id,
+          entradaVencida.lotes[0].id,
+          1,
+          'Vencimiento',
+        ),
+      ),
+    ).resolves.toMatchObject({ movimiento: { tipo: 'BAJA', deltaFisico: -1 } });
     expect(
       await prisma.compra.count({
         where: { tenantId, productoId: producto.id },
@@ -494,5 +531,45 @@ suite('Inventario con PostgreSQL y migraciones vigentes', () => {
     expect(
       await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
     ).toMatchObject({ stock: 0 });
+  });
+
+  it('serializa la baja y la venta que compiten por la última unidad', async () => {
+    const producto = await productoConStock(1);
+    const lote = await abrirLote(producto.id, 1);
+    const resultados = await Promise.allSettled([
+      vender([
+        {
+          productoId: producto.id,
+          cantidad: 1,
+          lotes: [{ loteId: lote.id, cantidad: 1 }],
+        },
+      ]),
+      prisma.$transaction((tx) =>
+        lotes.registrarBaja(tx, operacion(), producto.id, lote.id, 1, 'Daño'),
+      ),
+    ]);
+    expect(resultados.map(({ status }) => status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    if (resultados[0].status === 'rejected') {
+      expect(resultados[0].reason).toMatchObject({ status: 400 });
+    } else {
+      expect(resultados[1]).toMatchObject({ reason: { status: 409 } });
+    }
+    const salidas = await prisma.movimientoInventario.findMany({
+      where: { tenantId, productoId: producto.id, deltaFisico: { lt: 0 } },
+    });
+    expect(salidas).toHaveLength(1);
+    expect(salidas[0]).toMatchObject({
+      tipo: resultados[0].status === 'fulfilled' ? 'VENTA' : 'BAJA',
+      deltaFisico: -1,
+    });
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 0, stockReservado: 0 });
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: lote.id } }),
+    ).toMatchObject({ cantidadFisica: 0 });
   });
 });

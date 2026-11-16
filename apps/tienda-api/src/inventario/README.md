@@ -93,3 +93,51 @@ Para reintentar, conservar la clave y el orden de los lotes. B01 devuelve la
 misma referencia ante datos equivalentes y `409` si cambia el contenido. La
 entrada, los lotes, el stock, los movimientos y la auditoría se guardan en la
 misma transacción. Los movimientos y la auditoría comparten una correlación.
+
+## A10 · Ajustes y bajas justificadas
+
+Usar el Bearer de Tienda y una `Idempotency-Key` en cada operación.
+El tenant y el responsable se toman de la sesión. En un reintento se
+conserva la misma clave. Ambas rutas responden `201` con
+`{"recursoTipo":"MovimientoInventario","recursoId":123}`.
+
+**Ajuste de conteo** (`store.inventory.adjust`)
+
+```http
+POST /inventario/productos/42/lotes/17/ajustes
+Authorization: Bearer <token>
+Content-Type: application/json
+Idempotency-Key: ajuste-42-17-acta-02
+
+{"delta":-1,"motivo":"Diferencia verificada en conteo físico"}
+```
+
+**Baja por pérdida** (`store.inventory.loss`)
+
+```http
+POST /inventario/productos/42/lotes/17/bajas
+Authorization: Bearer <token>
+Content-Type: application/json
+Idempotency-Key: baja-42-17-acta-03
+
+{"cantidad":2,"motivo":"Vencimiento"}
+```
+
+Las operaciones protegen las unidades reservadas y registran el costo histórico
+del lote. La baja admite lotes vencidos y deja un delta físico negativo con
+costo total no negativo. El detalle se consulta en el historial A08 con sus
+permisos de lectura y costos.
+
+**Total de pérdidas para B15**
+
+```ts
+const { totalPerdidas } = await inventarioLotes.consultarTotalPerdidas(
+  tx, tenantId, desde, hasta,
+);
+```
+
+B15 usa el tenant autorizado y convierte su periodo a dos instantes `Date`.
+La librería suma `costoTotal` únicamente de movimientos `BAJA` en el intervalo
+`[desde, hasta)` y devuelve el importe como cadena con cuatro decimales.
+Sin bajas devuelve `"0.0000"`. Cuando A11 registre una baja vinculada a una
+devolución, ese movimiento será la fuente del importe para B15.

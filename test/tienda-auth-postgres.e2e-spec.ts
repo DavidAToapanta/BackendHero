@@ -1912,7 +1912,248 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toMatchObject({ stock: 6 });
   }, 20000);
 
+<<<<<<< Updated upstream
   it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
+=======
+  it('distingue ajustes de bajas y concilia pérdidas de inventario por tienda y periodo', async () => {
+    const { usuario, credenciales } = await registrarPersonal();
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const ajuste = permisos.find(
+      ({ codigo }) => codigo === 'store.inventory.adjust',
+    )!;
+    const perdida = permisos.find(
+      ({ codigo }) => codigo === 'store.inventory.loss',
+    )!;
+    const inventario = app.get(InventarioLotesService);
+    const bearer = { type: 'bearer' } as const;
+    async function prepararInventario() {
+      const { id: tenantId } = await crearNegocio({
+        autorizacionVersion: 'PERMISOS',
+      });
+      const { id: responsableId } = await vincularPersonal(
+        usuario.id,
+        tenantId,
+      );
+      const { id: rolId } = await asignarRol(tenantId, responsableId);
+      await prisma.rolPermiso.create({
+        data: { tenantId, rolId, permisoId: perdida.id },
+      });
+      const producto = await prisma.producto.create({
+        data: {
+          tenantId,
+          nombre: 'Ensayo A10',
+          precio: 3,
+          stock: 8,
+          estado: true,
+        },
+      });
+      const costoUnitario = new Prisma.Decimal('1.2345');
+      const {
+        lotes: [vigente, vencido],
+      } = await prisma.$transaction((tx) =>
+        inventario.registrarEntrada(
+          tx,
+          {
+            tenantId,
+            responsableId,
+            clave: randomUUID(),
+            correlacionId: randomUUID(),
+          },
+          producto.id,
+          'APERTURA',
+          'Conciliación',
+          [
+            { codigo: 'VIGENTE', cantidad: 5, costoUnitario },
+            {
+              codigo: 'VENCIDO',
+              cantidad: 3,
+              costoUnitario,
+              vencimiento: new Date('2020-01-01T00:00:00Z'),
+            },
+          ],
+        ),
+      );
+      const { accessToken } = await loginTienda(credenciales, tenantId);
+      return {
+        tenantId,
+        responsableId,
+        rolId,
+        producto,
+        vigente,
+        vencido,
+        accessToken,
+      };
+    }
+    const propio = await prepararInventario();
+    const ajeno = await prepararInventario();
+    const { tenantId, responsableId, rolId, producto, vigente, vencido } =
+      propio;
+    const enviar = (
+      tipo: 'ajustes' | 'bajas',
+      loteId: number,
+      datos: object,
+      clave: string = randomUUID(),
+      tienda = propio,
+    ) =>
+      http()
+        .post(
+          `/inventario/productos/${tienda.producto.id}/lotes/${loteId}/${tipo}`,
+        )
+        .auth(tienda.accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send(datos);
+    const baja = { cantidad: 2, motivo: ' Vencimiento ' };
+    await enviar('ajustes', vigente.id, { delta: 1, motivo: 'Conteo' }).expect(
+      403,
+    );
+    await enviar('bajas', vencido.id, { ...baja, motivo: '   ' }).expect(400);
+    await enviar('bajas', vencido.id, { ...baja, cantidad: '2' }).expect(400);
+    await enviar('bajas', vencido.id, { ...baja, costoUnitario: '0' }).expect(
+      400,
+    );
+    await enviar('bajas', vencido.id, { ...baja, cantidad: 4 }).expect(409);
+    await enviar('bajas', ajeno.vencido.id, baja).expect(404);
+    await enviar('bajas', vencido.id, baja, randomUUID(), {
+      ...propio,
+      accessToken: ajeno.accessToken,
+    }).expect(404);
+    await prisma.rolPermiso.create({
+      data: { tenantId, rolId, permisoId: ajuste.id },
+    });
+    await enviar('ajustes', vigente.id, { delta: 0, motivo: 'Conteo' }).expect(
+      400,
+    );
+    const clave = randomUUID();
+    const aumento = await enviar(
+      'ajustes',
+      vigente.id,
+      { delta: 1, motivo: 'Conteo' },
+      clave,
+    ).expect(201);
+    await enviar('ajustes', vigente.id, { delta: -2, motivo: 'Conteo' }).expect(
+      201,
+    );
+    const [primera, repetida] = await Promise.all([
+      enviar('bajas', vencido.id, baja, clave).expect(201),
+      enviar(
+        'bajas',
+        vencido.id,
+        { ...baja, motivo: 'Vencimiento' },
+        clave,
+      ).expect(201),
+    ]);
+    expect(repetida.body).toEqual(primera.body);
+    expect(aumento.body).not.toEqual(primera.body);
+    await enviar('bajas', vencido.id, { ...baja, cantidad: 1 }, clave).expect(
+      409,
+    );
+    const { recursoId } = primera.body as { recursoId: number };
+    expect(primera.body).toEqual({
+      recursoTipo: 'MovimientoInventario',
+      recursoId,
+    });
+    const movimiento = await prisma.movimientoInventario.findUniqueOrThrow({
+      where: { id: recursoId },
+    });
+    expect(movimiento).toMatchObject({
+      tipo: 'BAJA',
+      motivo: 'Vencimiento',
+      responsableId,
+      deltaFisico: -2,
+      deltaReservado: 0,
+    });
+    expect(movimiento.costoTotal?.toFixed(4)).toBe('2.4690');
+    expect(
+      await prisma.auditoriaOperacion.findFirst({
+        where: {
+          tenantId,
+          entidadTipo: 'MovimientoInventario',
+          entidadId: recursoId,
+        },
+      }),
+    ).toMatchObject({
+      accion: ACCIONES_AUDITORIA.INVENTARIO_BAJA,
+      correlacionId: movimiento.correlacionId,
+      productoId: producto.id,
+      membresiaId: responsableId,
+      usuarioId: usuario.id,
+      datos: { loteId: vencido.id, cantidad: 2 },
+    });
+    expect(
+      await prisma.auditoriaOperacion.count({
+        where: { tenantId, accion: ACCIONES_AUDITORIA.INVENTARIO_AJUSTE },
+      }),
+    ).toBe(2);
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 5 });
+    const fallo = jest
+      .spyOn(app.get(AuditoriaEscrituraService), 'registrar')
+      .mockRejectedValueOnce(new Error('Fallo en auditoría A10'));
+    const claveFallida = randomUUID();
+    try {
+      await enviar(
+        'bajas',
+        vencido.id,
+        { ...baja, cantidad: 1 },
+        claveFallida,
+      ).expect(500);
+    } finally {
+      fallo.mockRestore();
+    }
+    expect(
+      await prisma.movimientoInventario.count({
+        where: { tenantId, tipo: 'BAJA' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.solicitudIdempotente.count({
+        where: { tenantId, clave: claveFallida },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({
+        where: { id: vencido.id },
+      }),
+    ).toMatchObject({ cantidadFisica: 1 });
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: 5 });
+    await enviar(
+      'bajas',
+      vencido.id,
+      { ...baja, cantidad: 1 },
+      claveFallida,
+    ).expect(201);
+    await enviar('bajas', ajeno.vencido.id, baja, randomUUID(), ajeno).expect(
+      201,
+    );
+    const total = (desde: Date, hasta: Date) =>
+      inventario.consultarTotalPerdidas(prisma, tenantId, desde, hasta);
+    const hasta = new Date(Date.now() + 60000);
+    const instanteSiguiente = new Date(movimiento.fecha.getTime() + 1);
+    await expect(total(new Date(0), hasta)).resolves.toEqual({
+      totalPerdidas: '3.7035',
+    });
+    await expect(total(movimiento.fecha, instanteSiguiente)).resolves.toEqual({
+      totalPerdidas: '2.4690',
+    });
+    await expect(total(new Date(0), movimiento.fecha)).resolves.toEqual({
+      totalPerdidas: '0.0000',
+    });
+    const saldos = await prisma.loteInventario.aggregate({
+      where: { tenantId, productoId: producto.id },
+      _sum: { cantidadFisica: true },
+    });
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: producto.id } }),
+    ).toMatchObject({ stock: saldos._sum.cantidadFisica });
+  }, 20000);
+
+  it('administra fichas, consulta el stock vendible y escanea barras con ceros iniciales', async () => {
+>>>>>>> Stashed changes
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });

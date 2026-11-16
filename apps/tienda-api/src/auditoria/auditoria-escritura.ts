@@ -29,6 +29,7 @@ export const ACCIONES_AUDITORIA = {
   IMAGENES_ELIMINAR: 'catalogo.imagenes.eliminar',
   INVENTARIO_ENTRADA: 'inventario.entrada',
   INVENTARIO_BAJA: 'inventario.baja',
+  INVENTARIO_AJUSTE: 'inventario.ajuste',
   VENTAS_REGISTRAR: 'ventas.registrar',
   VENTAS_ANULAR: 'ventas.anular',
   CARTERA_ABONAR: 'cartera.abonar',
