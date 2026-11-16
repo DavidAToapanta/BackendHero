@@ -60,6 +60,8 @@ Los ejemplos indican los valores de `entidadTipo`, `entidadId`, `productoIds`,
   productos afectados, el motivo de anulación y `datos: { turnoId }` cuando aplique.
 - **`caja.cerrar`** registra `TurnoCaja` y `turno.id`, con motivo «Fin de
   turno» y `datos: { cajaId }`.
+- **`caja.configurar`**, **`caja.abrir`** y **`caja.movimiento`** registran
+  la caja, el turno y el movimiento de efectivo respectivamente.
 - **`clientes.registrar`**, **`clientes.editar`** y **`clientes.desactivar`**
   registran `ClienteComercial` y la ID de la ficha.
 

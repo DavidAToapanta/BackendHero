@@ -21,6 +21,9 @@ export const ACCIONES_AUDITORIA = {
   VENTAS_REGISTRAR: 'ventas.registrar',
   VENTAS_ANULAR: 'ventas.anular',
   CARTERA_ABONAR: 'cartera.abonar',
+  CAJA_CONFIGURAR: 'caja.configurar',
+  CAJA_ABRIR: 'caja.abrir',
+  CAJA_MOVIMIENTO: 'caja.movimiento',
   CAJA_CERRAR: 'caja.cerrar',
 } as const;
 

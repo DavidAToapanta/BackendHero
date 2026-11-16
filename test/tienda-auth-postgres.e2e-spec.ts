@@ -548,6 +548,177 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toBe(3);
   });
 
+  it('abre y cierra caja por HTTP con el titular, el supervisor y la auditoría real', async () => {
+    const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const owner = await crearPerfilComercial(tienda.id, 'OWNER', [], 'OWNER');
+    const cajero = await crearPerfilComercial(
+      tienda.id,
+      'CAJERO',
+      ['store.cash.read', 'store.cash.open', 'store.cash.close'],
+      'CAJERO',
+    );
+    const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
+    const token = (perfil: AccesoTienda) => 'Bearer ' + perfil.accessToken;
+    const fichaCaja = { codigo: 'C01', nombre: 'Caja de ensayo' };
+    await http().get('/caja').expect(401);
+    await http()
+      .post('/caja')
+      .set('Authorization', token(cajero))
+      .send(fichaCaja)
+      .expect(403);
+    const creada = await http()
+      .post('/caja')
+      .set('Authorization', token(owner))
+      .send(fichaCaja)
+      .expect(201);
+    const { id: cajaId } = creada.body as { id: number };
+    const rutaCaja = `/caja/${cajaId}`;
+    await http().get(rutaCaja).set('Authorization', token(externo)).expect(404);
+    await http()
+      .patch(rutaCaja)
+      .set('Authorization', token(owner))
+      .send({ nombre: 'Caja central' })
+      .expect(200);
+    const abrir = (perfil: AccesoTienda, clave: string) =>
+      http()
+        .post(rutaCaja + '/turnos')
+        .set('Authorization', token(perfil))
+        .set('Idempotency-Key', clave);
+    await abrir(cajero, randomUUID())
+      .send({ fondoInicial: '20', cajeroId: owner.context.membresiaId })
+      .expect(400);
+    await http()
+      .post(rutaCaja + '/turnos')
+      .set('Authorization', token(cajero))
+      .send({ fondoInicial: '20' })
+      .expect(400);
+    const claveApertura = randomUUID();
+    const apertura = await abrir(cajero, claveApertura)
+      .send({ fondoInicial: '20' })
+      .expect(201);
+    const { recursoId: turnoId } = apertura.body as { recursoId: number };
+    await abrir(cajero, claveApertura)
+      .send({ fondoInicial: '20.00' })
+      .expect(201, apertura.body as object);
+    await abrir(owner, randomUUID()).send({ fondoInicial: '20' }).expect(409);
+    await http()
+      .get('/caja?disponibles=true')
+      .set('Authorization', token(cajero))
+      .expect(200, []);
+    const activo = await http()
+      .get(rutaCaja + '/turno-activo')
+      .set('Authorization', token(cajero))
+      .expect(200);
+    expect(activo.body).toMatchObject({
+      id: turnoId,
+      cajeroId: cajero.context.membresiaId,
+      estado: 'ABIERTO',
+    });
+    await http()
+      .delete(rutaCaja)
+      .set('Authorization', token(owner))
+      .expect(409);
+
+    const cajaOwner = await http()
+      .post('/caja')
+      .set('Authorization', token(owner))
+      .send({ codigo: 'C02', nombre: 'Caja supervisor' })
+      .expect(201);
+    const aperturaOwner = await http()
+      .post(`/caja/${(cajaOwner.body as { id: number }).id}/turnos`)
+      .set('Authorization', token(owner))
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '1' })
+      .expect(201);
+    const otroTurnoId = (aperturaOwner.body as { recursoId: number }).recursoId;
+    const rutaMovimientos = `/caja/turnos/${otroTurnoId}/movimientos`;
+    await http()
+      .get(rutaMovimientos)
+      .set('Authorization', token(cajero))
+      .expect(403);
+    await http()
+      .get(rutaMovimientos)
+      .set('Authorization', token(externo))
+      .expect(404);
+    const mover = (perfil: AccesoTienda, clave: string) =>
+      http()
+        .post(rutaMovimientos)
+        .set('Authorization', token(perfil))
+        .set('Idempotency-Key', clave)
+        .send({
+          monto: '2.50',
+          direccion: 'ENTRADA',
+          motivo: 'Entrada de ensayo',
+        });
+    await mover(cajero, randomUUID()).expect(403);
+    const claveMovimiento = randomUUID();
+    const movimiento = await mover(owner, claveMovimiento).expect(201);
+    await mover(owner, claveMovimiento).expect(201, movimiento.body as object);
+
+    const cerrar = (
+      perfil: AccesoTienda,
+      id: number,
+      clave: string,
+      monto: string,
+    ) =>
+      http()
+        .post(`/caja/turnos/${id}/cierre`)
+        .set('Authorization', token(perfil))
+        .set('Idempotency-Key', clave)
+        .send({ efectivoContado: monto });
+    await cerrar(cajero, otroTurnoId, randomUUID(), '3.50').expect(403);
+    const claveCierre = randomUUID();
+    const cierre = await cerrar(owner, otroTurnoId, claveCierre, '3.00').expect(
+      200,
+    );
+    await cerrar(owner, otroTurnoId, claveCierre, '3.00').expect(
+      200,
+      cierre.body as object,
+    );
+    await mover(owner, randomUUID()).expect(409);
+    await cerrar(owner, turnoId, randomUUID(), '20').expect(200);
+    const turnoCerrado = await http()
+      .get(`/caja/turnos/${otroTurnoId}`)
+      .set('Authorization', token(owner))
+      .expect(200);
+    expect(turnoCerrado.body).toMatchObject({
+      estado: 'CERRADO',
+      efectivoEsperado: '3.5',
+      efectivoContado: '3',
+      diferencia: '-0.5',
+    });
+    const eventos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId: tienda.id,
+        entidadTipo: 'TurnoCaja',
+        entidadId: turnoId,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(eventos).toMatchObject([
+      {
+        accion: ACCIONES_AUDITORIA.CAJA_ABRIR,
+        membresiaId: cajero.context.membresiaId,
+        rolCodigo: 'CAJERO',
+      },
+      {
+        accion: ACCIONES_AUDITORIA.CAJA_CERRAR,
+        membresiaId: owner.context.membresiaId,
+        rolCodigo: 'OWNER',
+      },
+    ]);
+    expect(
+      await prisma.auditoriaOperacion.count({
+        where: {
+          tenantId: tienda.id,
+          accion: ACCIONES_AUDITORIA.CAJA_MOVIMIENTO,
+          entidadId: (movimiento.body as { recursoId: number }).recursoId,
+        },
+      }),
+    ).toBe(1);
+  });
+
   it('conserva el acceso de Gym en un negocio MIXTO durante la prueba de modo y módulo STORE', async () => {
     const { credenciales, usuario } =
       await registrarPersonal('clave-a03-ensayo');

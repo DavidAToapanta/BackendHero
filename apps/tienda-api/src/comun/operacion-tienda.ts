@@ -26,6 +26,26 @@ export function textoObligatorio(valor: string, campo: string): string {
   return texto;
 }
 
+export function importeTienda(
+  valor: string | Prisma.Decimal,
+  admiteCero = false,
+) {
+  if (typeof valor === 'string' && !/^\d{1,16}(?:\.\d{1,2})?$/.test(valor)) {
+    throw new BadRequestException('Importe inválido');
+  }
+  const importe = new Prisma.Decimal(valor);
+  if (
+    !importe.isFinite() ||
+    importe.decimalPlaces() > 2 ||
+    importe.gte('10000000000000000') ||
+    importe.lt(0) ||
+    (!admiteCero && importe.isZero())
+  ) {
+    throw new BadRequestException('Importe inválido');
+  }
+  return importe;
+}
+
 export function conflictoUnicidad(error: unknown, mensaje: string): never {
   if (
     error instanceof Prisma.PrismaClientKnownRequestError &&
