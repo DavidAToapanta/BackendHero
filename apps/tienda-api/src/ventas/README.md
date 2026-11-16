@@ -46,3 +46,25 @@ Una venta de $100 con un inicial de $20 crea una cuenta abierta con saldo
 de $80. El inicial se aplica a la venta y el efectivo se registra en caja.
 La cuenta, la venta, la salida de lotes y el pago inicial se confirman en
 la misma transacción. La respuesta tiene el mismo formato que contado.
+
+## B11 · Anulación de venta
+
+`POST /ventas/:id/anulacion` requiere `store.sales.void`, un
+`Idempotency-Key` y un `motivo`. Consulta primero
+[`GET /devoluciones/ventas/:id`](../devoluciones/README.md) para ver las
+aplicaciones de cobro vigentes y las unidades que aún se pueden devolver.
+
+- Incluye en `liberar` cada aplicación vigente con su importe completo.
+  Para reembolsarla, indica `reembolso.metodo` y añade
+  `turnos.reembolso` si se devuelve efectivo. Para una venta sin cliente
+  identificado, cada importe liberado debe devolverse. Si el cliente está
+  identificado, puede quedar disponible en el cobro original.
+- Envía en `lineas` solo la mercancía que regresó físicamente. Usa
+  `REINTEGRO_APTO` para devolverla a existencias o `BAJA_NO_APTO` para
+  registrar la baja. Omite las líneas si no regresó mercancía.
+
+La respuesta incluye `recursoTipo`, `recursoId` y `efectos` con los
+identificadores del comprobante, la cuenta cancelada, la devolución, los
+movimientos y los reembolsos, además de los importes cancelado y liberado.
+La venta y el comprobante conservan su historial. Si falla un efecto,
+toda la operación se revierte.

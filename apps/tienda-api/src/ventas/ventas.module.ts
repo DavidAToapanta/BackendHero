@@ -8,6 +8,7 @@ import { CatalogoModule } from '../catalogo/catalogo.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { CobrosModule } from '../cobros/cobros.module';
 import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
+import { DevolucionesModule } from '../devoluciones/devoluciones.module';
 import { VentaMostradorService } from './venta-mostrador.service';
 import { VentasService } from './ventas.service';
 import { VentasController } from './ventas.controller';
@@ -23,6 +24,7 @@ import { VentasController } from './ventas.controller';
     CobrosModule,
     IdempotenciaModule,
     InventarioModule,
+    DevolucionesModule,
   ],
   controllers: [VentasController],
   providers: [VentasService, VentaMostradorService],

@@ -71,27 +71,13 @@ class TurnosDevolucionDto {
   reembolso: number;
 }
 
-export class CreateDevolucionDto {
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PRISMA_INT)
-  ventaId: number;
-
+class CorreccionVentaDto {
   @IsString()
   @MaxLength(200)
   motivo: string;
 
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(100)
-  @IsObject({ each: true })
-  @ValidateNested({ each: true })
-  @Type(() => LineaDevolucionDto)
-  lineas: LineaDevolucionDto[];
-
   @ValidateIf(presente)
   @IsArray()
-  @ArrayMaxSize(100)
   @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => LiberacionCobroDto)
@@ -102,6 +88,30 @@ export class CreateDevolucionDto {
   @ValidateNested()
   @Type(() => TurnosDevolucionDto)
   turnos?: TurnosDevolucionDto;
+}
+
+export class CreateDevolucionDto extends CorreccionVentaDto {
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  ventaId: number;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => LineaDevolucionDto)
+  lineas: LineaDevolucionDto[];
+}
+
+export class AnularVentaDto extends CorreccionVentaDto {
+  @ValidateIf(presente)
+  @IsArray()
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => LineaDevolucionDto)
+  lineas?: LineaDevolucionDto[];
 }
 
 export class ListaDevolucionesDto extends PaginaTiendaDto {

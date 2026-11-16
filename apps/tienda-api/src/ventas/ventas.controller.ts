@@ -14,6 +14,11 @@ import {
 import { RequierePermisoTienda } from '../accesos/accesos.module';
 import { AuditoriaEscrituraService } from '../auditoria/auditoria-escritura';
 import { ContextoTiendaActual, type ContextoTienda } from '../auth';
+import { DevolucionesOperacionService } from '../devoluciones/devoluciones-operacion.service';
+import {
+  AnularVentaDto,
+  DevolucionParamDto,
+} from '../devoluciones/dto/create-devolucion.dto';
 import { VentaMostradorService } from './venta-mostrador.service';
 import { VentasService } from './ventas.service';
 import { CreateVentaCreditoDto, CreateVentaDto } from './dto/create-venta.dto';
@@ -31,6 +36,7 @@ export class VentasController {
     private readonly ventasService: VentasService,
     private readonly mostrador: VentaMostradorService,
     private readonly auditoria: AuditoriaEscrituraService,
+    private readonly devoluciones: DevolucionesOperacionService,
   ) {}
 
   @Post()
@@ -70,6 +76,29 @@ export class VentasController {
   @Get()
   findAll() {
     return this.ventasService.findAll();
+  }
+
+  @Post(':id/anulacion')
+  @RequierePermisoTienda('store.sales.void')
+  @UsePipes(validarVenta)
+  anular(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: DevolucionParamDto,
+    @Body() datos: AnularVentaDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    const correlacionId = randomUUID();
+    return this.devoluciones.anular(
+      this.auditoria.paraOperacion(contexto, correlacionId),
+      {
+        ...datos,
+        ventaId: id,
+        lineas: datos.lineas ?? [],
+        liberar: datos.liberar ?? [],
+      },
+      clave,
+      correlacionId,
+    );
   }
 
   @Get(':id')

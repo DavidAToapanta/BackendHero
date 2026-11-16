@@ -47,6 +47,7 @@ import type {
   SeleccionTienda,
 } from '../apps/tienda-api/src/auth/auth.types';
 import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
+import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
 
 const suite =
   process.env.TIENDA_AUTH_POSTGRES_E2E === '1' ? describe : describe.skip;
@@ -2394,7 +2395,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     );
   }, 20000);
 
-  it('vende en mostrador y devuelve mercancía apta y dañada con reembolso', async () => {
+  it('vende, devuelve mercancía y anula el remanente sin duplicar stock', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
@@ -2831,7 +2832,12 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     const cajero = await crearPerfilComercial(
       tenantId,
       'CAJERO',
-      ['store.cash.open', 'store.sales.create', 'store.returns.write'],
+      [
+        'store.cash.open',
+        'store.sales.create',
+        'store.returns.write',
+        'store.sales.void',
+      ],
       'CAJERO',
     );
     const abrirTurno = async (codigo: string, operador: AccesoTienda) => {
@@ -3084,17 +3090,59 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       ],
       aplicaciones: [{ monto: '5.2' }],
     });
+    const [pagoRemanente] = (
+      vistaRetorno.body as { aplicaciones: { id: number }[] }
+    ).aplicaciones;
+    const anular = (body: object, clave = randomUUID()): request.Test =>
+      http()
+        .post(`/ventas/${ventaId}/anulacion`)
+        .auth(vendedor.accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send(body);
+    await anular({ motivo: '   ' }).expect(400);
+    await anular({
+      motivo: 'Venta errónea',
+      liberar: [{ aplicacionId: pagoRemanente.id, monto: '5.20' }],
+    }).expect(400);
+    const sinRetorno = {
+      motivo: 'Venta errónea sin más mercancía retornada',
+      turnos: { reembolso: turnoVendido },
+      liberar: liberar(pagoRemanente.id),
+    };
+    const claveAnulacion = randomUUID();
+    const anulada = await anular(sinRetorno, claveAnulacion).expect(201);
+    expect(anulada.body).toMatchObject({
+      recursoTipo: 'Venta',
+      recursoId: ventaId,
+      efectos: {
+        devolucionId: null,
+        cuentaCanceladaId: null,
+        comprobanteId: null,
+        movimientos: [],
+      },
+    });
+    await anular(sinRetorno, claveAnulacion).expect(
+      201,
+      anulada.body as object,
+    );
+    await anular(sinRetorno).expect(409);
+    expect(await prisma.reembolso.count({ where: { tenantId, ventaId } })).toBe(
+      3,
+    );
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      stockDisponible: 1,
+    });
     await http()
       .post(`/caja/turnos/${turnoVendido}/cierre`)
       .auth(owner.accessToken, bearer)
       .set('Idempotency-Key', randomUUID())
-      .send({ efectivoContado: '10.20', motivo: 'Cierre de ensayo' })
+      .send({ efectivoContado: '5.00', motivo: 'Cierre de ensayo' })
       .expect(200);
     expect(
       await prisma.turnoCaja.findUniqueOrThrow({ where: { id: turnoVendido } }),
     ).toMatchObject({
       estado: 'CERRADO',
-      efectivoEsperado: new Prisma.Decimal('10.20'),
+      efectivoEsperado: new Prisma.Decimal('5.00'),
       diferencia: new Prisma.Decimal(0),
     });
   }, 25000);
@@ -3484,6 +3532,149 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       importeExigible: '0',
       importeFinanciadoInicial: '80',
     });
+
+    const cuentaTotal = cuentas[1];
+    const abonoTotal = await http()
+      .post('/cobros')
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        ventaId: idTotal,
+        cuentaId: cuentaTotal.id,
+        metodo: 'TRANSFERENCIA',
+        monto: '10',
+      })
+      .expect(201);
+    const { recursoId: cobroTotal } = abonoTotal.body as { recursoId: number };
+    const [aplicacionTotal] = await prisma.aplicacionCobro.findMany({
+      where: { tenantId, cobroId: cobroTotal },
+      select: { id: true },
+    });
+    const [asignacionTotal] = await prisma.asignacionLoteVenta.findMany({
+      where: { tenantId, ventaId: idTotal },
+      select: { id: true, detalleVentaId: true },
+    });
+    const comprobanteId = await prisma.$transaction(
+      async (tx): Promise<number> => {
+        await tx.secuenciaComprobante.create({
+          data: { tenantId, ultimoConsecutivo: 1 },
+        });
+        const comprobante = await tx.comprobanteVenta.create({
+          data: {
+            tenantId,
+            ventaId: idTotal,
+            clienteComercialId: cliente.id,
+            emitidoPorId: owner.context.membresiaId,
+            consecutivo: 1,
+            numero: 'COMP-1',
+            receptorNombre: cliente.nombres,
+            subtotal: 100,
+            total: 100,
+          },
+          select: { id: true },
+        });
+        await tx.detalleComprobanteVenta.create({
+          data: {
+            tenantId,
+            ventaId: idTotal,
+            productoId: producto.id,
+            comprobanteId: comprobante.id,
+            detalleVentaId: asignacionTotal.detalleVentaId,
+            nombreProducto: producto.nombre,
+            cantidad: 1,
+            precioUnitario: 100,
+            subtotal: 100,
+            total: 100,
+          },
+        });
+        return comprobante.id;
+      },
+    );
+    const anularCredito = (
+      body: object,
+      clave = randomUUID(),
+      token = owner.accessToken,
+    ): request.Test =>
+      http()
+        .post(`/ventas/${idTotal}/anulacion`)
+        .auth(token, bearer)
+        .set('Idempotency-Key', clave)
+        .send(body);
+    const datosAnulacion = {
+      motivo: 'Anulación autorizada del crédito',
+      lineas: [
+        {
+          asignacionVentaId: asignacionTotal.id,
+          cantidad: 1,
+          destino: 'REINTEGRO_APTO',
+        },
+      ],
+      liberar: [{ aplicacionId: aplicacionTotal.id, monto: '10' }],
+    };
+    await anularCredito(
+      datosAnulacion,
+      randomUUID(),
+      cajero.accessToken,
+    ).expect(403);
+    await anularCredito({ ...datosAnulacion, liberar: [] }).expect(409);
+    const claveAnulacion = randomUUID();
+    const falloDocumento = jest
+      .spyOn(app.get(AnulacionComprobanteService), 'anularDeVenta')
+      .mockRejectedValueOnce(
+        new Error('Fallo al anular el comprobante de ensayo'),
+      );
+    try {
+      await anularCredito(datosAnulacion, claveAnulacion).expect(500);
+    } finally {
+      falloDocumento.mockRestore();
+    }
+    expect(
+      await prisma.devolucionVenta.count({
+        where: { tenantId, ventaId: idTotal },
+      }),
+    ).toBe(0);
+    expect(
+      (await cartera('/' + cuentaTotal.id).expect(200)).body,
+    ).toMatchObject({ estado: 'ABIERTA', saldo: '90' });
+
+    const anulacion = await anularCredito(
+      datosAnulacion,
+      claveAnulacion,
+    ).expect(201);
+    expect(anulacion.body).toMatchObject({
+      recursoId: idTotal,
+      efectos: {
+        cuentaCanceladaId: cuentaTotal.id,
+        saldoCancelado: '90.00',
+        comprobanteId,
+        saldoLiberadoSinReembolso: '10.00',
+        reembolsos: [],
+      },
+    });
+    expect(
+      (await cartera('/' + cuentaTotal.id).expect(200)).body,
+    ).toMatchObject({
+      estado: 'CANCELADA',
+      saldo: '0',
+      importeExigible: '0',
+    });
+    await cartera('/deudores').expect(200, []);
+    expect(
+      await prisma.comprobanteVenta.findUniqueOrThrow({
+        where: { id: comprobanteId },
+      }),
+    ).toMatchObject({ estado: 'ANULADO', numero: 'COMP-1', consecutivo: 1n });
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: loteId } }),
+    ).toMatchObject({ cantidadFisica: 2 });
+    expect(
+      (
+        await http()
+          .get(`/cobros/${cobroTotal}`)
+          .auth(owner.accessToken, bearer)
+          .expect(200)
+      ).body,
+    ).toMatchObject({ estado: 'CONFIRMADO', montoDisponible: '10' });
     expect(await prisma.venta.count({ where: { tenantId } })).toBe(2);
   });
 

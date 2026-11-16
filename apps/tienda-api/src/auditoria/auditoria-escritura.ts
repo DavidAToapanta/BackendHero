@@ -45,6 +45,7 @@ export const ACCIONES_AUDITORIA = {
   COBROS_REEMBOLSAR: 'cobros.reembolsar',
   COBROS_REAPLICAR: 'cobros.reaplicar',
   DEVOLUCIONES_APROBAR: 'devoluciones.aprobar',
+  COMPROBANTES_ANULAR: 'comprobantes.anular',
   GASTOS_REGISTRAR: 'gastos.registrar',
 } as const;
 

@@ -6,6 +6,7 @@ import { AuditoriaEscrituraModule } from '../auditoria/auditoria-escritura';
 import { CajaModule } from '../caja/caja.module';
 import { CuentasModule } from '../cartera/cuentas.module';
 import { CobrosModule } from '../cobros/cobros.module';
+import { ComprobantesModule } from '../comprobantes/comprobantes.module';
 import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { DevolucionesOperacionService } from './devoluciones-operacion.service';
 import { DevolucionesService } from './devoluciones.service';
@@ -18,11 +19,13 @@ import { DevolucionesController } from './devoluciones.controller';
     CajaModule,
     CuentasModule,
     CobrosModule,
+    ComprobantesModule,
     IdempotenciaModule,
     InventarioModule,
     PrismaModule,
   ],
   controllers: [DevolucionesController],
   providers: [DevolucionesService, DevolucionesOperacionService],
+  exports: [DevolucionesOperacionService],
 })
 export class DevolucionesModule {}

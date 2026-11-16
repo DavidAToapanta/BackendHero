@@ -2,6 +2,7 @@ import {
   InventarioLotesService,
   type ResultadoDevolucionInventario,
 } from '@app/inventario';
+import { PrismaService } from '@app/prisma';
 import {
   BadRequestException,
   ConflictException,
@@ -18,6 +19,7 @@ import { CajaService } from '../caja/caja.service';
 import { CuentasService } from '../cartera/cuentas.service';
 import { CobrosOperacionService } from '../cobros/cobros-operacion.service';
 import { CorreccionesCobroService } from '../cobros/correcciones-cobro.service';
+import { AnulacionComprobanteService } from '../comprobantes/anulacion-comprobante.service';
 import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
 import {
   ContextoOperacionTienda,
@@ -59,6 +61,8 @@ export class DevolucionesOperacionService {
     private readonly correcciones: CorreccionesCobroService,
     private readonly cuentas: CuentasService,
     private readonly inventario: InventarioLotesService,
+    private readonly comprobantes: AnulacionComprobanteService,
+    private readonly prisma: PrismaService,
   ) {}
 
   devolver(
@@ -66,6 +70,42 @@ export class DevolucionesOperacionService {
     datos: DatosCorreccionVenta,
     clave: string | undefined,
     correlacionId: string,
+  ) {
+    return this.procesar(contexto, datos, clave, correlacionId, false);
+  }
+
+  async anular(
+    contexto: ContextoOperacionTienda,
+    datos: DatosCorreccionVenta,
+    clave: string | undefined,
+    correlacionId: string,
+  ) {
+    const resultado = await this.procesar(
+      contexto,
+      datos,
+      clave,
+      correlacionId,
+      true,
+    );
+    const evento = await this.prisma.auditoriaOperacion.findFirstOrThrow({
+      where: {
+        tenantId: contexto.tenantId,
+        accion: ACCIONES_AUDITORIA.VENTAS_ANULAR,
+        entidadTipo: 'Venta',
+        entidadId: resultado.recursoId,
+      },
+      orderBy: { id: 'desc' },
+      select: { datos: true },
+    });
+    return { ...resultado, efectos: evento.datos };
+  }
+
+  private procesar(
+    contexto: ContextoOperacionTienda,
+    datos: DatosCorreccionVenta,
+    clave: string | undefined,
+    correlacionId: string,
+    anular: boolean,
   ) {
     const { tenantId, usuarioId } = contexto;
     const { ventaId } = datos;
@@ -83,9 +123,8 @@ export class DevolucionesOperacionService {
       }))
       .sort((a, b) => a.aplicacionId - b.aplicacionId);
     if (
-      !lineas.length ||
-      lineas.length > 100 ||
-      liberar.length > 100 ||
+      (!anular &&
+        (!lineas.length || lineas.length > 100 || liberar.length > 100)) ||
       lineas.some(
         ({ cantidad }) => !Number.isInteger(cantidad) || cantidad <= 0,
       ) ||
@@ -111,7 +150,7 @@ export class DevolucionesOperacionService {
         tenantId,
         usuarioId,
         clave,
-        operacion: 'devoluciones.aprobar',
+        operacion: anular ? 'ventas.anular' : 'devoluciones.aprobar',
         datos: {
           ventaId,
           motivo,
@@ -188,7 +227,11 @@ export class DevolucionesOperacionService {
         let inicialLiberado = new Prisma.Decimal(0);
         for (const item of liberar) {
           const aplicada = porId.get(item.aplicacionId);
-          if (!aplicada || item.monto.gt(aplicada.monto)) {
+          if (
+            !aplicada ||
+            item.monto.gt(aplicada.monto) ||
+            (anular && !item.monto.eq(aplicada.monto))
+          ) {
             throw new ConflictException(
               'El importe a liberar supera la aplicación disponible',
             );
@@ -204,51 +247,60 @@ export class DevolucionesOperacionService {
         }
 
         const reduccionSaldo = totalDevuelto.minus(totalLiberado);
-        if (reduccionSaldo.lt(0) || reduccionSaldo.gt(cuenta?.saldo ?? 0)) {
+        if (
+          anular
+            ? liberar.length !== aplicaciones.length
+            : reduccionSaldo.lt(0) || reduccionSaldo.gt(cuenta?.saldo ?? 0)
+        ) {
           throw new ConflictException(
             'El reparto entre deuda y cobros no concilia con la corrección',
           );
         }
 
-        const devolucion = await tx.devolucionVenta.create({
-          data: {
-            tenantId,
-            ventaId,
-            responsableId: contexto.membresiaId,
-            aprobadaPorId: contexto.membresiaId,
-            aprobadaAt: new Date(),
-            estado: 'APROBADA',
-            motivo,
-            subtotal: sumar('subtotal'),
-            descuento: sumar('descuento'),
-            impuesto: sumar('impuesto'),
-            total: totalDevuelto,
-            claveIdempotencia: claveRecurso,
-          },
-        });
+        const devolucion = detalles.length
+          ? await tx.devolucionVenta.create({
+              data: {
+                tenantId,
+                ventaId,
+                responsableId: contexto.membresiaId,
+                aprobadaPorId: contexto.membresiaId,
+                aprobadaAt: new Date(),
+                estado: 'APROBADA',
+                motivo,
+                subtotal: sumar('subtotal'),
+                descuento: sumar('descuento'),
+                impuesto: sumar('impuesto'),
+                total: totalDevuelto,
+                claveIdempotencia: claveRecurso,
+              },
+            })
+          : null;
         const movimientos: ResultadoDevolucionInventario[] = [];
-        detalles.sort(
-          (a, b) =>
-            a.productoId - b.productoId ||
-            a.asignacionVentaId - b.asignacionVentaId,
-        );
-        for (const detalle of detalles) {
-          const fila = await tx.detalleDevolucionVenta.create({
-            data: { ...detalle, tenantId, devolucionId: devolucion.id },
-          });
-          const retorno = await this.inventario.aplicarDevolucion(
-            tx,
-            {
-              tenantId,
-              responsableId: contexto.membresiaId,
-              clave: claveRecurso,
-              correlacionId,
-            },
-            fila.id,
+        if (devolucion) {
+          detalles.sort(
+            (a, b) =>
+              a.productoId - b.productoId ||
+              a.asignacionVentaId - b.asignacionVentaId,
           );
-          movimientos.push(retorno);
+          for (const detalle of detalles) {
+            const fila = await tx.detalleDevolucionVenta.create({
+              data: { ...detalle, tenantId, devolucionId: devolucion.id },
+            });
+            const retorno = await this.inventario.aplicarDevolucion(
+              tx,
+              {
+                tenantId,
+                responsableId: contexto.membresiaId,
+                clave: claveRecurso,
+                correlacionId,
+              },
+              fila.id,
+            );
+            movimientos.push(retorno);
+          }
         }
 
+        const reembolsos: number[] = [];
         for (const item of liberar) {
           const sufijo = claveRecurso + ':' + item.aplicacionId;
           const { aplicacion } = await this.correcciones.revertirAplicacion(
@@ -279,30 +331,40 @@ export class DevolucionesOperacionService {
               motivo,
             });
           }
-          if (item.metodo)
-            await this.correcciones.confirmarReembolso(tx, contexto, {
-              aplicacionId: aplicacion.id,
-              monto: item.monto,
-              metodo: item.metodo,
-              motivo,
-              turnoId: item.metodo === 'EFECTIVO' ? turnoId : null,
-              referencia: item.referencia,
-              devolucionId: devolucion.id,
-              claveRecurso: sufijo,
-            });
+          if (item.metodo) {
+            const reembolso = await this.correcciones.confirmarReembolso(
+              tx,
+              contexto,
+              {
+                aplicacionId: aplicacion.id,
+                monto: item.monto,
+                metodo: item.metodo,
+                motivo,
+                turnoId: item.metodo === 'EFECTIVO' ? turnoId : null,
+                referencia: item.referencia,
+                devolucionId: devolucion?.id,
+                claveRecurso: sufijo,
+              },
+            );
+            reembolsos.push(reembolso.id);
+          }
         }
 
         if (cuenta) {
-          const deltaImporte = inicialLiberado.minus(totalDevuelto);
-          const saldo = cuenta.saldo.minus(reduccionSaldo);
+          const deltaImporte = anular
+            ? cuenta.importeExigible.negated()
+            : inicialLiberado.minus(totalDevuelto);
+          const saldo = anular
+            ? new Prisma.Decimal(0)
+            : cuenta.saldo.minus(reduccionSaldo);
           if (!deltaImporte.isZero()) {
             await tx.ajusteCuentaPorCobrar.create({
               data: {
                 tenantId,
                 cuentaId: cuenta.id,
                 ventaId,
-                tipo: 'DEVOLUCION',
-                devolucionId: devolucion.id,
+                tipo: anular ? 'ANULACION' : 'DEVOLUCION',
+                devolucionId: anular ? undefined : devolucion?.id,
                 deltaImporte,
                 responsableId: contexto.membresiaId,
                 motivo,
@@ -315,14 +377,62 @@ export class DevolucionesOperacionService {
             data: {
               importeExigible: cuenta.importeExigible.plus(deltaImporte),
               saldo,
-              estado: saldo.isZero() ? 'PAGADA' : 'ABIERTA',
+              estado: anular
+                ? 'CANCELADA'
+                : saldo.isZero()
+                  ? 'PAGADA'
+                  : 'ABIERTA',
             },
           });
         }
 
+        if (anular) {
+          const anuladaAt = new Date();
+          await tx.venta.update({
+            where: { tenantId_id: { tenantId, id: ventaId } },
+            data: {
+              estado: 'ANULADA',
+              motivoAnulacion: motivo,
+              anuladaAt,
+              anuladaPorId: contexto.membresiaId,
+            },
+          });
+          const comprobanteId = await this.comprobantes.anularDeVenta(
+            tx,
+            contexto,
+            ventaId,
+            motivo,
+            anuladaAt,
+          );
+          const resultado = { recursoTipo: 'Venta', recursoId: ventaId };
+          await contexto.auditar(tx, {
+            accion: ACCIONES_AUDITORIA.VENTAS_ANULAR,
+            ...resultado,
+            motivo,
+            productos: [
+              ...new Set(detalles.map(({ productoId }) => productoId)),
+            ],
+            datos: {
+              cuentaCanceladaId: cuenta?.id ?? null,
+              saldoCancelado: cuenta?.saldo.toFixed(2) ?? '0.00',
+              devolucionId: devolucion?.id ?? null,
+              comprobanteId,
+              movimientos,
+              reembolsos,
+              saldoLiberadoSinReembolso: liberar
+                .filter(({ metodo }) => metodo === null)
+                .reduce(
+                  (suma, item) => suma.plus(item.monto),
+                  new Prisma.Decimal(0),
+                )
+                .toFixed(2),
+            },
+          });
+          return resultado;
+        }
         const resultado = {
           recursoTipo: 'DevolucionVenta',
-          recursoId: devolucion.id,
+          recursoId: devolucion!.id,
         };
         await contexto.auditar(tx, {
           accion: ACCIONES_AUDITORIA.DEVOLUCIONES_APROBAR,
