@@ -47,6 +47,7 @@ export const ACCIONES_AUDITORIA = {
   DEVOLUCIONES_APROBAR: 'devoluciones.aprobar',
   COMPROBANTES_ANULAR: 'comprobantes.anular',
   GASTOS_REGISTRAR: 'gastos.registrar',
+  COMPROBANTES_EMITIR: 'comprobantes.emitir',
 } as const;
 
 export type AccionAuditoria =

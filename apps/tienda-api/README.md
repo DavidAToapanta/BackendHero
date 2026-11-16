@@ -16,8 +16,8 @@ pueden recompilarse en terminales separadas.
 
 Las rutas de [clientes comerciales](./src/clientes/README.md),
 [caja](./src/caja/README.md), [cobros](./src/cobros/README.md),
-[cartera](./src/cartera/README.md) y
-[ventas de contado](./src/ventas/README.md)
+[cartera](./src/cartera/README.md), [ventas](./src/ventas/README.md) y
+[comprobantes internos](./src/comprobantes/README.md)
 usan el contexto y los permisos de Tienda.
 Cada escritura registra su auditoría dentro de la transacción. Los recursos
 que aún esperan implementación responden `501 Not Implemented`.

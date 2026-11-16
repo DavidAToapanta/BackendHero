@@ -945,6 +945,182 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(eventos[0].correlacionId).not.toBe(eventos[2].correlacionId);
   });
 
+  it('emite, consulta y descarga un solo comprobante por venta', async () => {
+    const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const tenantId = tienda.id;
+    const owner = await crearPerfilComercial(tenantId, 'OWNER', [], 'OWNER');
+    const lector = await crearPerfilComercial(
+      tenantId,
+      'LECTURA',
+      ['store.receipts.read'],
+      'EMPLEADO',
+    );
+    const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
+    const bearer = { type: 'bearer' } as const;
+    const cliente = await prisma.clienteComercial.create({
+      data: { tenantId, nombres: 'Cliente de ensayo' },
+    });
+    const producto = await prisma.producto.create({
+      data: {
+        tenantId,
+        nombre: 'Producto de ensayo',
+        precio: 10,
+        stock: 1,
+        estado: true,
+      },
+    });
+    const inventario = app.get(InventarioLotesService);
+    const cuentas = app.get(CuentasService);
+    const venta = await prisma.$transaction(async (tx) => {
+      const clave = randomUUID();
+      const costo = new Prisma.Decimal(4);
+      const operacion = {
+        tenantId,
+        responsableId: owner.context.membresiaId,
+        clave,
+        correlacionId: clave,
+      };
+      const { lotes } = await inventario.registrarEntrada(
+        tx,
+        { ...operacion, clave: randomUUID() },
+        producto.id,
+        'APERTURA',
+        'Inventario de ensayo',
+        [{ codigo: 'LOTE', cantidad: 1, costoUnitario: costo }],
+      );
+      const creada = await tx.venta.create({
+        data: {
+          tenantId,
+          responsableId: operacion.responsableId,
+          origen: 'CAJA',
+          clienteComercialId: cliente.id,
+          subtotal: 10,
+          total: 10,
+          claveIdempotencia: clave,
+        },
+      });
+      const detalle = await tx.detalleVenta.create({
+        data: {
+          tenantId,
+          ventaId: creada.id,
+          productoId: producto.id,
+          nombreProducto: producto.nombre,
+          cantidad: 1,
+          precioUnitario: 10,
+          subtotal: 10,
+          total: 10,
+        },
+      });
+      await tx.asignacionLoteVenta.create({
+        data: {
+          tenantId,
+          ventaId: creada.id,
+          detalleVentaId: detalle.id,
+          loteId: lotes[0].id,
+          productoId: producto.id,
+          cantidad: 1,
+          costoUnitario: costo,
+          costoTotal: costo,
+        },
+      });
+      await inventario.retirarVenta(tx, operacion, detalle.id);
+      await cuentas.crear(tx, {
+        tenantId,
+        ventaId: creada.id,
+        clienteComercialId: cliente.id,
+        financiado: new Prisma.Decimal(10),
+        vencimiento: new Date('2099-01-01T05:00:00.000Z'),
+      });
+      return creada;
+    });
+    const estadoOperativo = () =>
+      Promise.all([
+        prisma.movimientoInventario.count({ where: { tenantId } }),
+        prisma.movimientoCaja.count({ where: { tenantId } }),
+        prisma.cuentaPorCobrar.findMany({
+          where: { tenantId },
+          select: { id: true, saldo: true, estado: true },
+        }),
+      ]);
+    const estadoInicial = await estadoOperativo();
+
+    const emitir = (sesion: AccesoTienda, clave: string) =>
+      http()
+        .post('/comprobantes')
+        .auth(sesion.accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send({ ventaId: venta.id });
+    await http().get('/comprobantes').expect(401);
+    await emitir(lector, randomUUID()).expect(403);
+    await emitir(externo, randomUUID()).expect(404);
+    const clave = randomUUID();
+    const [primera, segunda] = await Promise.all([
+      emitir(owner, clave).expect(201),
+      emitir(owner, randomUUID()).expect(201),
+    ]);
+    expect(segunda.body).toEqual(primera.body);
+    await emitir(owner, clave).expect(201, primera.body as object);
+    const { recursoId } = primera.body as { recursoId: number };
+    const ruta = `/comprobantes/${recursoId}`;
+
+    await prisma.clienteComercial.update({
+      where: { id: cliente.id },
+      data: { nombres: 'Nombre actualizado' },
+    });
+    await prisma.producto.update({
+      where: { id: producto.id },
+      data: { nombre: 'Producto actualizado', precio: 20 },
+    });
+    const detalle = await http()
+      .get(ruta)
+      .auth(lector.accessToken, bearer)
+      .expect(200);
+    expect(detalle.body).toMatchObject({
+      numero: 'COMP-1',
+      consecutivo: '1',
+      receptorNombre: cliente.nombres,
+      total: '10',
+      detalleComprobanteVenta_comprobante: [
+        { nombreProducto: producto.nombre, precioUnitario: '10', cantidad: 1 },
+      ],
+    });
+    const lista = await http()
+      .get('/comprobantes?pagina=1&limite=1')
+      .auth(lector.accessToken, bearer)
+      .expect(200);
+    expect(lista.body).toEqual([expect.objectContaining({ id: recursoId })]);
+    await http().get(ruta).auth(externo.accessToken, bearer).expect(404);
+    await http()
+      .get(ruta + '/pdf')
+      .auth(externo.accessToken, bearer)
+      .expect(404);
+    const pdf = await http()
+      .get(ruta + '/pdf')
+      .auth(lector.accessToken, bearer)
+      .buffer(true)
+      .parse((respuesta, terminar) => {
+        const partes: Buffer[] = [];
+        respuesta.on('data', (parte: Buffer) => partes.push(parte));
+        respuesta.on('end', () => terminar(null, Buffer.concat(partes)));
+        respuesta.on('error', terminar);
+      })
+      .expect('Content-Type', /application\/pdf/)
+      .expect('Content-Disposition', /attachment/)
+      .expect(200);
+    expect(Buffer.isBuffer(pdf.body)).toBe(true);
+    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(await estadoOperativo()).toEqual(estadoInicial);
+    expect(await prisma.comprobanteVenta.count({ where: { tenantId } })).toBe(
+      1,
+    );
+    expect(
+      await prisma.auditoriaOperacion.count({
+        where: { tenantId, accion: ACCIONES_AUDITORIA.COMPROBANTES_EMITIR },
+      }),
+    ).toBe(1);
+  });
+
   it('registra gastos por HTTP y descuenta efectivo de caja una sola vez', async () => {
     const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
     const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
@@ -3717,42 +3893,34 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       where: { tenantId, ventaId: idTotal },
       select: { id: true, detalleVentaId: true },
     });
-    const comprobanteId = await prisma.$transaction(
-      async (tx): Promise<number> => {
-        await tx.secuenciaComprobante.create({
-          data: { tenantId, ultimoConsecutivo: 1 },
-        });
-        const comprobante = await tx.comprobanteVenta.create({
-          data: {
-            tenantId,
-            ventaId: idTotal,
-            clienteComercialId: cliente.id,
-            emitidoPorId: owner.context.membresiaId,
-            consecutivo: 1,
-            numero: 'COMP-1',
-            receptorNombre: cliente.nombres,
-            subtotal: 100,
-            total: 100,
-          },
-          select: { id: true },
-        });
-        await tx.detalleComprobanteVenta.create({
-          data: {
-            tenantId,
-            ventaId: idTotal,
-            productoId: producto.id,
-            comprobanteId: comprobante.id,
-            detalleVentaId: asignacionTotal.detalleVentaId,
-            nombreProducto: producto.nombre,
-            cantidad: 1,
-            precioUnitario: 100,
-            subtotal: 100,
-            total: 100,
-          },
-        });
-        return comprobante.id;
-      },
-    );
+    const emitir = (ventaId: number): request.Test =>
+      http()
+        .post('/comprobantes')
+        .auth(owner.accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({ ventaId });
+    const [emitidoTotal, emitidoParcial] = await Promise.all([
+      emitir(idTotal).expect(201),
+      emitir(idParcial).expect(201),
+    ]);
+    const { recursoId: comprobanteId } = emitidoTotal.body as {
+      recursoId: number;
+    };
+    const { recursoId: otroComprobanteId } = emitidoParcial.body as {
+      recursoId: number;
+    };
+    const consultarComprobante = (id: number) =>
+      http().get(`/comprobantes/${id}`).auth(owner.accessToken, bearer);
+    const previo = (await consultarComprobante(comprobanteId).expect(200))
+      .body as {
+      numero: string;
+      consecutivo: string;
+    };
+    const otro = (await consultarComprobante(otroComprobanteId).expect(200))
+      .body as {
+      consecutivo: string;
+    };
+    expect([previo.consecutivo, otro.consecutivo].sort()).toEqual(['1', '2']);
     const anularCredito = (
       body: object,
       clave = randomUUID(),
@@ -3823,10 +3991,17 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
     await cartera('/deudores').expect(200, []);
     expect(
-      await prisma.comprobanteVenta.findUniqueOrThrow({
-        where: { id: comprobanteId },
-      }),
-    ).toMatchObject({ estado: 'ANULADO', numero: 'COMP-1', consecutivo: 1n });
+      (await consultarComprobante(comprobanteId).expect(200)).body,
+    ).toMatchObject({
+      numero: previo.numero,
+      consecutivo: previo.consecutivo,
+      estado: 'ANULADO',
+    });
+    await http()
+      .get(`/comprobantes/${comprobanteId}/pdf`)
+      .auth(owner.accessToken, bearer)
+      .expect('Content-Type', /application\/pdf/)
+      .expect(200);
     expect(
       await prisma.loteInventario.findUniqueOrThrow({ where: { id: loteId } }),
     ).toMatchObject({ cantidadFisica: 2 });
