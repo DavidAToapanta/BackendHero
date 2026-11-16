@@ -157,6 +157,10 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     return request(app.getHttpServer());
   }
 
+  const rutaCategorias = '/catalogo/categorias';
+  const rutaCategoriaProducto = (productoId: number) =>
+    '/catalogo/productos/' + productoId + '/categoria';
+
   async function loginTienda(
     { cedula, password }: { cedula: string; password: string },
     tenantId?: number,
@@ -754,6 +758,243 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toBe(0);
   }, 25000);
 
+  it('administra categorías STORE y conserva los vínculos de GYM en un negocio mixto', async () => {
+    const tienda = await crearNegocio({
+      tipoNegocio: 'MIXTO',
+      autorizacionVersion: 'PERMISOS',
+      modules: { create: [{ module: 'GYM' }, { module: 'STORE' }] },
+    });
+    const { usuario, credenciales } = await registrarPersonal();
+    const owner = await prisma.userTenant.create({
+      data: { tenantId: tienda.id, usuarioId: usuario.id, role: 'OWNER' },
+    });
+    const rolOwner = await prisma.rolNegocio.create({
+      data: {
+        tenantId: tienda.id,
+        codigo: 'OWNER',
+        nombre: 'Dueño',
+        protegido: true,
+        equivalenciaLegacy: 'OWNER',
+      },
+    });
+    await prisma.asignacionRol.create({
+      data: { tenantId: tienda.id, membresiaId: owner.id, rolId: rolOwner.id },
+    });
+    const bearer = { type: 'bearer' } as const;
+    const { accessToken } = await loginTienda(credenciales);
+
+    const lector = await registrarPersonal();
+    const membresiaLector = await vincularPersonal(
+      lector.usuario.id,
+      tienda.id,
+    );
+    const rolLector = await asignarRol(tienda.id, membresiaLector.id);
+    const { accessToken: tokenLector } = await loginTienda(lector.credenciales);
+    await http().get(rutaCategorias).expect(401);
+    await http().get(rutaCategorias).auth(tokenLector, bearer).expect(403);
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const permisoLectura = permisos.find(
+      ({ codigo }) => codigo === 'store.catalog.read',
+    )!;
+    await prisma.rolPermiso.create({
+      data: {
+        tenantId: tienda.id,
+        rolId: rolLector.id,
+        permisoId: permisoLectura.id,
+      },
+    });
+    await http().get(rutaCategorias).auth(tokenLector, bearer).expect(200);
+    await http()
+      .post(rutaCategorias)
+      .auth(tokenLector, bearer)
+      .send({ nombre: 'Sin escritura' })
+      .expect(403);
+
+    const crear = (nombre: string) =>
+      http().post(rutaCategorias).auth(accessToken, bearer).send({ nombre });
+    const creada = await crear('  Bebidas   Frías  ').expect(201);
+    const categoria = creada.body as {
+      id: number;
+      nombre: string;
+      activo: boolean;
+    };
+    expect(categoria).toEqual({
+      id: categoria.id,
+      nombre: 'Bebidas Frías',
+      activo: true,
+    });
+    await crear('bebidas fri\u0301as').expect(409);
+    await crear('Bebidas calientes').expect(201);
+    const listado = await http()
+      .get(rutaCategorias)
+      .auth(tokenLector, bearer)
+      .query({ q: '  BEBIDAS ', activo: true, pagina: 2, limite: 1 })
+      .expect(200);
+    expect(listado.body).toEqual({
+      data: [categoria],
+      meta: { pagina: 2, limite: 1, total: 2, paginas: 2 },
+    });
+    await http()
+      .get(rutaCategorias)
+      .auth(tokenLector, bearer)
+      .query({ activo: '1' })
+      .expect(400);
+
+    const otro = await crearNegocio();
+    const gym = await prisma.categoriaProducto.create({
+      data: {
+        tenantId: tienda.id,
+        modulo: 'GYM',
+        nombre: categoria.nombre,
+        nombreNormalizado: 'bebidas frías',
+      },
+    });
+    const ajena = await prisma.categoriaProducto.create({
+      data: {
+        tenantId: otro.id,
+        modulo: 'STORE',
+        nombre: categoria.nombre,
+        nombreNormalizado: 'bebidas frías',
+      },
+    });
+    const producto = (tenantId: number, categoriaId?: number) =>
+      prisma.producto.create({
+        data: {
+          tenantId,
+          nombre: 'Bebida',
+          precio: 1,
+          stock: 0,
+          estado: true,
+          categoriaId,
+        },
+      });
+    const propio = await producto(tienda.id);
+    const sinCategoria = await producto(tienda.id);
+    const productoGym = await producto(tienda.id, gym.id);
+    const ajeno = await producto(otro.id);
+    const asignar = (id: number, categoriaId: number | null) =>
+      http()
+        .put(rutaCategoriaProducto(id))
+        .auth(accessToken, bearer)
+        .send({ categoriaId });
+    const editar = (id: number, cambios: object) =>
+      http()
+        .patch(rutaCategorias + '/' + id)
+        .auth(accessToken, bearer)
+        .send(cambios);
+
+    await editar(categoria.id, {}).expect(400);
+    await editar(categoria.id, { nombre: null }).expect(400);
+    await editar(categoria.id, { tenantId: otro.id }).expect(400);
+    await editar(0, { activo: false }).expect(400);
+    await http()
+      .put(rutaCategoriaProducto(propio.id))
+      .auth(accessToken, bearer)
+      .send({})
+      .expect(400);
+    await editar(gym.id, { nombre: 'Prohibido' }).expect(404);
+    await editar(ajena.id, { nombre: 'Prohibido' }).expect(404);
+    await asignar(propio.id, gym.id).expect(404);
+    await asignar(propio.id, ajena.id).expect(404);
+    await asignar(ajeno.id, categoria.id).expect(404);
+    await asignar(productoGym.id, null).expect(409);
+    await asignar(productoGym.id, categoria.id).expect(409);
+    expect(
+      await prisma.producto.findUniqueOrThrow({
+        where: { id: productoGym.id },
+      }),
+    ).toMatchObject({ categoriaId: gym.id });
+
+    await asignar(propio.id, categoria.id).expect(200, {
+      productoId: propio.id,
+      categoriaId: categoria.id,
+    });
+    await asignar(propio.id, categoria.id).expect(200);
+    await editar(categoria.id, { activo: false }).expect(200, {
+      ...categoria,
+      activo: false,
+    });
+    await editar(categoria.id, {
+      activo: false,
+      nombre: '  Bebidas  Frías  ',
+    }).expect(200);
+    await crear('bebidas frías').expect(409);
+    await asignar(sinCategoria.id, categoria.id).expect(404);
+    const inactivas = await http()
+      .get(rutaCategorias)
+      .query({ activo: false })
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(inactivas.body).toMatchObject({
+      data: [{ ...categoria, activo: false }],
+    });
+    expect(
+      await prisma.producto.findUniqueOrThrow({ where: { id: propio.id } }),
+    ).toMatchObject({ categoriaId: categoria.id });
+    await editar(categoria.id, { activo: true }).expect(200, categoria);
+    await asignar(propio.id, null).expect(200, {
+      productoId: propio.id,
+      categoriaId: null,
+    });
+
+    const auditoria = jest
+      .spyOn(app.get(AuditoriaEscrituraService), 'registrar')
+      .mockImplementationOnce(() => {
+        throw new Error('Fallo de auditoría en categoría');
+      });
+    try {
+      await editar(categoria.id, {
+        nombre: 'Cambio que debe revertirse',
+      }).expect(500);
+    } finally {
+      auditoria.mockRestore();
+    }
+    expect(
+      await prisma.categoriaProducto.findUniqueOrThrow({
+        where: { id: categoria.id },
+      }),
+    ).toMatchObject(categoria);
+    const eventos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId: tienda.id,
+        entidadTipo: 'CategoriaProducto',
+        entidadId: categoria.id,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(eventos.map(({ accion }) => accion)).toEqual([
+      ACCIONES_AUDITORIA.CATEGORIAS_CREAR,
+      ACCIONES_AUDITORIA.CATEGORIAS_DESACTIVAR,
+      ACCIONES_AUDITORIA.CATEGORIAS_REACTIVAR,
+    ]);
+    const vinculos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId: tienda.id,
+        entidadTipo: 'Producto',
+        productoId: propio.id,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(vinculos.map(({ accion }) => accion)).toEqual([
+      ACCIONES_AUDITORIA.PRODUCTOS_ASIGNAR_CATEGORIA,
+      ACCIONES_AUDITORIA.PRODUCTOS_DESASIGNAR_CATEGORIA,
+    ]);
+    expect(vinculos[0]).toMatchObject({
+      usuarioId: usuario.id,
+      membresiaId: owner.id,
+      rolCodigo: 'OWNER',
+      datos: { categoriaIdAnterior: null, categoriaId: categoria.id },
+    });
+    await prisma.tenantModule.update({
+      where: { tenantId_module: { tenantId: tienda.id, module: 'STORE' } },
+      data: { activo: false },
+    });
+    await http().get(rutaCategorias).auth(accessToken, bearer).expect(401);
+    await editar(categoria.id, { activo: false }).expect(401);
+  }, 20000);
+
   it('localiza una venta por ambos productos y revierte venta, existencias y auditoría juntas', async () => {
     const { usuario, credenciales } = await registrarPersonal();
     const { id: tenantId } = await crearNegocio({
@@ -761,7 +1002,23 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
     const membresia = await vincularPersonal(usuario.id, tenantId);
     const rol = await asignarRol(tenantId, membresia.id);
-    const { context: contexto } = await loginTienda(credenciales);
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const permisoCatalogo = permisos.find(
+      ({ codigo }) => codigo === 'store.catalog.write',
+    )!;
+    await prisma.rolPermiso.create({
+      data: { tenantId, rolId: rol.id, permisoId: permisoCatalogo.id },
+    });
+    const { context: contexto, accessToken } = await loginTienda(credenciales);
+    const bearer = { type: 'bearer' } as const;
+    const existe = await http()
+      .post(rutaCategorias)
+      .auth(accessToken, bearer)
+      .send({ nombre: 'Categoría de venta' })
+      .expect(201);
+    const categoria = existe.body as { id: number; nombre: string };
     const auditoria = app.get(AuditoriaEscrituraService);
     const inventario = app.get(InventarioLotesService);
     const cero = new Prisma.Decimal(0);
@@ -790,6 +1047,13 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       return items;
     });
     const productoIds = items.map(({ productoId }) => productoId);
+    for (const productoId of productoIds) {
+      await http()
+        .put(rutaCategoriaProducto(productoId))
+        .auth(accessToken, bearer)
+        .send({ categoriaId: categoria.id })
+        .expect(200);
+    }
     const registrarVenta = async (
       tx: Prisma.TransactionClient,
       actor: ContextoTienda,
@@ -813,6 +1077,8 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
             ventaId: venta.id,
             productoId,
             nombreProducto: nombre,
+            categoriaId: categoria.id,
+            categoriaNombre: categoria.nombre,
             cantidad: 1,
             precioUnitario: cero,
             subtotal: cero,
@@ -865,7 +1131,11 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(actualizado.rolEfectivo.nombre).toBe('Bodega sucursal');
     for (const productoId of productoIds) {
       const fila = await prisma.auditoriaOperacion.findFirstOrThrow({
-        where: { tenantId, productoId },
+        where: {
+          tenantId,
+          productoId,
+          accion: ACCIONES_AUDITORIA.VENTAS_REGISTRAR,
+        },
       });
       expect(fila).toMatchObject({
         correlacionId,
@@ -921,6 +1191,43 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
         where: { tenantId, id: { in: loteIds }, cantidadFisica: 1 },
       }),
     ).toBe(2);
+    const edicion = rutaCategorias + '/' + categoria.id;
+    await http()
+      .patch(edicion)
+      .auth(accessToken, bearer)
+      .send({ nombre: 'Categoría renombrada' })
+      .expect(200);
+    await http()
+      .patch(edicion)
+      .auth(accessToken, bearer)
+      .send({ activo: false })
+      .expect(200);
+    const reemplazo = await http()
+      .post(rutaCategorias)
+      .auth(accessToken, bearer)
+      .send({ nombre: 'Categoría nueva' })
+      .expect(201);
+    const nuevaCategoria = reemplazo.body as { id: number };
+    await http()
+      .put(rutaCategoriaProducto(productoIds[0]))
+      .auth(accessToken, bearer)
+      .send({ categoriaId: nuevaCategoria.id })
+      .expect(200);
+    await http()
+      .put(rutaCategoriaProducto(productoIds[1]))
+      .auth(accessToken, bearer)
+      .send({ categoriaId: null })
+      .expect(200);
+    const historico = await prisma.detalleVenta.findMany({
+      where: { tenantId, ventaId: venta.id, categoriaId: categoria.id },
+      select: { categoriaId: true, categoriaNombre: true },
+    });
+    expect(historico).toEqual(
+      productoIds.map(() => ({
+        categoriaId: categoria.id,
+        categoriaNombre: categoria.nombre,
+      })),
+    );
   });
 
   it('rechaza una membresía auditada con un usuario o un tenant ajeno', async () => {

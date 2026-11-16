@@ -96,6 +96,44 @@ describe('Catálogo compartido', () => {
     expect(prisma.categoriaProducto.create).not.toHaveBeenCalled();
   });
 
+  it('usa el cliente recibido para comprobar módulo, buscar y paginar categorías', async () => {
+    const filas = [{ id: 8, nombre: 'Bebidas Frías', activo: true }];
+    const tx = {
+      tenantModule: { findUnique: jest.fn().mockResolvedValue({ id: 1 }) },
+      categoriaProducto: {
+        findMany: jest.fn().mockResolvedValue(filas),
+        count: jest.fn().mockResolvedValue(3),
+      },
+    };
+    await expect(
+      categorias.listarPaginado(
+        9,
+        ModuleKey.STORE,
+        { q: '  BEBIDAS   FRI\u0301AS  ', activo: true, pagina: 2, limite: 1 },
+        tx as unknown as Prisma.TransactionClient,
+      ),
+    ).resolves.toEqual({
+      data: filas,
+      meta: { pagina: 2, limite: 1, total: 3, paginas: 3 },
+    });
+    expect(tx.tenantModule.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.tenantModule.findUnique).not.toHaveBeenCalled();
+    const where = {
+      tenantId: 9,
+      modulo: ModuleKey.STORE,
+      activo: true,
+      nombreNormalizado: { contains: 'bebidas frías' },
+    };
+    expect(tx.categoriaProducto.count).toHaveBeenCalledWith({ where });
+    expect(tx.categoriaProducto.findMany).toHaveBeenCalledWith({
+      where,
+      orderBy: [{ nombreNormalizado: 'asc' }, { id: 'asc' }],
+      skip: 1,
+      take: 1,
+      select: { id: true, nombre: true, activo: true },
+    });
+  });
+
   it('solo permite asignar una categoría activa del mismo tenant y módulo', async () => {
     prisma.tenantModule.findUnique.mockResolvedValue({ id: 1 });
     prisma.categoriaProducto.findUnique.mockResolvedValue(null);

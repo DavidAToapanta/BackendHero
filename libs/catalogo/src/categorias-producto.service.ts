@@ -6,11 +6,22 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
 import { ModulosNegocioService } from '@app/negocios';
-import { ModuleKey } from '@prisma/client';
+import type { ModuleKey, Prisma } from '@prisma/client';
 import { traducirErrorCatalogo } from './errores-catalogo';
 
 const CATEGORIA_DUPLICADA =
   'Ya existe una categoría con ese nombre en el módulo';
+const ordenCategorias: Prisma.CategoriaProductoOrderByWithRelationInput[] = [
+  { nombreNormalizado: 'asc' },
+  { id: 'asc' },
+];
+
+type FiltrosCategorias = {
+  q?: string;
+  activo?: boolean;
+  pagina?: number;
+  limite?: number;
+};
 
 @Injectable()
 export class CategoriasProductoService {
@@ -23,14 +34,67 @@ export class CategoriasProductoService {
     await this.validarModulo(tenantId, modulo);
     return this.prisma.categoriaProducto.findMany({
       where: { tenantId, modulo, activo },
-      orderBy: [{ nombreNormalizado: 'asc' }, { id: 'asc' }],
+      orderBy: ordenCategorias,
     });
   }
 
-  async create(tenantId: number, modulo: ModuleKey, nombre: string) {
-    await this.validarModulo(tenantId, modulo);
+  async listarPaginado(
+    tenantId: number,
+    modulo: ModuleKey,
+    { q, activo, pagina = 1, limite = 20 }: FiltrosCategorias = {},
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const skip = (pagina - 1) * limite;
+    if (
+      !Number.isInteger(pagina) ||
+      pagina < 1 ||
+      !Number.isInteger(limite) ||
+      limite < 1 ||
+      limite > 50 ||
+      skip > 2147483647
+    ) {
+      throw new BadRequestException('Paginación inválida');
+    }
+    await this.validarModulo(tenantId, modulo, tx);
+    const nombre = q?.trim();
+    const where: Prisma.CategoriaProductoWhereInput = {
+      tenantId,
+      modulo,
+      activo,
+      ...(nombre && {
+        nombreNormalizado: {
+          contains: this.normalizarNombre(nombre).nombreNormalizado.replace(
+            /[\\%_]/g,
+            '\\$&',
+          ),
+        },
+      }),
+    };
+    const [data, total] = await Promise.all([
+      tx.categoriaProducto.findMany({
+        where,
+        orderBy: ordenCategorias,
+        skip,
+        take: limite,
+        select: { id: true, nombre: true, activo: true },
+      }),
+      tx.categoriaProducto.count({ where }),
+    ]);
+    return {
+      data,
+      meta: { pagina, limite, total, paginas: Math.ceil(total / limite) },
+    };
+  }
+
+  async create(
+    tenantId: number,
+    modulo: ModuleKey,
+    nombre: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    await this.validarModulo(tenantId, modulo, tx);
     try {
-      return await this.prisma.categoriaProducto.create({
+      return await tx.categoriaProducto.create({
         data: { tenantId, modulo, ...this.normalizarNombre(nombre) },
       });
     } catch (error) {
@@ -43,10 +107,11 @@ export class CategoriasProductoService {
     modulo: ModuleKey,
     id: number,
     { nombre, activo }: { nombre?: string; activo?: boolean },
+    tx: Prisma.TransactionClient = this.prisma,
   ) {
-    await this.validarModulo(tenantId, modulo);
+    await this.validarModulo(tenantId, modulo, tx);
     try {
-      return await this.prisma.categoriaProducto.update({
+      return await tx.categoriaProducto.update({
         where: { tenantId_id: { tenantId, id }, modulo },
         data: {
           ...(nombre === undefined ? {} : this.normalizarNombre(nombre)),
@@ -66,10 +131,11 @@ export class CategoriasProductoService {
     modulo: ModuleKey,
     productoId: number,
     categoriaId: number | null,
+    tx: Prisma.TransactionClient = this.prisma,
   ) {
-    await this.validarModulo(tenantId, modulo);
+    await this.validarModulo(tenantId, modulo, tx);
     if (categoriaId !== null) {
-      const categoria = await this.prisma.categoriaProducto.findUnique({
+      const categoria = await tx.categoriaProducto.findUnique({
         where: {
           tenantId_id: { tenantId, id: categoriaId },
           modulo,
@@ -85,7 +151,7 @@ export class CategoriasProductoService {
     }
 
     try {
-      return await this.prisma.producto.update({
+      return await tx.producto.update({
         where: { tenantId_id: { tenantId, id: productoId } },
         data: { categoriaId },
       });
@@ -94,8 +160,12 @@ export class CategoriasProductoService {
     }
   }
 
-  private async validarModulo(tenantId: number, modulo: ModuleKey) {
-    const habilitado = await this.modulos.estaActivo(tenantId, modulo);
+  private async validarModulo(
+    tenantId: number,
+    modulo: ModuleKey,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const habilitado = await this.modulos.estaActivo(tenantId, modulo, tx);
     if (!habilitado) {
       throw new ForbiddenException(
         'El módulo no está habilitado para el negocio',
@@ -103,7 +173,7 @@ export class CategoriasProductoService {
     }
   }
 
-  private normalizarNombre(valor: string) {
+  normalizarNombre(valor: string) {
     const nombre = valor.trim().replace(/\s+/g, ' ');
     if (!nombre) {
       throw new BadRequestException('El nombre de la categoría es obligatorio');

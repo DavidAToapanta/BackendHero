@@ -62,6 +62,12 @@ Los ejemplos indican los valores de `entidadTipo`, `entidadId`, `productoIds`,
   turno» y `datos: { cajaId }`.
 - **`clientes.registrar`**, **`clientes.editar`** y **`clientes.desactivar`**
   registran `ClienteComercial` y la ID de la ficha.
+- **`catalogo.categorias.crear`**, **`catalogo.categorias.editar`**,
+  **`catalogo.categorias.desactivar`** y **`catalogo.categorias.reactivar`**
+  registran `CategoriaProducto` con su estado anterior y actual cuando aplica.
+- **`catalogo.productos.categoria.asignar`** y
+  **`catalogo.productos.categoria.desasignar`** registran `Producto` con
+  su ID en `productoIds` y `datos: { categoriaIdAnterior, categoriaId }`.
 
 A04 conserva los códigos `ACCESOS_ROLES_PREPARAR` y
 `ACCESOS_PERMISOS_ACTIVAR` para `Tenant`; `ACCESOS_PERSONAL_ALTA`,
