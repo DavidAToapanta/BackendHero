@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { AccionAuditoria } from '../auditoria/auditoria-escritura';
 
 export interface ContextoOperacionTienda {
   tenantId: number;
@@ -8,12 +9,13 @@ export interface ContextoOperacionTienda {
   auditar(
     tx: Prisma.TransactionClient,
     evento: {
-      accion: string;
+      accion: AccionAuditoria;
       recursoTipo: string;
       recursoId: number;
       motivo?: string;
       productos?: readonly number[];
       correlacionId?: string;
+      datos?: Prisma.InputJsonObject;
     },
   ): Promise<void>;
 }

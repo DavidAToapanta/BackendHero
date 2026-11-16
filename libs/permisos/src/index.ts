@@ -1,6 +1,7 @@
 export { AsignacionesRolService } from './asignaciones-rol.service';
 export {
   CATALOGO_PERMISOS,
+  CATALOGO_PERMISOS_TIENDA,
   type CodigoPermiso,
   type CodigoPermisoTienda,
 } from './catalogo-permisos';

@@ -1,11 +1,11 @@
-import { ModuleKey } from '@prisma/client';
+import type { ModuleKey } from '@prisma/client';
 
 function permisoTienda<T extends `store.${string}`>(
   codigo: T,
   descripcion: string,
   delegable: boolean,
 ) {
-  return { codigo, modulo: ModuleKey.STORE, descripcion, delegable };
+  return { codigo, modulo: 'STORE' as const, descripcion, delegable };
 }
 
 export const CATALOGO_PERMISOS = [
@@ -132,7 +132,13 @@ export const CATALOGO_PERMISOS = [
 export type CodigoPermiso = (typeof CATALOGO_PERMISOS)[number]['codigo'];
 export type CodigoPermisoTienda = Extract<CodigoPermiso, `store.${string}`>;
 
-const permisosPorCodigo = new Map<string, (typeof CATALOGO_PERMISOS)[number]>(
+type DefinicionPermiso = (typeof CATALOGO_PERMISOS)[number];
+export const CATALOGO_PERMISOS_TIENDA = CATALOGO_PERMISOS.filter(
+  (permiso): permiso is Extract<DefinicionPermiso, { modulo: 'STORE' }> =>
+    permiso.modulo === 'STORE',
+);
+
+const permisosPorCodigo = new Map<string, DefinicionPermiso>(
   CATALOGO_PERMISOS.map((permiso) => [permiso.codigo, permiso]),
 );
 

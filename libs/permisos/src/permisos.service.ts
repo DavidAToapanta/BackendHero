@@ -62,31 +62,43 @@ export class PermisosService {
   async autorizar(
     contexto: ContextoPermisos,
     requerido: CodigoPermiso | readonly CodigoPermiso[],
+    tx?: Prisma.TransactionClient,
+  ) {
+    if (tx) {
+      await this.exigirPermisos(contexto, requerido, tx);
+      return;
+    }
+    await this.prisma.$transaction(
+      (client) => this.exigirPermisos(contexto, requerido, client),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
+  async exigirPermisos(
+    contexto: ContextoPermisos,
+    requerido: CodigoPermiso | readonly CodigoPermiso[],
+    tx: Prisma.TransactionClient,
   ) {
     const codigos = typeof requerido === 'string' ? [requerido] : requerido;
     if (codigos.length === 0) {
       throw new ForbiddenException('Permiso insuficiente');
     }
 
-    return this.prisma.$transaction(
-      async (tx) => {
-        const acceso = await this.resolver(contexto, tx);
-        const autorizado =
-          acceso.modo === 'PERMISOS' &&
-          codigos.every((codigo) => {
-            const permiso = obtenerDefinicionPermiso(codigo);
-            return (
-              permiso !== undefined &&
-              acceso.modulos.has(permiso.modulo) &&
-              (acceso.owner || acceso.permisos.has(codigo))
-            );
-          });
-        if (!autorizado) {
-          throw new ForbiddenException('Permiso insuficiente');
-        }
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+    const acceso = await this.resolver(contexto, tx);
+    const autorizado =
+      acceso.modo === 'PERMISOS' &&
+      codigos.every((codigo) => {
+        const permiso = obtenerDefinicionPermiso(codigo);
+        return (
+          permiso !== undefined &&
+          acceso.modulos.has(permiso.modulo) &&
+          (acceso.owner || acceso.permisos.has(codigo))
+        );
+      });
+    if (!autorizado) {
+      throw new ForbiddenException('Permiso insuficiente');
+    }
+    return acceso;
   }
 
   async exigirGestor(contexto: ContextoPermisos, tx: Prisma.TransactionClient) {

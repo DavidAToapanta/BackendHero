@@ -81,23 +81,22 @@ export class IdentidadService {
     return { status: 'valid', account };
   }
 
-  async findConflicts({
-    cedula,
-    email,
-    userName,
-  }: AccountIdentifiers): Promise<AccountConflicts> {
+  async findConflicts(
+    { cedula, email, userName }: AccountIdentifiers,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<AccountConflicts> {
     const select = { id: true } as const;
     const [usuarioPorCedula, usuarioPorEmail, usuarioPorUserName] =
       await Promise.all([
         cedula == null
           ? null
-          : this.prisma.usuario.findUnique({ where: { cedula }, select }),
+          : tx.usuario.findUnique({ where: { cedula }, select }),
         email == null
           ? null
-          : this.prisma.usuario.findUnique({ where: { email }, select }),
+          : tx.usuario.findUnique({ where: { email }, select }),
         userName == null
           ? null
-          : this.prisma.usuario.findUnique({ where: { userName }, select }),
+          : tx.usuario.findUnique({ where: { userName }, select }),
       ]);
 
     return { usuarioPorCedula, usuarioPorEmail, usuarioPorUserName };
