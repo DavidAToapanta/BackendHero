@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { InventarioLotesService } from '@app/inventario';
 import { PermisosService } from '@app/permisos';
 import { PrismaService } from '@app/prisma';
@@ -7,15 +8,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  ACCIONES_AUDITORIA,
+  AuditoriaEscrituraService,
+} from '../auditoria/auditoria-escritura';
 import type { ContextoTienda } from '../auth';
-import { paginacion } from '../comun/operacion-tienda';
+import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
+import { conflictoUnicidad, paginacion } from '../comun/operacion-tienda';
 import type {
   LotesInventarioDto,
   MovimientosInventarioDto,
   ProductosInventarioDto,
 } from './dto/consulta-inventario.dto';
+import type { RegistrarEntradaInventarioDto } from './dto/entrada-inventario.dto';
 
 const lectura = 'store.inventory.read';
+const recepcion = 'store.inventory.receive';
 const lecturaConCostos = [lectura, 'store.inventory.cost.read'] as const;
 const stockSelect = {
   id: true,
@@ -47,7 +55,95 @@ export class InventarioService {
     private readonly prisma: PrismaService,
     private readonly inventario: InventarioLotesService,
     private readonly permisos: PermisosService,
+    private readonly idempotencia: IdempotenciaService,
+    private readonly auditoria: AuditoriaEscrituraService,
   ) {}
+
+  async registrarEntrada(
+    contexto: ContextoTienda,
+    productoId: number,
+    tipo: 'APERTURA' | 'ENTRADA',
+    clave: string | undefined,
+    datos: RegistrarEntradaInventarioDto,
+  ) {
+    await this.permisos.autorizar(contexto, recepcion);
+    const { tenantId, usuarioId, membresiaId: responsableId } = contexto;
+    const motivo = datos.motivo.trim();
+    const referenciaExterna = datos.referenciaExterna?.trim() ?? null;
+    const lotes = datos.lotes.map(
+      ({ codigo, cantidad, costoUnitario, vencimiento }) => {
+        const fecha =
+          vencimiento === undefined ? undefined : new Date(vencimiento);
+        if (fecha && !Number.isFinite(fecha.getTime())) {
+          throw new BadRequestException('Vencimiento inválido');
+        }
+        return {
+          codigo: codigo.trim(),
+          cantidad,
+          costoUnitario: new Prisma.Decimal(costoUnitario),
+          vencimiento: fecha,
+        };
+      },
+    );
+
+    try {
+      return await this.idempotencia.ejecutar(
+        {
+          tenantId,
+          usuarioId,
+          operacion:
+            tipo === 'APERTURA' ? 'inventario.apertura' : 'inventario.entrada',
+          clave,
+          datos: {
+            productoId,
+            motivo,
+            referenciaExterna,
+            lotes: lotes.map((lote) => ({
+              ...lote,
+              costoUnitario: lote.costoUnitario.toFixed(4),
+              vencimiento: lote.vencimiento?.toISOString() ?? null,
+            })),
+          },
+        },
+        async (tx, claveRecurso) => {
+          await this.permisos.autorizar(contexto, recepcion, tx);
+          const correlacionId = randomUUID();
+          const { entrada, lotes: lotesCreados } =
+            await this.inventario.registrarEntrada(
+              tx,
+              { tenantId, responsableId, clave: claveRecurso, correlacionId },
+              productoId,
+              tipo,
+              motivo,
+              lotes,
+              {
+                referenciaExterna: referenciaExterna ?? undefined,
+                exigirVigencia: true,
+              },
+            );
+          await this.auditoria.registrar(tx, contexto, {
+            accion: ACCIONES_AUDITORIA.INVENTARIO_ENTRADA,
+            entidadTipo: 'EntradaInventario',
+            entidadId: entrada.id,
+            motivo,
+            correlacionId,
+            productoIds: [productoId],
+            datos: {
+              tipo,
+              referenciaExterna,
+              loteIds: lotesCreados.map(({ id }) => id),
+            },
+          });
+          return {
+            recursoTipo: 'EntradaInventario',
+            recursoId: entrada.id,
+          };
+        },
+      );
+    } catch (error) {
+      conflictoUnicidad(error, 'La entrada de inventario ya está registrada');
+    }
+  }
 
   listarProductos(
     contexto: ContextoTienda,

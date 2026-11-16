@@ -1,7 +1,10 @@
 import {
+  Body,
   Controller,
   Get,
+  Headers,
   Param,
+  Post,
   Query,
   UsePipes,
   ValidationPipe,
@@ -14,6 +17,7 @@ import {
   MovimientosInventarioDto,
   ProductosInventarioDto,
 } from './dto/consulta-inventario.dto';
+import { RegistrarEntradaInventarioDto } from './dto/entrada-inventario.dto';
 import { InventarioService } from './inventario.service';
 
 @Controller('inventario')
@@ -54,5 +58,39 @@ export class InventarioController {
     @Query() filtros: MovimientosInventarioDto,
   ) {
     return this.inventario.listarMovimientos(contexto, productoId, filtros);
+  }
+
+  @Post('productos/:productoId/apertura')
+  @RequierePermisoTienda('store.inventory.receive')
+  abrirLotes(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoParamDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @Body() datos: RegistrarEntradaInventarioDto,
+  ) {
+    return this.inventario.registrarEntrada(
+      contexto,
+      productoId,
+      'APERTURA',
+      clave,
+      datos,
+    );
+  }
+
+  @Post('productos/:productoId/entradas')
+  @RequierePermisoTienda('store.inventory.receive')
+  recibirLotes(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoParamDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @Body() datos: RegistrarEntradaInventarioDto,
+  ) {
+    return this.inventario.registrarEntrada(
+      contexto,
+      productoId,
+      'ENTRADA',
+      clave,
+      datos,
+    );
   }
 }

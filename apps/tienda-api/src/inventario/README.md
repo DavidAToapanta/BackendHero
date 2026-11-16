@@ -1,4 +1,6 @@
-# A08 · Consultas de inventario
+# Inventario de Tienda
+
+## A08 · Consultas de inventario
 
 Usa Bearer de Tienda. Todas las rutas exigen `store.inventory.read`, toman
 el tenant de la sesión y devuelven `{ data, meta: { pagina, limite, total, paginas } }`.
@@ -38,3 +40,56 @@ un producto ajeno o inexistente, `404`.
 El [contrato de salida transaccional en la librería](../../../../libs/inventario/README.md#k03--salida-de-venta)
 indica cómo validar toda la selección, guardar las asignaciones y retirar
 por detalle con la misma transacción. B06 integra ese flujo en su coordinador.
+
+## A09 · Aperturas y entradas
+
+Ambas rutas requieren `Authorization: Bearer <token>`, el permiso
+`store.inventory.receive`, `Content-Type: application/json` y una cabecera
+`Idempotency-Key`. El responsable es la membresía autenticada.
+
+**Apertura con cinco unidades físicas en `LEGACY`**
+
+```http
+POST /inventario/productos/42/apertura
+Authorization: Bearer <token>
+Content-Type: application/json
+Idempotency-Key: apertura-42-acta-01
+
+{
+  "motivo": "Conciliación de inventario",
+  "referenciaExterna": "ACTA-01",
+  "lotes": [{ "codigo": "INICIAL", "cantidad": 5, "costoUnitario": "1.2345" }]
+}
+```
+
+La apertura mantiene las cinco unidades y cambia el modo a `LOTES`. Exige un
+costo conciliado para cada lote y cero unidades reservadas. Para abrir un
+producto con saldo cero, enviar `{"motivo":"Alta de inventario","lotes":[]}`.
+La apertura desde cero deja una entrada auditada sin movimientos.
+
+**Recepción para un producto en `LOTES`**
+
+```http
+POST /inventario/productos/42/entradas
+Authorization: Bearer <token>
+Content-Type: application/json
+Idempotency-Key: recepcion-42-factura-01
+
+{
+  "motivo": "Reposición",
+  "referenciaExterna": "FACTURA-01",
+  "lotes": [{ "codigo": "REPOSICION-01", "cantidad": 3, "costoUnitario": "1.2500", "vencimiento": "2035-07-30T23:59:59-05:00" }]
+}
+```
+
+La referencia y el vencimiento son opcionales. La recepción exige al menos un
+lote y solo acepta vencimientos futuros. En una apertura se pueden conciliar
+lotes vencidos como parte del stock físico. B06 consulta los lotes vigentes
+en `GET /inventario/productos/42/lotes` y confirma disponibilidad dentro de
+la transacción de venta con K03.
+
+Ambas rutas devuelven `201` con `{"recursoTipo":"EntradaInventario","recursoId":123}`.
+Para reintentar, conservar la clave y el orden de los lotes. B01 devuelve la
+misma referencia ante datos equivalentes y `409` si cambia el contenido. La
+entrada, los lotes, el stock, los movimientos y la auditoría se guardan en la
+misma transacción. Los movimientos y la auditoría comparten una correlación.
