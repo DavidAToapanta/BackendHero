@@ -7,6 +7,11 @@ export type OperacionInventario = {
   correlacionId: string;
 };
 
+export type ResultadoDevolucionInventario = {
+  movimientoDevolucionId: number;
+  movimientoBajaId: number | null;
+};
+
 export type LoteEntrada = {
   codigo: string;
   cantidad: number;
