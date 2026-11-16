@@ -15,9 +15,12 @@ import { RequierePermisoTienda } from '../accesos/accesos.module';
 import { AuditoriaEscrituraService } from '../auditoria/auditoria-escritura';
 import { ContextoTiendaActual, type ContextoTienda } from '../auth';
 import { CobrosOperacionService } from './cobros-operacion.service';
+import { CorreccionesCobroService } from './correcciones-cobro.service';
 import {
   CobroParamDto,
   ListaCobrosDto,
+  MotivoCorreccionCobroDto,
+  ReembolsarCobroDto,
   RegistrarCobroDto,
 } from './dto/operacion-cobro.dto';
 
@@ -34,6 +37,7 @@ export class CobrosController {
     private readonly cobros: CobrosOperacionService,
     private readonly auditoria: AuditoriaEscrituraService,
     private readonly permisos: PermisosService,
+    private readonly correcciones: CorreccionesCobroService,
   ) {}
 
   @Post()
@@ -60,6 +64,52 @@ export class CobrosController {
     @Query() filtros: ListaCobrosDto,
   ) {
     return this.cobros.listar(contexto.tenantId, filtros);
+  }
+
+  @Post(':id/reversion')
+  @RequierePermisoTienda('store.payments.reverse')
+  revertir(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: CobroParamDto,
+    @Body() { motivo }: MotivoCorreccionCobroDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    return this.correcciones.revertirCobro(
+      this.auditoria.paraOperacion(contexto, randomUUID()),
+      id,
+      motivo,
+      clave,
+    );
+  }
+
+  @Post('aplicaciones/:id/reversion')
+  @RequierePermisoTienda('store.payments.reverse', 'store.receivables.adjust')
+  corregirAplicacion(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: CobroParamDto,
+    @Body() { motivo }: MotivoCorreccionCobroDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    return this.correcciones.corregirAplicacion(
+      this.auditoria.paraOperacion(contexto, randomUUID()),
+      id,
+      motivo,
+      clave,
+    );
+  }
+
+  @Post('reembolsos')
+  @RequierePermisoTienda('store.payments.refund')
+  reembolsar(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Body() datos: ReembolsarCobroDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    return this.correcciones.reembolsar(
+      this.auditoria.paraOperacion(contexto, randomUUID()),
+      datos,
+      clave,
+    );
   }
 
   @Get(':id')

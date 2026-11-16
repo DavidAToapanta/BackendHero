@@ -8,6 +8,7 @@ import { CuentasModule } from '../cartera/cuentas.module';
 import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { CobrosOperacionService } from './cobros-operacion.service';
 import { CobrosController } from './cobros.controller';
+import { CorreccionesCobroService } from './correcciones-cobro.service';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { CobrosController } from './cobros.controller';
     IdempotenciaModule,
   ],
   controllers: [CobrosController],
-  providers: [CobrosOperacionService],
-  exports: [CobrosOperacionService],
+  providers: [CobrosOperacionService, CorreccionesCobroService],
+  exports: [CobrosOperacionService, CorreccionesCobroService],
 })
 export class CobrosModule {}

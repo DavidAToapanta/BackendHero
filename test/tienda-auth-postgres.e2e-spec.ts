@@ -2723,7 +2723,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
   }, 25000);
 
-  it('confirma crédito, consulta cartera y concilia abonos concurrentes', async () => {
+  it('concilia crédito, abonos concurrentes, reversiones y reembolsos', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
@@ -2970,6 +2970,103 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       saldoVencido: '0',
       saldoPendiente: '0',
     });
+    const operacionCobro = (
+      ruta: string,
+      datos: object,
+      clave = randomUUID(),
+      operador = owner,
+    ): request.Test =>
+      http()
+        .post('/cobros/' + ruta)
+        .auth(operador.accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send(datos);
+    const abono60 = (
+      abonos.find(({ status }) => status === 201)!.body as { recursoId: number }
+    ).recursoId;
+    const motivo = { motivo: 'Cobro registrado por error' };
+    const reversarAbono = abono60 + '/reversion';
+    await operacionCobro(reversarAbono, motivo, randomUUID(), cajero).expect(
+      403,
+    );
+    const claveReversion = randomUUID();
+    const reversado = await operacionCobro(
+      reversarAbono,
+      motivo,
+      claveReversion,
+    ).expect(201);
+    await operacionCobro(reversarAbono, motivo, claveReversion).expect(
+      201,
+      reversado.body as object,
+    );
+    await operacionCobro(reversarAbono, motivo).expect(409);
+    expect((await cartera('/' + cuenta.id).expect(200)).body).toMatchObject({
+      estado: 'ABIERTA',
+      saldo: '60',
+      importeExigible: '80',
+    });
+
+    const inicial = aplicaciones[0];
+    const corregirInicial = `aplicaciones/${inicial.id}/reversion`;
+    const reembolso = {
+      aplicacionId: inicial.id,
+      motivo: 'Dinero devuelto',
+      metodo: 'EFECTIVO',
+      turnoId,
+      monto: '5',
+    };
+    await operacionCobro('reembolsos', reembolso).expect(409);
+    await operacionCobro(
+      corregirInicial,
+      motivo,
+      randomUUID(),
+      ownerAjeno,
+    ).expect(404);
+    await operacionCobro(corregirInicial, { motivo: '   ' }).expect(400);
+    await operacionCobro(corregirInicial, motivo).expect(201);
+    await operacionCobro(corregirInicial, motivo).expect(409);
+    expect((await cartera('/' + cuenta.id).expect(200)).body).toMatchObject({
+      estado: 'ABIERTA',
+      saldo: '80',
+      importeFinanciadoInicial: '80',
+      importeExigible: '100',
+      ajusteCuentaPorCobrar_cuenta: [
+        { tipo: 'CORRECCION_PAGO_INICIAL', deltaImporte: '20' },
+      ],
+    });
+    await operacionCobro('reembolsos', { ...reembolso, monto: '21' }).expect(
+      409,
+    );
+    const claveReembolso = randomUUID();
+    const devuelto = await operacionCobro(
+      'reembolsos',
+      reembolso,
+      claveReembolso,
+    ).expect(201);
+    await operacionCobro('reembolsos', reembolso, claveReembolso).expect(
+      201,
+      devuelto.body as object,
+    );
+    await operacionCobro('reembolsos', { ...reembolso, monto: '16' }).expect(
+      409,
+    );
+    const { recursoId: reembolsoId } = devuelto.body as { recursoId: number };
+    expect(
+      await prisma.movimientoCaja.count({
+        where: { tenantId, turnoId, reembolsoId, tipo: 'SALIDA', monto: 5 },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.movimientoCaja.count({ where: { tenantId, turnoId } }),
+    ).toBe(2);
+    expect(
+      (
+        await http()
+          .get(`/cobros/${inicial.cobroId}`)
+          .auth(owner.accessToken, bearer)
+          .expect(200)
+      ).body,
+    ).toMatchObject({ estado: 'CONFIRMADO', montoDisponible: '15' });
     expect(await prisma.venta.count({ where: { tenantId } })).toBe(2);
   });
 

@@ -8,6 +8,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
@@ -73,4 +74,36 @@ export class ListaCobrosDto {
   @Min(1)
   @Max(100)
   limite?: number;
+}
+
+export class MotivoCorreccionCobroDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  motivo: string;
+}
+
+export class ReembolsarCobroDto extends MotivoCorreccionCobroDto {
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  aplicacionId: number;
+
+  @IsEnum(MetodoCobro)
+  metodo: MetodoCobro;
+
+  @IsString()
+  @Matches(/^\d{1,16}(?:\.\d{1,2})?$/)
+  monto: string;
+
+  @ValidateIf(presente)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  turnoId?: number;
+
+  @ValidateIf(presente)
+  @IsString()
+  @MaxLength(200)
+  referencia?: string;
 }
