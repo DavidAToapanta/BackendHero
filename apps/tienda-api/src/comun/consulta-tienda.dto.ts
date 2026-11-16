@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsInt, Max, Min, ValidateIf } from 'class-validator';
+import { IsInt, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { MAX_PRISMA_INT } from '../auth/auth.types';
 
 export const presente = (_dto: object, valor: unknown) => valor !== undefined;
@@ -25,6 +25,14 @@ export class PaginaTiendaDto {
   @Min(1)
   @Max(50)
   limite?: number;
+}
+
+export class PeriodoComercialDto {
+  @IsString()
+  desde: string;
+
+  @IsString()
+  hasta: string;
 }
 
 export class ProductoParamDto {

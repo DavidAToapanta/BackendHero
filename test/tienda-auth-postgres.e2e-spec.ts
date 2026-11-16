@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   InventarioLotesService,
@@ -23,6 +24,7 @@ import {
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import readExcelFile from 'read-excel-file/node';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule as GymAppModule } from '../apps/gym-api/src/app.module';
@@ -3626,6 +3628,112 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       perdidasInventario: '1',
       resultadoOperativoEstimado: '3.2',
     });
+    const descargar = (ruta: string, token = owner.accessToken): request.Test =>
+      http()
+        .get('/exportaciones/' + ruta)
+        .auth(token, bearer)
+        .buffer(true)
+        .parse((respuesta, terminar) => {
+          const partes: Buffer[] = [];
+          respuesta.on('data', (parte: Buffer) => partes.push(parte));
+          respuesta.on('end', () => terminar(null, Buffer.concat(partes)));
+          respuesta.on('error', terminar);
+        });
+    const periodoExportar = {
+      desde: filtrosAnalisis.desde,
+      hasta: filtrosAnalisis.hasta,
+    };
+    const exportadorSolo = await crearPerfilComercial(
+      tenantId,
+      'EXPORTA_SOLO',
+      ['store.reports.export'],
+      'EMPLEADO',
+    );
+    const lectorAnalisis = await crearPerfilComercial(
+      tenantId,
+      'LEE_ANALISIS',
+      ['store.sales.analytics.read'],
+      'EMPLEADO',
+    );
+    await http()
+      .get('/exportaciones/ventas/xlsx')
+      .query(periodoExportar)
+      .expect(401);
+    await descargar('ventas/csv').query(periodoExportar).expect(400);
+    await descargar('ventas/xlsx', exportadorSolo.accessToken)
+      .query(periodoExportar)
+      .expect(403);
+    await descargar('ventas/pdf', lectorAnalisis.accessToken)
+      .query(periodoExportar)
+      .expect(403);
+    await descargar(`caja/turnos/${turnoVendido}/pdf`).expect(409);
+    const descargasPrevias = await Promise.all([
+      descargar('ventas/xlsx')
+        .query(filtrosAnalisis)
+        .expect(200)
+        .expect('Content-Type', /spreadsheetml/)
+        .expect('Content-Disposition', 'attachment; filename="ventas.xlsx"'),
+      descargar('ventas/pdf')
+        .query(filtrosAnalisis)
+        .expect(200)
+        .expect('Content-Type', /application\/pdf/),
+      descargar('finanzas/xlsx')
+        .query(periodoExportar)
+        .expect(200)
+        .expect('Content-Type', /spreadsheetml/),
+      descargar('finanzas/pdf')
+        .query(periodoExportar)
+        .expect(200)
+        .expect('Content-Type', /application\/pdf/),
+    ]);
+    const [xlsxVentas, pdfVentas, xlsxFinanzas, pdfFinanzas] =
+      descargasPrevias.map(({ body }) => body as Buffer);
+    const verificarPdf = (bytes: Buffer, titulo: string, contenido: RegExp) => {
+      expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(bytes.subarray(-32).toString()).toContain('%%EOF');
+      expect(bytes.includes(Buffer.from(titulo))).toBe(true);
+      // PDF.js carga un worker ESM. Se abre en Node fuera de la VM de Jest.
+      const lectura = spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          [
+            "import { readFileSync } from 'node:fs';",
+            "import { PDFParse } from 'pdf-parse';",
+            'const lector = new PDFParse({ data: readFileSync(0) });',
+            'try { process.stdout.write((await lector.getText()).text); }',
+            'finally { await lector.destroy(); }',
+          ].join('\n'),
+        ],
+        { input: bytes, encoding: 'utf8', timeout: 5000, windowsHide: true },
+      );
+      if (lectura.error) throw lectura.error;
+      if (lectura.status !== 0) throw new Error(lectura.stderr);
+      expect(lectura.stdout).toContain(titulo);
+      expect(lectura.stdout).toMatch(contenido);
+    };
+    verificarPdf(pdfVentas, 'Reporte de ventas', /Ventas netas[^\n]*5\.2/);
+    verificarPdf(
+      pdfFinanzas,
+      'Reporte de finanzas',
+      /Resultado operativo estimado[^\n]*3\.2/,
+    );
+    const hojasVentas = await readExcelFile(xlsxVentas);
+    expect(
+      hojasVentas.find(({ sheet }) => sheet === 'Filtros')?.data,
+    ).toContainEqual(['Producto', productoId]);
+    expect(
+      hojasVentas.find(({ sheet }) => sheet === 'Resumen')?.data,
+    ).toContainEqual(['Ventas netas', 5.2]);
+    const hojasFinanzas = await readExcelFile(xlsxFinanzas);
+    expect(
+      hojasFinanzas.find(({ sheet }) => sheet === 'Finanzas')?.data,
+    ).toContainEqual(['Resultado operativo estimado', 3.2]);
+    expect(await prisma.venta.count({ where: { tenantId } })).toBe(1);
+    expect(await prisma.reembolso.count({ where: { tenantId, ventaId } })).toBe(
+      2,
+    );
     const periodoPanel = {
       desde: filtrosAnalisis.desde,
       hasta: filtrosAnalisis.hasta,
@@ -3785,6 +3893,40 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       efectivoEsperado: new Prisma.Decimal('5.00'),
       diferencia: new Prisma.Decimal(0),
     });
+    const exportadorCaja = await crearPerfilComercial(
+      tenantId,
+      'EXPORTA_CAJA',
+      ['store.cash.read', 'store.reports.export'],
+      'EMPLEADO',
+    );
+    const ajenoExporter = await crearPerfilComercial(
+      tenantAjeno,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    await descargar(
+      `caja/turnos/${turnoVendido}/xlsx`,
+      exportadorCaja.accessToken,
+    ).expect(403);
+    await descargar(
+      `caja/turnos/${turnoVendido}/xlsx`,
+      ajenoExporter.accessToken,
+    ).expect(404);
+    const cierreXlsx = await descargar(`caja/turnos/${turnoVendido}/xlsx`)
+      .expect(200)
+      .expect('Content-Type', /spreadsheetml/);
+    const cierrePdf = await descargar(`caja/turnos/${turnoVendido}/pdf`)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
+    verificarPdf(
+      cierrePdf.body as Buffer,
+      'Cierre de caja',
+      /Efectivo contado[^\n]*5/,
+    );
+    const [hojaCierre] = await readExcelFile(cierreXlsx.body as Buffer);
+    expect(hojaCierre.data).toContainEqual(['Efectivo contado', 5]);
+    expect(hojaCierre.data).toContainEqual(['Diferencia', 0]);
   }, 25000);
 
   it('concilia crédito, abonos concurrentes, reversiones y reembolsos', async () => {

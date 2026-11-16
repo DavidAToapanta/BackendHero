@@ -159,6 +159,7 @@ async function cargarLote(
     efectivo = 500,
     perdida = 0,
     gasto = 0;
+  const anuladas = Number(inicio <= 1 && inicio + ventas > 1);
   const pagos = [];
   for (let indice = inicio; indice < inicio + ventas; indice++) {
     if (indice === 1) continue;
@@ -287,7 +288,7 @@ async function cargarLote(
     });
     gasto = 150;
     deuda = 270;
-    perdida = 100;
+    perdida += 100;
   }
   await tx.aplicacionCobro.createMany({
     data: pagos.map(({ venta, monto, claveIdempotencia }) => ({
@@ -328,14 +329,12 @@ async function cargarLote(
   });
   return {
     filas: ventas,
-    ventaNeta:
-      750 * (ventas - Number(inicio <= 1 && inicio + ventas > 1)) -
-      (inicio === 0 ? 230 : 0),
+    ventaNeta: 750 * (ventas - anuladas) - (inicio === 0 ? 230 : 0),
     cobrado,
     deuda,
-    perdida,
+    perdida: perdida + anuladas * articulos.length * 100,
     gasto,
-    anuladas: Number(inicio <= 1 && inicio + ventas > 1),
+    anuladas,
   };
 }
 

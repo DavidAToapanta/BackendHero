@@ -156,6 +156,16 @@ reales, verificar filas y conciliar los totales del periodo con el archivo
 de esperados. Para esta comparación, las exportaciones consultan el historial
 previo a la carga para mantener fijos sus totales.
 
+B17 incluye el [contrato ejecutable](../test/carga/contrato-b17.mjs) para
+Finanzas y las descargas de los últimos 7 y 30 días del historial preparado.
+Genera de nuevo `.tmp/a14-esperados.json` con el SHA integrado para incluir
+el costo del inventario sin retorno en las anulaciones. `A14_HASTA` debe
+equivaler al inicio de un día comercial en Guayaquil.
+
+```powershell
+$env:A14_CONTRATO = 'test/carga/contrato-b17.mjs'
+```
+
 Con el mismo contrato ejecutar `base`, `excel` y `pdf`, restaurando la base
 entre corridas. El banco añade 3 reportes/min, y por cada modo de descarga
 lanza dos archivos típicos simultáneos y luego dos grandes simultáneos. Una

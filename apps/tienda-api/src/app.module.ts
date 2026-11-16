@@ -17,6 +17,7 @@ import { CarteraModule } from './cartera/cartera.module';
 import { PanelModule } from './panel/panel.module';
 import { FinanzasModule } from './finanzas/finanzas.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
+import { ExportacionesModule } from './exportaciones/exportaciones.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AuditoriaModule } from './auditoria/auditoria.module';
     PanelModule,
     FinanzasModule,
     AuditoriaModule,
+    ExportacionesModule,
   ],
 })
 export class AppModule {}

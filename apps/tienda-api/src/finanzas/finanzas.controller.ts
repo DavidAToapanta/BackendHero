@@ -10,21 +10,13 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { IsString } from 'class-validator';
 import { RequierePermisoTienda } from '../accesos/accesos.module';
 import { ContextoTiendaActual, type ContextoTienda } from '../auth';
+import { PeriodoComercialDto } from '../comun/consulta-tienda.dto';
 import { ConsultaFinanzasService } from './consulta-finanzas.service';
 import { FinanzasService } from './finanzas.service';
 import { CreateFinanzaDto } from './dto/create-finanza.dto';
 import { UpdateFinanzaDto } from './dto/update-finanza.dto';
-
-class PeriodoFinanzasDto {
-  @IsString()
-  desde: string;
-
-  @IsString()
-  hasta: string;
-}
 
 @Controller('finanzas')
 export class FinanzasController {
@@ -54,7 +46,7 @@ export class FinanzasController {
   )
   resumen(
     @ContextoTiendaActual() contexto: ContextoTienda,
-    @Query() periodo: PeriodoFinanzasDto,
+    @Query() periodo: PeriodoComercialDto,
   ) {
     return this.consulta.consultar(contexto.tenantId, periodo);
   }
