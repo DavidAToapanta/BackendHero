@@ -50,3 +50,41 @@ configura `DATABASE_URL` para esa base y ejecuta:
 $env:INVENTARIO_POSTGRES_E2E = '1'
 npm.cmd run test:e2e -- --runInBand test/inventario-postgres.e2e-spec.ts
 ```
+
+## K03 · Retorno físico de una venta
+
+B10 y B11 usan la misma transacción `ReadCommitted` del coordinador. Si la
+operación también bloquea cobros, conserva el orden de Finanzas de cobro a
+venta. Antes de guardar la cabecera y los detalles de devolución, bloquea
+la venta original con `bloquearVentaParaDevolucion(tx, tenantId, ventaId)`.
+Dentro de ese bloqueo, guarda la cabecera `APROBADA` y un detalle por cada
+asignación que retorna físicamente. Aplica los detalles en orden de
+`productoId` ascendente usando la misma clave y correlación de operación.
+
+```ts
+await inventarioLotes.bloquearVentaParaDevolucion(tx, operacion.tenantId, ventaId);
+// El coordinador guarda aquí la cabecera aprobada y los detalles conciliados.
+for (const detalle of detallesOrdenadosPorProductoId) {
+  const { movimientoDevolucionId, movimientoBajaId } =
+    await inventarioLotes.aplicarDevolucion(tx, operacion, detalle.id);
+  // El coordinador usa los IDs para la auditoría de la operación.
+}
+```
+
+- `REINTEGRO_APTO` aumenta el stock físico del lote original y del producto.
+  Devuelve el ID de `DEVOLUCION` y `movimientoBajaId: null`. Si el lote ya
+  venció, el coordinador decide si registra `BAJA_NO_APTO` de forma explícita.
+- `BAJA_NO_APTO` registra `DEVOLUCION` y `BAJA` con el mismo detalle y
+  correlación. Devuelve ambos IDs y conserva el stock físico y las reservas.
+  Los dos movimientos conservan el costo original. B15 suma el costo de la
+  `BAJA` una sola vez con `consultarTotalPerdidas`.
+- Un reintento del mismo detalle devuelve los IDs existentes y conserva el
+  saldo. `404` indica una venta o un detalle inexistente o de otro tenant.
+  `409` indica estado inválido, salida o historial inconsistente, exceso de
+  cantidad o un lote vencido para reintegro apto. Propagar el error para
+  revertir también los cambios del coordinador.
+
+En B11 se calculan las unidades pendientes tras devoluciones anteriores.
+Cuando la anulación carece de retorno físico, se omite `aplicarDevolucion`.
+Los casos ejecutables de A11 están en la misma suite de PostgreSQL enlazada
+arriba.

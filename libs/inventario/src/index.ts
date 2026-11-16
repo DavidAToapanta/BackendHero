@@ -5,6 +5,7 @@ export { ReservasInventarioService } from './reservas-inventario.service';
 export type {
   LoteEntrada,
   OperacionInventario,
+  ResultadoDevolucionInventario,
   SeleccionLote,
   LineaSalidaVenta,
   LineaSalidaValidada,
