@@ -24,8 +24,10 @@ type OrigenSalida =
   | { compraLegacyId: number }
   | { asignacionVentaId: number; reservaId?: number };
 
+const maxEnteroPrisma = 2147483647;
 const enteroPositivo = (valor: number) =>
-  Number.isInteger(valor) && valor > 0 && valor <= 2147483647;
+  Number.isInteger(valor) && valor > 0 && valor <= maxEnteroPrisma;
+const limiteCosto = '100000000000000';
 
 @Injectable()
 export class InventarioLotesService {
@@ -38,6 +40,7 @@ export class InventarioLotesService {
     tipo: 'APERTURA' | 'ENTRADA',
     motivo: string,
     lotes: LoteEntrada[],
+    opciones: { referenciaExterna?: string; exigirVigencia?: boolean } = {},
   ) {
     const { tenantId } = operacion;
     const producto = await this.inventario.bloquearProducto(
@@ -56,11 +59,11 @@ export class InventarioLotesService {
       lotes.some(
         (lote) =>
           !lote.codigo.trim() ||
-          !Number.isInteger(lote.cantidad) ||
-          lote.cantidad <= 0 ||
+          !enteroPositivo(lote.cantidad) ||
           !lote.costoUnitario.isFinite() ||
           lote.costoUnitario.isNegative() ||
           lote.costoUnitario.decimalPlaces() > 4 ||
+          lote.costoUnitario.mul(lote.cantidad).gte(limiteCosto) ||
           (lote.vencimiento !== undefined &&
             !Number.isFinite(lote.vencimiento.getTime())),
       )
@@ -81,12 +84,24 @@ export class InventarioLotesService {
     if (!apertura && total === 0) {
       throw new BadRequestException('La entrada debe incluir al menos un lote');
     }
+    if (!apertura && producto.stock + total > maxEnteroPrisma) {
+      throw new BadRequestException('El stock resultante excede el límite');
+    }
+    if (!apertura && opciones.exigirVigencia) {
+      const ahora = new Date();
+      if (
+        lotes.some(({ vencimiento }) => vencimiento && vencimiento <= ahora)
+      ) {
+        throw new BadRequestException('La entrada contiene un lote vencido');
+      }
+    }
 
     const entrada = await tx.entradaInventario.create({
       data: {
         tenantId,
         responsableId: operacion.responsableId,
         motivo: motivo.trim(),
+        referenciaExterna: opciones.referenciaExterna,
         claveIdempotencia: operacion.clave,
       },
     });
@@ -118,6 +133,7 @@ export class InventarioLotesService {
           deltaReservado: 0,
           costoUnitario: lote.costoUnitario,
           costoTotal: lote.costoUnitario.mul(lote.cantidad),
+          motivo: entrada.motivo,
         },
         `lote:${creado.id}`,
       );
