@@ -48,6 +48,7 @@ import type {
 } from '../apps/tienda-api/src/auth/auth.types';
 import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
 import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
+import { reservarPedidoEnsayo } from './fixtures/tienda';
 
 const suite =
   process.env.TIENDA_AUTH_POSTGRES_E2E === '1' ? describe : describe.skip;
@@ -2395,6 +2396,180 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     );
   }, 20000);
 
+  it('A13: aísla catálogo, lotes, cajas y clientes sin alterar los datos de otra tienda', async () => {
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const requeridos = [
+      'store.catalog.read',
+      'store.catalog.write',
+      'store.inventory.read',
+      'store.inventory.loss',
+      'store.cash.read',
+      'store.cash.manage',
+      'store.customers.read',
+      'store.customers.write',
+    ];
+    const lotesService = app.get(InventarioLotesService);
+    async function prepararTienda() {
+      const { id: tenantId } = await crearNegocio({
+        autorizacionVersion: 'PERMISOS',
+      });
+      const { usuario, credenciales } = await registrarPersonal();
+      const membresia = await vincularPersonal(usuario.id, tenantId);
+      const rol = await asignarRol(tenantId, membresia.id);
+      await prisma.rolPermiso.createMany({
+        data: permisos
+          .filter(({ codigo }) => requeridos.includes(codigo))
+          .map(({ id: permisoId }) => ({ tenantId, rolId: rol.id, permisoId })),
+      });
+      const datos = await prisma.$transaction(async (tx) => {
+        const producto = await tx.producto.create({
+          data: {
+            tenantId,
+            nombre: 'Producto A13',
+            sku: 'A13',
+            precio: '5.20',
+            stock: 7,
+            estado: true,
+          },
+        });
+        const operacion = {
+          tenantId,
+          responsableId: membresia.id,
+          clave: randomUUID(),
+          correlacionId: randomUUID(),
+        };
+        const costoUnitario = new Prisma.Decimal('1.0000');
+        const {
+          lotes: [vigente, vencido, agotado],
+        } = await lotesService.registrarEntrada(
+          tx,
+          operacion,
+          producto.id,
+          'APERTURA',
+          'Conciliación A13',
+          [
+            { codigo: 'VIGENTE', cantidad: 4, costoUnitario },
+            {
+              codigo: 'VENCIDO',
+              cantidad: 2,
+              costoUnitario,
+              vencimiento: new Date('2020-01-01T00:00:00Z'),
+            },
+            { codigo: 'AGOTADO', cantidad: 1, costoUnitario },
+          ],
+        );
+        await lotesService.registrarBaja(
+          tx,
+          { ...operacion, clave: randomUUID() },
+          producto.id,
+          agotado.id,
+          1,
+          'Daño de ensayo',
+        );
+        const { pedido } = await reservarPedidoEnsayo(
+          tx,
+          app.get(ReservasInventarioService),
+          { ...operacion, clave: randomUUID() },
+          producto,
+          2,
+        );
+        const caja = await tx.caja.create({
+          data: { tenantId, codigo: 'A13', nombre: 'Caja A13' },
+        });
+        return {
+          productoId: producto.id,
+          vigente,
+          vencido,
+          agotado,
+          cajaId: caja.id,
+          clienteId: pedido.clienteComercialId,
+        };
+      });
+      return { tenantId, ...(await loginTienda(credenciales)), ...datos };
+    }
+    const propia = await prepararTienda();
+    const ajena = await prepararTienda();
+    const bearer = { type: 'bearer' } as const;
+    const leer = (ruta: string, token = propia.accessToken) =>
+      http().get(ruta).auth(token, bearer);
+    const inventario = '/inventario/productos';
+    const productoAjeno = `/catalogo/productos/${ajena.productoId}`;
+    const cajaAjena = `/caja/${ajena.cajaId}`;
+    const clienteAjeno = `/clientes/${ajena.clienteId}`;
+    const lotesAjena = `${inventario}/${ajena.productoId}/lotes`;
+    const protegidos = [productoAjeno, cajaAjena, clienteAjeno, lotesAjena];
+    const leerDatosAjenos = async () =>
+      Promise.all(
+        protegidos.map(
+          async (ruta) =>
+            (await leer(ruta, ajena.accessToken).expect(200)).body as unknown,
+        ),
+      );
+    const antes = await leerDatosAjenos();
+    for (const ruta of protegidos) await leer(ruta).expect(404);
+
+    const lista = await leer(inventario).query({ q: 'A13' }).expect(200);
+    expect(lista.body).toMatchObject({
+      data: [
+        {
+          productoId: propia.productoId,
+          stockFisico: 6,
+          stockReservado: 2,
+          stockDisponible: 2,
+        },
+      ],
+      meta: { total: 1 },
+    });
+    const lotes = await leer(`${inventario}/${propia.productoId}/lotes`)
+      .query({ soloVendibles: false })
+      .expect(200);
+    expect(lotes.body).toMatchObject({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          loteId: propia.vigente.id,
+          cantidadDisponible: 2,
+        }),
+        expect.objectContaining({
+          loteId: propia.vencido.id,
+          cantidadDisponible: 0,
+        }),
+        expect.objectContaining({
+          loteId: propia.agotado.id,
+          cantidadDisponible: 0,
+        }),
+      ]) as unknown,
+      meta: { total: 3 },
+    });
+
+    for (const [ruta, datos] of [
+      [productoAjeno, { precio: '99.00' }],
+      [cajaAjena, { nombre: 'Otra caja' }],
+      [clienteAjeno, { nombres: 'Otro comprador' }],
+    ] as const) {
+      await http()
+        .patch(ruta)
+        .auth(propia.accessToken, bearer)
+        .send(datos)
+        .expect(404);
+    }
+    for (const productoId of [propia.productoId, ajena.productoId]) {
+      await http()
+        .post(`${inventario}/${productoId}/lotes/${ajena.vigente.id}/bajas`)
+        .auth(propia.accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({ cantidad: 1, motivo: 'Ensayo de aislamiento A13' })
+        .expect(404);
+    }
+    expect(await leerDatosAjenos()).toEqual(antes);
+    expect(
+      await prisma.movimientoInventario.count({
+        where: { tenantId: ajena.tenantId, tipo: 'BAJA' },
+      }),
+    ).toBe(1);
+  }, 20000);
+
   it('vende, devuelve mercancía y anula el remanente sin duplicar stock', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
@@ -2614,39 +2789,16 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
           },
         ],
       );
-      const cliente = await tx.clienteComercial.create({
-        data: { tenantId, nombres: 'Comprador' },
-      });
-      const clave = randomUUID();
-      const pedido = await tx.pedido.create({
-        data: {
-          tenantId,
-          clienteComercialId: cliente.id,
-          numero: clave,
-          claveIdempotencia: clave,
-          confirmadoAt: new Date(ahora),
-          reservaHasta: new Date(ahora + 600_000),
-          subtotal: '10.40',
-          total: '10.40',
-        },
-      });
-      const linea = await tx.detallePedido.create({
-        data: {
-          tenantId,
-          pedidoId: pedido.id,
-          productoId,
-          nombreProducto: producto.nombre,
-          cantidad: 2,
-          precioUnitario: '5.20',
-          subtotal: '10.40',
-          total: '10.40',
-        },
-      });
-      await reservas.reservar(
+      await reservarPedidoEnsayo(
         tx,
+        reservas,
         { ...operacion, clave: randomUUID() },
-        pedido.id,
-        linea.id,
+        {
+          id: productoId,
+          nombre: producto.nombre,
+          precio: new Prisma.Decimal(producto.precio),
+        },
+        2,
       );
     });
     await http()
@@ -2978,6 +3130,17 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       ],
     });
     expect(await prisma.cobro.count({ where: { tenantId } })).toBe(1);
+    expect(
+      await prisma.cuentaPorCobrar.count({ where: { tenantId, ventaId } }),
+    ).toBe(0);
+    await expect(
+      lotes.consultarTotalPerdidas(
+        prisma,
+        tenantId,
+        new Date(fechaAuditoria.getTime() - 60_000),
+        new Date(fechaAuditoria.getTime() + 60_000),
+      ),
+    ).resolves.toEqual({ totalPerdidas: '0.0000' });
     expect(
       await prisma.movimientoCaja.count({
         where: { tenantId, turnoId: turnoVendido },
