@@ -27,7 +27,7 @@ export class CajaService {
     private readonly idempotencia: IdempotenciaService,
   ) {}
 
-  listarCajas(tenantId: number, disponibles = false) {
+  listarCajas(tenantId: number, disponibles = false, limite?: number) {
     return this.prisma.caja.findMany({
       where: {
         tenantId,
@@ -43,7 +43,20 @@ export class CajaService {
         },
       },
       orderBy: [{ codigo: 'asc' }, { id: 'asc' }],
+      take: limite,
     });
+  }
+
+  async listarDisponibilidad(
+    tenantId: number,
+    disponibles = false,
+    limite?: number,
+  ) {
+    const cajas = await this.listarCajas(tenantId, disponibles, limite);
+    return cajas.map(({ turnoCaja_caja, ...caja }) => ({
+      ...caja,
+      disponible: caja.activo && turnoCaja_caja.length === 0,
+    }));
   }
 
   async configurar(

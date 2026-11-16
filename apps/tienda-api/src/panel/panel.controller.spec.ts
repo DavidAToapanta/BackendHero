@@ -1,4 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermisosTiendaGuard } from '../accesos/permisos-tienda';
+import { TiendaJwtGuard } from '../auth';
+import { ConsultaPanelService } from './consulta-panel.service';
 import { PanelController } from './panel.controller';
 import { PanelService } from './panel.service';
 
@@ -8,8 +11,16 @@ describe('PanelController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PanelController],
-      providers: [PanelService],
-    }).compile();
+      providers: [
+        PanelService,
+        { provide: ConsultaPanelService, useValue: {} },
+      ],
+    })
+      .overrideGuard(TiendaJwtGuard)
+      .useValue({})
+      .overrideGuard(PermisosTiendaGuard)
+      .useValue({})
+      .compile();
 
     controller = module.get<PanelController>(PanelController);
   });

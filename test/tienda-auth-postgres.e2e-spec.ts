@@ -48,6 +48,7 @@ import type {
 } from '../apps/tienda-api/src/auth/auth.types';
 import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
 import { fechaComercial } from '../apps/tienda-api/src/comun/fecha-comercial';
+import { InventarioService as InventarioTiendaService } from '../apps/tienda-api/src/inventario/inventario.service';
 import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
 import { reservarPedidoEnsayo } from './fixtures/tienda';
 
@@ -3625,6 +3626,77 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       perdidasInventario: '1',
       resultadoOperativoEstimado: '3.2',
     });
+    const periodoPanel = {
+      desde: filtrosAnalisis.desde,
+      hasta: filtrosAnalisis.hasta,
+    };
+    const consultarPanel = (
+      token: string,
+      periodo = periodoPanel,
+    ): request.Test => http().get('/panel').auth(token, bearer).query(periodo);
+    await http().get('/panel').query(periodoPanel).expect(401);
+    await consultarPanel(accessToken).expect(403);
+    await consultarPanel(owner.accessToken, {
+      ...periodoPanel,
+      hasta: periodoPanel.desde,
+    }).expect(400);
+    const panel = await consultarPanel(owner.accessToken).expect(200);
+    expect(panel.body).toMatchObject({
+      ventas: { estado: 'DISPONIBLE', datos: { neto: '5.2', ventas: 1 } },
+      finanzas: {
+        estado: 'DISPONIBLE',
+        datos: { resultadoOperativoEstimado: '3.2', perdidasInventario: '1' },
+      },
+      cartera: {
+        estado: 'DISPONIBLE',
+        datos: { saldoPendiente: '0', cuentas: [], deudores: [] },
+      },
+      inventario: {
+        estado: 'DISPONIBLE',
+        datos: { data: [{ productoId, stockDisponible: 1 }] },
+      },
+      personal: { estado: 'DISPONIBLE', datos: { sinRol: 0 } },
+      actividad: { estado: 'DISPONIBLE' },
+      caja: { estado: 'DISPONIBLE' },
+    });
+    const operadorPanel = await crearPerfilComercial(
+      tenantId,
+      'PANEL_LIMITADO',
+      ['store.panel.read', 'store.cash.read'],
+      'EMPLEADO',
+    );
+    const panelLimitado = await consultarPanel(
+      operadorPanel.accessToken,
+    ).expect(200);
+    expect(panelLimitado.body).toEqual({
+      caja: {
+        estado: 'DISPONIBLE',
+        datos: (
+          await http().get('/caja').auth(owner.accessToken, bearer).expect(200)
+        ).body as unknown,
+      },
+      ventas: { estado: 'SIN_ACCESO' },
+      cartera: { estado: 'SIN_ACCESO' },
+      finanzas: { estado: 'SIN_ACCESO' },
+      inventario: { estado: 'SIN_ACCESO' },
+      personal: { estado: 'SIN_ACCESO' },
+      actividad: { estado: 'SIN_ACCESO' },
+    });
+    const falloInventario = jest
+      .spyOn(app.get(InventarioTiendaService), 'listarProductos')
+      .mockRejectedValueOnce(new Error('Error de inventario de ensayo'));
+    try {
+      const parcial = await consultarPanel(owner.accessToken).expect(200);
+      expect(parcial.body).toMatchObject({
+        inventario: { estado: 'ERROR' },
+        ventas: { estado: 'DISPONIBLE' },
+      });
+      expect(
+        (parcial.body as { inventario: object }).inventario,
+      ).not.toHaveProperty('datos');
+    } finally {
+      falloInventario.mockRestore();
+    }
     const [pagoRemanente] = (
       vistaRetorno.body as { aplicaciones: { id: number }[] }
     ).aplicaciones;

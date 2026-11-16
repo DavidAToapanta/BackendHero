@@ -60,18 +60,14 @@ export class CajaController {
 
   @Get()
   @RequierePermisoTienda('store.cash.read')
-  async listar(
+  listar(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Query() filtros: ListaCajasDto,
   ) {
-    const cajas = await this.caja.listarCajas(
+    return this.caja.listarDisponibilidad(
       contexto.tenantId,
       filtros.disponibles === 'true',
     );
-    return cajas.map(({ turnoCaja_caja, ...caja }) => ({
-      ...caja,
-      disponible: caja.activo && turnoCaja_caja.length === 0,
-    }));
   }
 
   @Get(':id')
