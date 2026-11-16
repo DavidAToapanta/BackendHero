@@ -16,8 +16,14 @@ import { AuditoriaEscrituraService } from '../auditoria/auditoria-escritura';
 import { ContextoTiendaActual, type ContextoTienda } from '../auth';
 import { VentaMostradorService } from './venta-mostrador.service';
 import { VentasService } from './ventas.service';
-import { CreateVentaDto } from './dto/create-venta.dto';
+import { CreateVentaCreditoDto, CreateVentaDto } from './dto/create-venta.dto';
 import { UpdateVentaDto } from './dto/update-venta.dto';
+
+const validarVenta = new ValidationPipe({
+  transform: true,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+});
 
 @Controller('ventas')
 export class VentasController {
@@ -29,16 +35,27 @@ export class VentasController {
 
   @Post()
   @RequierePermisoTienda('store.sales.create')
-  @UsePipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
+  @UsePipes(validarVenta)
   confirmar(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Body() datos: CreateVentaDto,
+    @Headers('idempotency-key') clave: string | undefined,
+  ) {
+    const correlacionId = randomUUID();
+    return this.mostrador.confirmar(
+      this.auditoria.paraOperacion(contexto, correlacionId),
+      datos,
+      clave,
+      correlacionId,
+    );
+  }
+
+  @Post('credito')
+  @RequierePermisoTienda('store.sales.create', 'store.sales.credit')
+  @UsePipes(validarVenta)
+  confirmarCredito(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Body() datos: CreateVentaCreditoDto,
     @Headers('idempotency-key') clave: string | undefined,
   ) {
     const correlacionId = randomUUID();

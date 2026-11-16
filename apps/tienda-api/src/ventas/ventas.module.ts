@@ -3,6 +3,7 @@ import { InventarioModule } from '@app/inventario';
 import { AccesosModule } from '../accesos/accesos.module';
 import { AuditoriaEscrituraModule } from '../auditoria/auditoria-escritura';
 import { CajaModule } from '../caja/caja.module';
+import { CuentasModule } from '../cartera/cuentas.module';
 import { CatalogoModule } from '../catalogo/catalogo.module';
 import { ClientesModule } from '../clientes/clientes.module';
 import { CobrosModule } from '../cobros/cobros.module';
@@ -16,6 +17,7 @@ import { VentasController } from './ventas.controller';
     AccesosModule,
     AuditoriaEscrituraModule,
     CajaModule,
+    CuentasModule,
     CatalogoModule,
     ClientesModule,
     CobrosModule,

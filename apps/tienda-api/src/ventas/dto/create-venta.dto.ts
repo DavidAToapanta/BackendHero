@@ -64,17 +64,11 @@ class PagoVentaDto {
   referencia?: string;
 }
 
-export class CreateVentaDto {
+class VentaMostradorDto {
   @IsInt()
   @Min(1)
   @Max(MAX_PRISMA_INT)
   turnoId: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PRISMA_INT)
-  clienteComercialId?: number;
 
   @IsArray()
   @ArrayMinSize(1)
@@ -83,10 +77,35 @@ export class CreateVentaDto {
   @ValidateNested({ each: true })
   @Type(() => LineaVentaDto)
   lineas: LineaVentaDto[];
+}
+
+export class CreateVentaDto extends VentaMostradorDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  clienteComercialId?: number;
 
   @IsDefined()
   @IsObject()
   @ValidateNested()
   @Type(() => PagoVentaDto)
   pago: PagoVentaDto;
+}
+
+export class CreateVentaCreditoDto extends VentaMostradorDto {
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  clienteComercialId: number;
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  vencimiento: string;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => PagoVentaDto)
+  pago?: PagoVentaDto;
 }

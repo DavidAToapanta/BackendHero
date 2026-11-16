@@ -32,3 +32,17 @@ El servidor vuelve a validar los lotes y guarda el costo histórico. El
 cobro, la salida de inventario y la auditoría se confirman en la misma
 transacción. Solo el efectivo suma al saldo de caja. Repetir la misma
 operación con la misma clave devuelve el recurso original.
+
+## B07 · Venta a crédito
+
+`POST /ventas/credito` requiere `store.sales.create` y `store.sales.credit`,
+además de `Idempotency-Key`. Usa el mismo turno, productos y lotes que la
+venta de contado. En crédito son obligatorios `clienteComercialId`
+(cliente activo de la tienda) y `vencimiento` en formato `AAAA-MM-DD`. El
+vencimiento puede ser hoy o una fecha posterior en America/Guayaquil.
+
+Omite `pago` para financiar todo o envía un pago inicial menor al total.
+Una venta de $100 con un inicial de $20 crea una cuenta abierta con saldo
+de $80. El inicial se aplica a la venta y el efectivo se registra en caja.
+La cuenta, la venta, la salida de lotes y el pago inicial se confirman en
+la misma transacción. La respuesta tiene el mismo formato que contado.

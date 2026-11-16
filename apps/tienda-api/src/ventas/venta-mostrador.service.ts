@@ -6,6 +6,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ACCIONES_AUDITORIA } from '../auditoria/auditoria-escritura';
 import { CajaService } from '../caja/caja.service';
+import { CuentasService } from '../cartera/cuentas.service';
 import { CatalogoService } from '../catalogo/catalogo.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { CobrosOperacionService } from '../cobros/cobros-operacion.service';
@@ -14,7 +15,28 @@ import {
   importeTienda,
   type ContextoOperacionTienda,
 } from '../comun/operacion-tienda';
-import type { CreateVentaDto } from './dto/create-venta.dto';
+import type {
+  CreateVentaCreditoDto,
+  CreateVentaDto,
+} from './dto/create-venta.dto';
+
+const zonaComercial = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'America/Guayaquil',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function fechaVencimiento(fecha: string) {
+  const inicio = new Date(fecha + 'T00:00:00-05:00');
+  if (
+    !Number.isFinite(inicio.getTime()) ||
+    inicio.toISOString().slice(0, 10) !== fecha
+  ) {
+    throw new BadRequestException('El vencimiento debe ser una fecha válida');
+  }
+  return inicio;
+}
 
 @Injectable()
 export class VentaMostradorService {
@@ -25,16 +47,19 @@ export class VentaMostradorService {
     private readonly catalogo: CatalogoService,
     private readonly inventario: InventarioLotesService,
     private readonly cobros: CobrosOperacionService,
+    private readonly cuentas: CuentasService,
   ) {}
 
   confirmar(
     contexto: ContextoOperacionTienda,
-    datos: CreateVentaDto,
+    datos: CreateVentaDto | CreateVentaCreditoDto,
     clave: string | undefined,
     correlacionId: string,
   ) {
     const { tenantId, usuarioId, membresiaId } = contexto;
     const { turnoId, clienteComercialId, pago } = datos;
+    const credito = 'vencimiento' in datos ? datos : null;
+    const vencimiento = credito ? fechaVencimiento(credito.vencimiento) : null;
     const lineas = datos.lineas
       .map(({ productoId, cantidad, lotes }) => ({
         productoId,
@@ -49,28 +74,36 @@ export class VentaMostradorService {
       throw new BadRequestException('Cada producto debe aparecer una sola vez');
     }
     const pagado = importeTienda(
-      new Prisma.Decimal(pago.monto).toDecimalPlaces(
+      new Prisma.Decimal(pago?.monto ?? 0).toDecimalPlaces(
         2,
         Prisma.Decimal.ROUND_DOWN,
       ),
       true,
     );
-    const referencia = pago.referencia?.trim() || null;
+    const referencia = pago?.referencia?.trim() || null;
 
     return this.idempotencia.ejecutar(
       {
         tenantId,
         usuarioId,
         clave,
-        operacion: 'ventas.contado',
+        operacion: credito ? 'ventas.credito' : 'ventas.contado',
         datos: {
           turnoId,
           clienteComercialId: clienteComercialId ?? null,
           lineas,
-          pago: { metodo: pago.metodo, monto: pagado.toFixed(2), referencia },
+          pago: pago
+            ? { metodo: pago.metodo, monto: pagado.toFixed(2), referencia }
+            : null,
+          ...(credito && { vencimiento: credito.vencimiento }),
         },
       },
       async (tx, claveRecurso) => {
+        if (credito && credito.vencimiento < zonaComercial.format(new Date())) {
+          throw new BadRequestException(
+            'El vencimiento debe ser hoy o una fecha futura',
+          );
+        }
         await this.caja.bloquearTurnoAbierto(tx, contexto, turnoId);
         if (clienteComercialId != null) {
           await this.clientes.obtenerActivo(tx, tenantId, clienteComercialId);
@@ -106,7 +139,13 @@ export class VentaMostradorService {
           ),
           true,
         );
-        if (!pagado.eq(total)) {
+        const financiado = total.minus(pagado);
+        if (credito && financiado.lte(0)) {
+          throw new BadRequestException(
+            'El pago inicial debe ser menor al total de la venta',
+          );
+        }
+        if (!credito && !financiado.isZero()) {
           throw new BadRequestException(
             'El cobro debe coincidir con el total de la venta',
           );
@@ -154,10 +193,10 @@ export class VentaMostradorService {
             detalle.id,
           );
         }
-        if (!total.isZero()) {
+        if (pago && !pagado.isZero()) {
           const cobro = await this.cobros.registrar(tx, contexto, {
             metodo: pago.metodo,
-            monto: total,
+            monto: pagado,
             referencia,
             turnoId,
             clienteComercialId,
@@ -166,8 +205,17 @@ export class VentaMostradorService {
           await this.cobros.aplicar(tx, contexto, {
             cobroId: cobro.id,
             ventaId: venta.id,
-            monto: total,
+            monto: pagado,
             claveRecurso,
+          });
+        }
+        if (credito && vencimiento) {
+          await this.cuentas.crear(tx, {
+            tenantId,
+            ventaId: venta.id,
+            clienteComercialId: credito.clienteComercialId,
+            vencimiento,
+            financiado,
           });
         }
         await contexto.auditar(tx, {
@@ -175,6 +223,14 @@ export class VentaMostradorService {
           recursoTipo: 'Venta',
           recursoId: venta.id,
           productos,
+          ...(credito && {
+            datos: {
+              modalidad: 'CREDITO',
+              pagoInicial: pagado.toFixed(2),
+              financiado: financiado.toFixed(2),
+              vencimiento: credito.vencimiento,
+            },
+          }),
         });
         return { recursoTipo: 'Venta', recursoId: venta.id };
       },

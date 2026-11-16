@@ -2486,6 +2486,170 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
   }, 25000);
 
+  it('confirma crédito parcial y total con una cuenta por venta', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const ajeno = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const owner = await crearPerfilComercial(tenantId, 'OWNER', [], 'OWNER');
+    const cajero = await crearPerfilComercial(
+      tenantId,
+      'CAJERO',
+      ['store.sales.create'],
+      'CAJERO',
+    );
+    const cliente = await prisma.clienteComercial.create({
+      data: { tenantId, nombres: 'Comprador a crédito' },
+    });
+    const clienteAjeno = await prisma.clienteComercial.create({
+      data: { tenantId: ajeno.id, nombres: 'Otro comprador' },
+    });
+    const producto = await prisma.producto.create({
+      data: {
+        tenantId,
+        nombre: 'Producto financiado',
+        precio: 100,
+        stock: 2,
+        estado: true,
+      },
+    });
+    const inventario = app.get<InventarioLotesService>(InventarioLotesService);
+    const claveEntrada = randomUUID();
+    const loteId = await prisma.$transaction(async (tx): Promise<number> => {
+      const { lotes } = await inventario.registrarEntrada(
+        tx,
+        {
+          tenantId,
+          responsableId: owner.context.membresiaId,
+          clave: claveEntrada,
+          correlacionId: claveEntrada,
+        },
+        producto.id,
+        'APERTURA',
+        'Inventario de ensayo',
+        [
+          {
+            codigo: 'CREDITO',
+            cantidad: 2,
+            costoUnitario: new Prisma.Decimal(40),
+          },
+        ],
+      );
+      return lotes[0].id;
+    });
+    const bearer = { type: 'bearer' } as const;
+    const caja = await http()
+      .post('/caja')
+      .auth(owner.accessToken, bearer)
+      .send({ codigo: 'CREDITO', nombre: 'Caja de crédito' })
+      .expect(201);
+    const turno = await http()
+      .post(`/caja/${(caja.body as { id: number }).id}/turnos`)
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '0' })
+      .expect(201);
+    const turnoId = (turno.body as { recursoId: number }).recursoId;
+    const datos = {
+      turnoId,
+      clienteComercialId: cliente.id,
+      vencimiento: '2099-03-05',
+      lineas: [
+        {
+          productoId: producto.id,
+          cantidad: 1,
+          lotes: [{ loteId, cantidad: 1 }],
+        },
+      ],
+    };
+    const vender = (
+      body: object,
+      clave = randomUUID(),
+      token = owner.accessToken,
+    ) =>
+      http()
+        .post('/ventas/credito')
+        .auth(token, bearer)
+        .set('Idempotency-Key', clave)
+        .send(body);
+    await vender(datos, randomUUID(), cajero.accessToken).expect(403);
+    await vender({ ...datos, clienteComercialId: null }).expect(400);
+    await vender({ ...datos, clienteComercialId: clienteAjeno.id }).expect(404);
+    await vender({ ...datos, vencimiento: '2099-02-30' }).expect(400);
+    await vender({ ...datos, vencimiento: '2000-01-01' }).expect(400);
+    await vender({
+      ...datos,
+      pago: { metodo: 'EFECTIVO', monto: '100' },
+    }).expect(400);
+
+    const claveCreditoTotal = randomUUID();
+    const fallo = jest
+      .spyOn(app.get(AuditoriaEscrituraService), 'registrar')
+      .mockImplementationOnce(() => {
+        throw new Error('Fallo al auditar el crédito');
+      });
+    try {
+      await vender(datos, claveCreditoTotal).expect(500);
+    } finally {
+      fallo.mockRestore();
+    }
+    expect(await prisma.venta.count({ where: { tenantId } })).toBe(0);
+    expect(await prisma.cuentaPorCobrar.count({ where: { tenantId } })).toBe(0);
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: loteId } }),
+    ).toMatchObject({ cantidadFisica: 2 });
+
+    const parcial = { ...datos, pago: { metodo: 'EFECTIVO', monto: '20.009' } };
+    const claveParcial = randomUUID();
+    const ventaParcial = await vender(parcial, claveParcial).expect(201);
+    await vender(parcial, claveParcial).expect(
+      201,
+      ventaParcial.body as object,
+    );
+    const ventaTotal = await vender(datos, claveCreditoTotal).expect(201);
+    const idParcial = (ventaParcial.body as { recursoId: number }).recursoId;
+    const idTotal = (ventaTotal.body as { recursoId: number }).recursoId;
+    const cuentas = await prisma.cuentaPorCobrar.findMany({
+      where: { tenantId },
+      orderBy: { ventaId: 'asc' },
+    });
+    expect(cuentas).toHaveLength(2);
+    expect(cuentas).toMatchObject([
+      {
+        ventaId: idParcial,
+        clienteComercialId: cliente.id,
+        estado: 'ABIERTA',
+        importeFinanciadoInicial: new Prisma.Decimal(80),
+        importeExigible: new Prisma.Decimal(80),
+        saldo: new Prisma.Decimal(80),
+        vencimiento: new Date('2099-03-05T05:00:00.000Z'),
+      },
+      {
+        ventaId: idTotal,
+        clienteComercialId: cliente.id,
+        estado: 'ABIERTA',
+        importeFinanciadoInicial: new Prisma.Decimal(100),
+        importeExigible: new Prisma.Decimal(100),
+        saldo: new Prisma.Decimal(100),
+      },
+    ]);
+    const aplicaciones = await prisma.aplicacionCobro.findMany({
+      where: { tenantId },
+    });
+    expect(aplicaciones).toHaveLength(1);
+    expect(aplicaciones[0]).toMatchObject({
+      ventaId: idParcial,
+      cuentaId: null,
+      monto: new Prisma.Decimal(20),
+    });
+    expect(
+      await prisma.movimientoCaja.count({ where: { tenantId, turnoId } }),
+    ).toBe(1);
+    expect(
+      await prisma.loteInventario.findUniqueOrThrow({ where: { id: loteId } }),
+    ).toMatchObject({ cantidadFisica: 0 });
+  });
+
   it('localiza una venta por ambos productos y revierte venta, existencias y auditoría juntas', async () => {
     const { usuario, credenciales } = await registrarPersonal();
     const { id: tenantId } = await crearNegocio({
