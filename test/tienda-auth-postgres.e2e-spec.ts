@@ -1912,9 +1912,6 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toMatchObject({ stock: 6 });
   }, 20000);
 
-<<<<<<< Updated upstream
-  it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
-=======
   it('distingue ajustes de bajas y concilia pérdidas de inventario por tienda y periodo', async () => {
     const { usuario, credenciales } = await registrarPersonal();
     const permisos = await prisma.$transaction((tx) =>
@@ -2152,8 +2149,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toMatchObject({ stock: saldos._sum.cantidadFisica });
   }, 20000);
 
-  it('administra fichas, consulta el stock vendible y escanea barras con ceros iniciales', async () => {
->>>>>>> Stashed changes
+  it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
