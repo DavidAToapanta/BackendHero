@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { InventarioLotesService } from '@app/inventario';
+import {
+  InventarioLotesService,
+  InventarioService,
+  ReservasInventarioService,
+} from '@app/inventario';
 import {
   PermisosService,
   RolesNegocioService,
@@ -28,6 +32,7 @@ import {
   RequierePermisoTienda,
 } from '../apps/tienda-api/src/accesos/accesos.module';
 import { AppModule } from '../apps/tienda-api/src/app.module';
+import { CatalogoService } from '../apps/tienda-api/src/catalogo/catalogo.service';
 import {
   ACCIONES_AUDITORIA,
   AuditoriaEscrituraService,
@@ -159,6 +164,9 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
   }
 
   const rutaCategorias = '/catalogo/categorias';
+  const rutaProductos = '/catalogo/productos';
+  const rutaMostrador = rutaProductos + '/mostrador';
+  const rutaBarras = rutaMostrador + '/por-barras';
   const rutaCategoriaProducto = (productoId: number) =>
     '/catalogo/productos/' + productoId + '/categoria';
 
@@ -1520,6 +1528,346 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     await editar(categoria.id, { activo: false }).expect(401);
   }, 20000);
 
+  it('administra fichas, consulta el stock vendible y escanea barras con ceros iniciales', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const { id: tenantAjeno } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const permisoCatalogo = permisos.filter(
+      ({ codigo }) =>
+        codigo === 'store.catalog.read' || codigo === 'store.catalog.write',
+    );
+    async function operador(id: number) {
+      const { usuario, credenciales } = await registrarPersonal();
+      const membresia = await vincularPersonal(usuario.id, id);
+      const rol = await asignarRol(id, membresia.id);
+      await prisma.rolPermiso.createMany({
+        data: permisoCatalogo.map(({ id: permisoId }) => ({
+          tenantId: id,
+          rolId: rol.id,
+          permisoId,
+        })),
+      });
+      return loginTienda(credenciales);
+    }
+    const { context, accessToken } = await operador(tenantId);
+    const { accessToken: tokenAjeno } = await operador(tenantAjeno);
+    const bearer = { type: 'bearer' } as const;
+    const producto = {
+      nombre: 'Bebida tropical',
+      precio: '5.2',
+      presentacion: 'Lata mediana',
+      sku: 'BEB-1',
+      codigoBarras: '001234',
+    };
+    const crear = (token: string, ficha: object) =>
+      http().post(rutaProductos).auth(token, bearer).send(ficha);
+    const escanear = (codigoBarras: string, token = accessToken) =>
+      http().get(rutaBarras).auth(token, bearer).query({ codigoBarras });
+    await http().get(rutaProductos).expect(401);
+    await crear(accessToken, { ...producto, precio: 5.2 }).expect(400);
+    await crear(accessToken, { ...producto, codigoBarras: 1234 }).expect(400);
+    await crear(accessToken, {
+      ...producto,
+      modoInventario: 'LOTES',
+      stock: 2,
+    }).expect(400);
+    const creado = await crear(accessToken, producto).expect(201);
+    const { productoId } = creado.body as { productoId: number };
+    expect(creado.body).toMatchObject({
+      precio: '5.20',
+      codigoBarras: '001234',
+      estado: true,
+      stockFisico: 0,
+      stockReservado: 0,
+      stockDisponible: 0,
+      modoInventario: 'LEGACY',
+      imagenes: [],
+    });
+    await crear(accessToken, { ...producto, sku: 'LIBRE' }).expect(409);
+    await crear(accessToken, { ...producto, codigoBarras: '654' }).expect(409);
+    await escanear('001234', tokenAjeno).expect(404);
+    await crear(tokenAjeno, producto).expect(201);
+    await http()
+      .get(rutaProductos + '/' + productoId)
+      .auth(tokenAjeno, bearer)
+      .expect(404);
+    await escanear('1234').expect(404);
+
+    await crear(accessToken, {
+      ...producto,
+      nombre: 'Bebida apartada',
+      sku: 'BEB-2',
+      codigoBarras: '0099',
+      estado: false,
+    }).expect(201);
+    const pagina = await http()
+      .get(rutaProductos)
+      .auth(accessToken, bearer)
+      .query({ q: 'lata', pagina: 2, limite: 1 })
+      .expect(200);
+    expect(pagina.body).toMatchObject({
+      data: [{ productoId }],
+      meta: { pagina: 2, limite: 1, total: 2, paginas: 2 },
+    });
+    const inactivos = await http()
+      .get(rutaProductos)
+      .auth(accessToken, bearer)
+      .query({ activo: false })
+      .expect(200);
+    expect(inactivos.body).toMatchObject({
+      data: [{ codigoBarras: '0099', estado: false }],
+      meta: { total: 1 },
+    });
+    await escanear('0099').expect(404);
+    const sinInactivos = await http()
+      .get(rutaMostrador)
+      .auth(accessToken, bearer)
+      .query({ q: 'apartada' })
+      .expect(200);
+    expect(sinInactivos.body).toMatchObject({ data: [], meta: { total: 0 } });
+
+    const altaCategoria = await http()
+      .post(rutaCategorias)
+      .auth(accessToken, bearer)
+      .send({ nombre: 'Bebidas' })
+      .expect(201);
+    const categoria = altaCategoria.body as { id: number; nombre: string };
+    await http()
+      .put(rutaCategoriaProducto(productoId))
+      .auth(accessToken, bearer)
+      .send({ categoriaId: categoria.id })
+      .expect(200);
+    const filtrados = await http()
+      .get(rutaProductos)
+      .auth(accessToken, bearer)
+      .query({ categoriaId: categoria.id })
+      .expect(200);
+    expect(filtrados.body).toMatchObject({
+      data: [{ productoId }],
+      meta: { total: 1 },
+    });
+
+    const fichaUrl = rutaProductos + '/' + productoId;
+    const imagenes = fichaUrl + '/imagenes';
+    const agregarImagen = (dto: object, token = accessToken) =>
+      http().post(imagenes).auth(token, bearer).send(dto);
+    await agregarImagen({
+      url: 'http://cdn.example.com/foto.png',
+      orden: 0,
+    }).expect(400);
+    await agregarImagen(
+      { url: 'https://cdn.example.com/foto.png', orden: 0 },
+      tokenAjeno,
+    ).expect(404);
+    const secundaria = await agregarImagen({
+      url: 'https://cdn.example.com/lateral.png',
+      orden: 1,
+    }).expect(201);
+    const principal = await agregarImagen({
+      url: 'https://cdn.example.com/frontal.png',
+      orden: 0,
+      textoAlternativo: 'Frente',
+    }).expect(201);
+    const primeraImagen = principal.body as {
+      id: number;
+      url: string;
+      orden: number;
+    };
+    await agregarImagen({
+      url: 'https://cdn.example.com/otra.png',
+      orden: 0,
+    }).expect(409);
+    const imagenUrl = imagenes + '/' + primeraImagen.id;
+    const reemplazo = {
+      url: 'https://cdn.example.com/frontal-nueva.png',
+      textoAlternativo: 'Nueva presentación',
+    };
+    await http()
+      .patch(imagenUrl)
+      .auth(tokenAjeno, bearer)
+      .send(reemplazo)
+      .expect(404);
+    await http()
+      .patch(imagenUrl)
+      .auth(accessToken, bearer)
+      .send(reemplazo)
+      .expect(200);
+    const detalle = await http()
+      .get(fichaUrl)
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(detalle.body).toMatchObject({
+      imagenPrincipal: { id: primeraImagen.id, ...reemplazo },
+      imagenes: [{ ...primeraImagen, ...reemplazo }, secundaria.body as object],
+    });
+
+    const operacion = {
+      tenantId,
+      responsableId: context.membresiaId,
+      clave: randomUUID(),
+      correlacionId: randomUUID(),
+    };
+    const lotes = app.get(InventarioLotesService);
+    const reservas = app.get(ReservasInventarioService);
+    const ahora = Date.now();
+    await prisma.$transaction(async (tx) => {
+      await lotes.registrarEntrada(
+        tx,
+        operacion,
+        productoId,
+        'APERTURA',
+        'Conciliación',
+        [],
+      );
+      await lotes.registrarEntrada(
+        tx,
+        { ...operacion, clave: randomUUID() },
+        productoId,
+        'ENTRADA',
+        'Ensayo',
+        [
+          {
+            codigo: 'VIGENTE',
+            cantidad: 5,
+            costoUnitario: new Prisma.Decimal(1),
+          },
+          {
+            codigo: 'VENCIDO',
+            cantidad: 3,
+            costoUnitario: new Prisma.Decimal(1),
+            vencimiento: new Date(ahora - 600_000),
+          },
+        ],
+      );
+      const cliente = await tx.clienteComercial.create({
+        data: { tenantId, nombres: 'Comprador' },
+      });
+      const clave = randomUUID();
+      const pedido = await tx.pedido.create({
+        data: {
+          tenantId,
+          clienteComercialId: cliente.id,
+          numero: clave,
+          claveIdempotencia: clave,
+          confirmadoAt: new Date(ahora),
+          reservaHasta: new Date(ahora + 600_000),
+          subtotal: '10.40',
+          total: '10.40',
+        },
+      });
+      const linea = await tx.detallePedido.create({
+        data: {
+          tenantId,
+          pedidoId: pedido.id,
+          productoId,
+          nombreProducto: producto.nombre,
+          cantidad: 2,
+          precioUnitario: '5.20',
+          subtotal: '10.40',
+          total: '10.40',
+        },
+      });
+      await reservas.reservar(
+        tx,
+        { ...operacion, clave: randomUUID() },
+        pedido.id,
+        linea.id,
+      );
+    });
+    await http()
+      .patch(fichaUrl)
+      .auth(accessToken, bearer)
+      .send({ stock: 100 })
+      .expect(400);
+    const ficha = await escanear('001234').expect(200);
+    expect(ficha.body).toMatchObject({
+      productoId,
+      codigoBarras: '001234',
+      precio: '5.20',
+      stockDisponible: 3,
+      categoria: { id: categoria.id, nombre: categoria.nombre },
+      imagenPrincipal: reemplazo,
+    });
+    const manual = await http()
+      .get(rutaMostrador)
+      .auth(accessToken, bearer)
+      .query({ q: 'beb-1' })
+      .expect(200);
+    expect(manual.body).toMatchObject({
+      data: [ficha.body as object],
+      meta: { total: 1 },
+    });
+    expect((manual.body as { data: object[] }).data[0]).toEqual(ficha.body);
+    await prisma.$transaction(async (tx) => {
+      const bloqueado = await app
+        .get(InventarioService)
+        .bloquearProducto(tx, tenantId, productoId);
+      await expect(
+        lotes.validarDisponible(tx, bloqueado, 3, new Date()),
+      ).resolves.toBeUndefined();
+      await expect(
+        lotes.validarDisponible(tx, bloqueado, 4, new Date()),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+    const saldos = await http()
+      .get(fichaUrl)
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(saldos.body).toMatchObject({
+      stockFisico: 8,
+      stockReservado: 2,
+      stockDisponible: 3,
+      modoInventario: 'LOTES',
+    });
+
+    const auditoria = jest
+      .spyOn(app.get(AuditoriaEscrituraService), 'registrar')
+      .mockImplementationOnce(() => {
+        throw new Error('Fallo de auditoría de producto');
+      })
+      .mockImplementationOnce(() => {
+        throw new Error('Fallo de auditoría de imagen');
+      });
+    try {
+      await http()
+        .patch(fichaUrl)
+        .auth(accessToken, bearer)
+        .send({ precio: '99.00' })
+        .expect(500);
+      await http().delete(imagenUrl).auth(accessToken, bearer).expect(500);
+    } finally {
+      auditoria.mockRestore();
+    }
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      precio: '5.20',
+      imagenPrincipal: { id: primeraImagen.id, ...reemplazo },
+    });
+    await http().delete(imagenUrl).auth(accessToken, bearer).expect(204);
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      imagenPrincipal: secundaria.body as object,
+    });
+    const eventosImagen = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId,
+        entidadTipo: 'ProductoImagen',
+        entidadId: primeraImagen.id,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(eventosImagen.map(({ accion }) => accion)).toEqual([
+      ACCIONES_AUDITORIA.IMAGENES_CREAR,
+      ACCIONES_AUDITORIA.IMAGENES_EDITAR,
+      ACCIONES_AUDITORIA.IMAGENES_ELIMINAR,
+    ]);
+    expect(JSON.stringify(eventosImagen)).not.toContain(reemplazo.url);
+  }, 25000);
+
   it('localiza una venta por ambos productos y revierte venta, existencias y auditoría juntas', async () => {
     const { usuario, credenciales } = await registrarPersonal();
     const { id: tenantId } = await crearNegocio({
@@ -1595,19 +1943,21 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
           claveIdempotencia: correlacionId,
         },
       });
-      for (const { productoId, loteId, nombre } of items) {
+      await app
+        .get(InventarioService)
+        .bloquearProductos(tx, tenantId, productoIds);
+      for (const { productoId, loteId } of items) {
+        const snapshot = await app
+          .get(CatalogoService)
+          .obtenerSnapshotVenta(tx, tenantId, productoId);
         const detalle = await tx.detalleVenta.create({
           data: {
             tenantId,
             ventaId: venta.id,
-            productoId,
-            nombreProducto: nombre,
-            categoriaId: categoria.id,
-            categoriaNombre: categoria.nombre,
+            ...snapshot,
             cantidad: 1,
-            precioUnitario: cero,
-            subtotal: cero,
-            total: cero,
+            subtotal: snapshot.precioUnitario,
+            total: snapshot.precioUnitario,
           },
         });
         await tx.asignacionLoteVenta.create({
@@ -1743,14 +2093,31 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       .auth(accessToken, bearer)
       .send({ categoriaId: null })
       .expect(200);
+    await http()
+      .patch(rutaProductos + '/' + productoIds[0])
+      .auth(accessToken, bearer)
+      .send({ precio: '19.99' })
+      .expect(200);
+    const vigente = await prisma.$transaction((tx) =>
+      app
+        .get(CatalogoService)
+        .obtenerSnapshotVenta(tx, tenantId, productoIds[0]),
+    );
+    expect(vigente.precioUnitario.toFixed(2)).toBe('19.99');
+    expect(vigente.categoriaId).toBe(nuevaCategoria.id);
     const historico = await prisma.detalleVenta.findMany({
       where: { tenantId, ventaId: venta.id, categoriaId: categoria.id },
-      select: { categoriaId: true, categoriaNombre: true },
+      select: {
+        categoriaId: true,
+        categoriaNombre: true,
+        precioUnitario: true,
+      },
     });
     expect(historico).toEqual(
       productoIds.map(() => ({
         categoriaId: categoria.id,
         categoriaNombre: categoria.nombre,
+        precioUnitario: cero,
       })),
     );
   });

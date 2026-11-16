@@ -294,12 +294,48 @@ export class InventarioLotesService {
     ahora: Date,
   ) {
     this.validarProductoActivo(producto);
-    const apto = await this.stockApto(tx, producto, ahora);
-    if (Math.min(apto, producto.stock) - producto.stockReservado < cantidad) {
+    const disponibles = await this.consultarDisponibles(
+      tx,
+      producto.tenantId,
+      [producto],
+      ahora,
+    );
+    if ((disponibles.get(producto.id) ?? 0) < cantidad) {
       throw new BadRequestException(
         `Stock disponible insuficiente para el producto ${producto.nombre}`,
       );
     }
+  }
+
+  async consultarDisponibles(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    productos: readonly ProductoInventario[],
+    ahora: Date,
+  ) {
+    const aptos = productos.filter(
+      (producto) =>
+        producto.tenantId === tenantId &&
+        producto.estado &&
+        producto.modoInventario === ModoInventario.LOTES,
+    );
+    const stockPorProducto = await this.stockAptoPorProducto(
+      tx,
+      tenantId,
+      aptos.map(({ id }) => id),
+      ahora,
+    );
+    const disponibles = new Map(productos.map(({ id }) => [id, 0]));
+    for (const { id, stock, stockReservado } of aptos) {
+      disponibles.set(
+        id,
+        Math.max(
+          0,
+          Math.min(stock, stockPorProducto.get(id) ?? 0) - stockReservado,
+        ),
+      );
+    }
+    return disponibles;
   }
 
   private async stockApto(
@@ -307,15 +343,37 @@ export class InventarioLotesService {
     producto: ProductoInventario,
     ahora: Date,
   ) {
-    const { _sum } = await tx.loteInventario.aggregate({
+    const aptos = await this.stockAptoPorProducto(
+      tx,
+      producto.tenantId,
+      [producto.id],
+      ahora,
+    );
+    return aptos.get(producto.id) ?? 0;
+  }
+
+  private async stockAptoPorProducto(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    productoIds: number[],
+    ahora: Date,
+  ) {
+    if (productoIds.length === 0) return new Map<number, number>();
+    const lotes = await tx.loteInventario.groupBy({
+      by: ['productoId'],
       where: {
-        tenantId: producto.tenantId,
-        productoId: producto.id,
+        tenantId,
+        productoId: { in: productoIds },
         OR: [{ vencimiento: null }, { vencimiento: { gt: ahora } }],
       },
       _sum: { cantidadFisica: true },
     });
-    return _sum.cantidadFisica ?? 0;
+    return new Map(
+      lotes.map(({ productoId, _sum }) => [
+        productoId,
+        _sum.cantidadFisica ?? 0,
+      ]),
+    );
   }
 
   validarProductoActivo(producto: ProductoInventario) {

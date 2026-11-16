@@ -11,24 +11,15 @@ import {
 } from 'class-validator';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
 
-const presente = (_dto: object, valor: unknown) => valor !== undefined;
-const enteroHttp = ({ value }: { value: unknown }) =>
+export const presente = (_dto: object, valor: unknown) => valor !== undefined;
+export const enteroHttp = ({ value }: { value: unknown }) =>
   typeof value === 'string' && /^[0-9]+$/.test(value) ? Number(value) : value;
 
-export class ListaCategoriasDto {
+export class PaginacionCatalogoDto {
   @ValidateIf(presente)
   @IsString()
   @MaxLength(120)
   q?: string;
-
-  @Transform(({ value }: { value: unknown }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
-  @ValidateIf(presente)
-  @IsBoolean()
-  activo?: boolean;
 
   @Transform(enteroHttp)
   @ValidateIf(presente)
@@ -43,6 +34,17 @@ export class ListaCategoriasDto {
   @Min(1)
   @Max(50)
   limite?: number;
+}
+
+export class ListaCategoriasDto extends PaginacionCatalogoDto {
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @ValidateIf(presente)
+  @IsBoolean()
+  activo?: boolean;
 }
 
 export class CrearCategoriaDto {
