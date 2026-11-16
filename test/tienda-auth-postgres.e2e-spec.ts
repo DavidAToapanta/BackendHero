@@ -40,6 +40,7 @@ import type {
   AccesoTienda,
   SeleccionTienda,
 } from '../apps/tienda-api/src/auth/auth.types';
+import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
 
 const suite =
   process.env.TIENDA_AUTH_POSTGRES_E2E === '1' ? describe : describe.skip;
@@ -717,6 +718,216 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
         },
       }),
     ).toBe(1);
+  });
+
+  it('registra y aplica cobros por HTTP con permisos, idempotencia y una sola entrada de efectivo', async () => {
+    const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const otra = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
+    const owner = await crearPerfilComercial(tienda.id, 'OWNER', [], 'OWNER');
+    const cajero = await crearPerfilComercial(
+      tienda.id,
+      'CAJERO',
+      [
+        'store.cash.open',
+        'store.payments.read',
+        'store.payments.create',
+        'store.receivables.collect',
+      ],
+      'CAJERO',
+    );
+    const sinPermisoAbono = await crearPerfilComercial(
+      tienda.id,
+      'COBROS',
+      ['store.payments.create'],
+      'EMPLEADO',
+    );
+    const externo = await crearPerfilComercial(otra.id, 'OWNER', [], 'OWNER');
+    const tenantId = tienda.id;
+    const creado = await http()
+      .post('/caja')
+      .auth(owner.accessToken, { type: 'bearer' })
+      .send({ codigo: 'REC01', nombre: 'Caja de cobros' })
+      .expect(201);
+    const cajaId = (creado.body as { id: number }).id;
+    const abierto = await http()
+      .post(`/caja/${cajaId}/turnos`)
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '0' })
+      .expect(201);
+    const turnoId = (abierto.body as { recursoId: number }).recursoId;
+
+    // El crédito de ensayo se crea con las mismas restricciones de venta, lotes y cartera.
+    const inventario = app.get(InventarioLotesService);
+    const cuentas = app.get(CuentasService);
+    const cuenta = await prisma.$transaction(async (tx) => {
+      const total = new Prisma.Decimal(30);
+      const costo = new Prisma.Decimal(4);
+      const clave = randomUUID();
+      const operacion = {
+        tenantId,
+        responsableId: cajero.context.membresiaId,
+        clave,
+        correlacionId: clave,
+      };
+      const cliente = await tx.clienteComercial.create({
+        data: { tenantId, nombres: 'Cliente de ensayo' },
+      });
+      const producto = await tx.producto.create({
+        data: {
+          tenantId,
+          nombre: 'Producto financiado',
+          precio: total,
+          stock: 1,
+          estado: true,
+        },
+      });
+      const { lotes } = await inventario.registrarEntrada(
+        tx,
+        { ...operacion, clave: randomUUID() },
+        producto.id,
+        'APERTURA',
+        'Inventario de ensayo',
+        [{ codigo: 'LOTE', cantidad: 1, costoUnitario: costo }],
+      );
+      const venta = await tx.venta.create({
+        data: {
+          tenantId,
+          responsableId: operacion.responsableId,
+          origen: 'CAJA',
+          clienteComercialId: cliente.id,
+          subtotal: total,
+          total,
+          claveIdempotencia: clave,
+        },
+      });
+      const detalle = await tx.detalleVenta.create({
+        data: {
+          tenantId,
+          ventaId: venta.id,
+          productoId: producto.id,
+          nombreProducto: producto.nombre,
+          cantidad: 1,
+          precioUnitario: total,
+          subtotal: total,
+          total,
+        },
+      });
+      await tx.asignacionLoteVenta.create({
+        data: {
+          tenantId,
+          ventaId: venta.id,
+          detalleVentaId: detalle.id,
+          loteId: lotes[0].id,
+          productoId: producto.id,
+          cantidad: 1,
+          costoUnitario: costo,
+          costoTotal: costo,
+        },
+      });
+      await inventario.retirarVenta(tx, operacion, detalle.id);
+      return cuentas.crear(tx, {
+        tenantId,
+        ventaId: venta.id,
+        clienteComercialId: cliente.id,
+        financiado: total,
+        vencimiento: new Date('2099-01-01T05:00:00.000Z'),
+      });
+    });
+
+    const pago = {
+      ventaId: cuenta.ventaId,
+      cuentaId: cuenta.id,
+      metodo: 'EFECTIVO',
+      turnoId,
+      monto: '12.50',
+    };
+    const registrar = (
+      sesion: AccesoTienda,
+      clave: string,
+      datos: object = pago,
+    ) =>
+      http()
+        .post('/cobros')
+        .auth(sesion.accessToken, { type: 'bearer' })
+        .set('Idempotency-Key', clave)
+        .send(datos);
+    await http().get('/cobros').expect(401);
+    await http()
+      .get('/cobros')
+      .auth(sinPermisoAbono.accessToken, { type: 'bearer' })
+      .expect(403);
+    await registrar(sinPermisoAbono, randomUUID()).expect(403);
+    await registrar(externo, randomUUID()).expect(404);
+    await registrar(cajero, randomUUID(), {
+      ...pago,
+      clienteComercialId: 999,
+    }).expect(400);
+    const pagoSinTurno = { ...pago, turnoId: undefined };
+    await registrar(cajero, randomUUID(), pagoSinTurno).expect(400);
+    const clave = randomUUID();
+    const recibido = await registrar(cajero, clave).expect(201);
+    await registrar(cajero, clave, { ...pago, monto: '12.5' }).expect(
+      201,
+      recibido.body as object,
+    );
+    await registrar(cajero, randomUUID(), { ...pago, monto: '20' }).expect(409);
+    await registrar(cajero, randomUUID(), {
+      ...pagoSinTurno,
+      metodo: 'TRANSFERENCIA',
+      monto: '17.50',
+    }).expect(201);
+    const id = (recibido.body as { recursoId: number }).recursoId;
+    await http()
+      .get(`/cobros/${id}`)
+      .auth(externo.accessToken, { type: 'bearer' })
+      .expect(404);
+    const detalle = await http()
+      .get(`/cobros/${id}`)
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(detalle.body).toMatchObject({
+      monto: '12.5',
+      montoDisponible: '0',
+      aplicacionCobro_cobro: [{ cuentaId: cuenta.id, monto: '12.5' }],
+    });
+    expect(detalle.body).not.toHaveProperty('claveIdempotencia');
+    const listado = await http()
+      .get('/cobros?clienteComercialId=' + cuenta.clienteComercialId)
+      .auth(cajero.accessToken, { type: 'bearer' })
+      .expect(200);
+    expect(listado.body).toHaveLength(2);
+    expect(
+      await prisma.cuentaPorCobrar.findUnique({ where: { id: cuenta.id } }),
+    ).toMatchObject({
+      saldo: new Prisma.Decimal(0),
+      estado: 'PAGADA',
+    });
+    expect(
+      await prisma.movimientoCaja.count({ where: { tenantId, turnoId } }),
+    ).toBe(1);
+    expect(await prisma.venta.count({ where: { tenantId } })).toBe(1);
+    const eventos = await prisma.auditoriaOperacion.findMany({
+      where: {
+        tenantId,
+        accion: {
+          in: [
+            ACCIONES_AUDITORIA.COBROS_REGISTRAR,
+            ACCIONES_AUDITORIA.COBROS_APLICAR,
+          ],
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(eventos.map(({ accion }) => accion)).toEqual([
+      ACCIONES_AUDITORIA.COBROS_REGISTRAR,
+      ACCIONES_AUDITORIA.COBROS_APLICAR,
+      ACCIONES_AUDITORIA.COBROS_REGISTRAR,
+      ACCIONES_AUDITORIA.COBROS_APLICAR,
+    ]);
+    expect(eventos[0].correlacionId).toBe(eventos[1].correlacionId);
+    expect(eventos[2].correlacionId).toBe(eventos[3].correlacionId);
+    expect(eventos[0].correlacionId).not.toBe(eventos[2].correlacionId);
   });
 
   it('conserva el acceso de Gym en un negocio MIXTO durante la prueba de modo y módulo STORE', async () => {

@@ -62,6 +62,8 @@ Los ejemplos indican los valores de `entidadTipo`, `entidadId`, `productoIds`,
   turno» y `datos: { cajaId }`.
 - **`caja.configurar`**, **`caja.abrir`** y **`caja.movimiento`** registran
   la caja, el turno y el movimiento de efectivo respectivamente.
+- **`cobros.registrar`** y **`cobros.aplicar`** registran el cobro y su
+  aplicación a la venta con el mismo identificador de correlación.
 - **`clientes.registrar`**, **`clientes.editar`** y **`clientes.desactivar`**
   registran `ClienteComercial` y la ID de la ficha.
 
