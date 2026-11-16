@@ -1,20 +1,21 @@
 # tienda-api
 
 El punto de arranque usa `PORT` con `8081` por defecto. `AppModule` conecta
-los módulos funcionales de Tienda. `auth` usa las librerías de identidad y
-negocios, `accesos` usa negocios y permisos, y `catalogo` e `inventario`
+los módulos funcionales de Tienda. `auth` usa las librerías de identidad,
+negocios y seguridad, `accesos` usa negocios y permisos, y `catalogo` e `inventario`
 importan sus módulos compartidos desde `@app/*`.
 
 Compilar con `npx nest build tienda-api` y arrancar con
-`npx nest start tienda-api` después de configurar `DATABASE_URL`.
+`npx nest start tienda-api` después de configurar `DATABASE_URL` y
+`TIENDA_JWT_SECRET`. El [contrato de autenticación](./src/auth/README.md)
+documenta login, selección de tienda y consulta de sesión.
 
 Para trabajar con recarga automática, ejecutar `npm run start:dev -- tienda-api`
 desde la raíz. Tienda compila en `build/tienda-api` y Gym en `dist`, así que
 pueden recompilarse en terminales separadas.
 
-Cada recurso REST incluye controlador, servicio, DTO de creación y
-actualización, y entidad base. Las rutas responden `501 Not Implemented` hasta
-que se implemente cada operación con las reglas del negocio.
+Los recursos comerciales generados responden `501 Not Implemented` hasta que
+se implemente cada operación con las reglas del negocio.
 
 El objetivo es un despliegue independiente del gimnasio, utilizando el PostgreSQL
 existente. Los datos comunes y las responsabilidades de escritura se delimitarán
