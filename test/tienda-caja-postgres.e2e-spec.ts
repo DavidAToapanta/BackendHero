@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { CajaModule } from '../apps/tienda-api/src/caja/caja.module';
 import { CajaService } from '../apps/tienda-api/src/caja/caja.service';
 import type { ContextoOperacionTienda } from '../apps/tienda-api/src/comun/operacion-tienda';
@@ -14,7 +15,7 @@ import type { ContextoOperacionTienda } from '../apps/tienda-api/src/comun/opera
 const suite =
   process.env.TIENDA_CAJA_POSTGRES_E2E === '1' ? describe : describe.skip;
 
-suite('Apertura de caja con PostgreSQL', () => {
+suite('Caja con PostgreSQL', () => {
   const prisma = new PrismaService();
   let modulo: TestingModule;
   let caja: CajaService;
@@ -77,6 +78,49 @@ suite('Apertura de caja con PostgreSQL', () => {
       codigo: randomUUID(),
       nombre: 'Caja de ensayo',
       activo,
+    });
+  }
+
+  async function abrirCaja() {
+    const creada = await crearCaja();
+    const turno = await caja.abrirTurno(
+      contexto,
+      creada.id,
+      '20',
+      randomUUID(),
+    );
+    return turno.recursoId;
+  }
+
+  function registrarCobroDeEnsayo(
+    turnoId: number,
+    metodo: 'EFECTIVO' | 'TRANSFERENCIA',
+  ) {
+    const { tenantId, membresiaId } = contexto;
+    const monto = new Prisma.Decimal('10');
+    const claveRecurso = randomUUID();
+    return prisma.$transaction(async (tx) => {
+      await caja.bloquearTurnoAbierto(tx, contexto, turnoId);
+      const cobro = await tx.cobro.create({
+        data: {
+          tenantId,
+          turnoId,
+          responsableId: membresiaId,
+          metodo,
+          monto,
+          claveIdempotencia: claveRecurso,
+        },
+      });
+      if (metodo === 'EFECTIVO') {
+        await caja.registrarMovimiento(tx, contexto, {
+          turnoId,
+          monto,
+          motivo: 'Cobro de ensayo',
+          claveRecurso,
+          origen: { tipo: 'cobro', id: cobro.id },
+        });
+      }
+      return cobro;
     });
   }
 
@@ -191,5 +235,101 @@ suite('Apertura de caja con PostgreSQL', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('concilia el fondo y los movimientos de efectivo al cerrar', async () => {
+    const turnoId = await abrirCaja();
+    const { tenantId } = contexto;
+    const entrada = {
+      turnoId,
+      monto: '5',
+      motivo: 'Entrada manual',
+      direccion: 'ENTRADA',
+    } as const;
+    const claveEntrada = randomUUID();
+    const original = await caja.moverEfectivo(contexto, entrada, claveEntrada);
+    await expect(
+      caja.moverEfectivo(contexto, entrada, claveEntrada),
+    ).resolves.toEqual(original);
+    const salida = {
+      turnoId,
+      monto: '3',
+      motivo: 'Salida manual',
+      direccion: 'SALIDA',
+    } as const;
+    await caja.moverEfectivo(contexto, salida, randomUUID());
+    await expect(
+      caja.moverEfectivo(contexto, { ...salida, monto: '100' }, randomUUID()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await registrarCobroDeEnsayo(turnoId, 'TRANSFERENCIA');
+    await registrarCobroDeEnsayo(turnoId, 'EFECTIVO');
+
+    const datosCierre = { turnoId, efectivoContado: '31' };
+    const claveCierre = randomUUID();
+    const cierre = await caja.cerrarTurno(contexto, datosCierre, claveCierre);
+    await expect(
+      caja.cerrarTurno(contexto, datosCierre, claveCierre),
+    ).resolves.toEqual(cierre);
+    const turno = await caja.obtenerTurno(tenantId, turnoId);
+    expect(turno.estado).toBe('CERRADO');
+    expect(turno.efectivoEsperado?.toFixed(2)).toBe('32.00');
+    expect(turno.diferencia?.toFixed(2)).toBe('-1.00');
+    await expect(
+      caja.listarMovimientos(tenantId, turnoId),
+    ).resolves.toHaveLength(3);
+    await expect(
+      caja.moverEfectivo(contexto, entrada, randomUUID()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      caja.cerrarTurno(contexto, datosCierre, randomUUID()),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('serializa el cobro en efectivo y el cierre sin descuadrar la caja', async () => {
+    const turnoId = await abrirCaja();
+    const { tenantId } = contexto;
+    const [cobro, cierre] = await Promise.allSettled([
+      registrarCobroDeEnsayo(turnoId, 'EFECTIVO'),
+      caja.cerrarTurno(
+        contexto,
+        { turnoId, efectivoContado: '20' },
+        randomUUID(),
+      ),
+    ]);
+    expect(cierre.status).toBe('fulfilled');
+    if (cobro.status === 'rejected')
+      expect(cobro.reason).toBeInstanceOf(ConflictException);
+    const cobrado = cobro.status === 'fulfilled';
+    await expect(
+      caja.listarMovimientos(tenantId, turnoId),
+    ).resolves.toHaveLength(cobrado ? 1 : 0);
+    await expect(
+      prisma.cobro.count({ where: { tenantId, turnoId } }),
+    ).resolves.toBe(cobrado ? 1 : 0);
+    const turno = await caja.obtenerTurno(tenantId, turnoId);
+    expect(turno.efectivoEsperado?.toFixed(2)).toBe(
+      cobrado ? '30.00' : '20.00',
+    );
+  });
+
+  it('solo permite cerrar un turno ajeno cuando el llamador autoriza la supervisión', async () => {
+    const turnoId = await abrirCaja();
+    const { id: usuarioId } = await crearUsuario();
+    const { id: membresiaId } = await prisma.userTenant.create({
+      data: { tenantId: contexto.tenantId, usuarioId, role: 'ADMIN' },
+    });
+    const supervisor = { ...contexto, usuarioId, membresiaId };
+    const datos = { turnoId, efectivoContado: '20' };
+    const clave = randomUUID();
+    await expect(
+      caja.cerrarTurno(supervisor, datos, clave),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await caja.cerrarTurno(supervisor, datos, clave, true);
+    await expect(
+      caja.obtenerTurno(contexto.tenantId, turnoId),
+    ).resolves.toMatchObject({
+      estado: 'CERRADO',
+      cerradoPorId: membresiaId,
+    });
   });
 });

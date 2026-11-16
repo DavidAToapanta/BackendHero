@@ -6,16 +6,21 @@ import {
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, TipoMovimientoCaja } from '@prisma/client';
 import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
 import {
   conflictoUnicidad,
   ContextoOperacionTienda,
   importeTienda,
+  paginacion,
   textoObligatorio,
 } from '../comun/operacion-tienda';
 import { CreateCajaDto } from './dto/create-caja.dto';
 import { UpdateCajaDto } from './dto/update-caja.dto';
+
+type OrigenMovimiento =
+  | { tipo: 'manual'; direccion: TipoMovimientoCaja }
+  | { tipo: 'cobro' | 'reembolso' | 'gasto'; id: number };
 
 @Injectable()
 export class CajaService {
@@ -164,6 +169,149 @@ export class CajaService {
     return turno;
   }
 
+  async registrarMovimiento(
+    tx: Prisma.TransactionClient,
+    contexto: ContextoOperacionTienda,
+    datos: {
+      turnoId: number;
+      monto: Prisma.Decimal;
+      motivo: string;
+      claveRecurso: string;
+      origen: OrigenMovimiento;
+    },
+  ) {
+    const { tenantId, membresiaId } = contexto;
+    const { turnoId, origen, claveRecurso } = datos;
+    const turno = await this.bloquearTurnoAbierto(tx, contexto, turnoId);
+    const monto = importeTienda(datos.monto);
+    const motivo = textoObligatorio(datos.motivo, 'Motivo');
+    const tipo =
+      origen.tipo === 'manual'
+        ? origen.direccion
+        : origen.tipo === 'cobro'
+          ? 'ENTRADA'
+          : 'SALIDA';
+    if (
+      tipo === 'SALIDA' &&
+      monto.gt(
+        await this.calcularEfectivo(tx, tenantId, turnoId, turno.fondoInicial),
+      )
+    ) {
+      throw new ConflictException('La salida supera el efectivo disponible');
+    }
+    return tx.movimientoCaja.create({
+      data: {
+        tenantId,
+        turnoId,
+        responsableId: membresiaId,
+        monto,
+        motivo,
+        tipo,
+        claveIdempotencia: claveRecurso,
+        cobroId: origen.tipo === 'cobro' ? origen.id : undefined,
+        reembolsoId: origen.tipo === 'reembolso' ? origen.id : undefined,
+        gastoId: origen.tipo === 'gasto' ? origen.id : undefined,
+      },
+    });
+  }
+
+  moverEfectivo(
+    contexto: ContextoOperacionTienda,
+    datos: {
+      turnoId: number;
+      monto: string;
+      motivo: string;
+      direccion: TipoMovimientoCaja;
+    },
+    clave: string | undefined,
+  ) {
+    const { tenantId, usuarioId } = contexto;
+    const { turnoId, direccion } = datos;
+    const monto = importeTienda(datos.monto);
+    const motivo = textoObligatorio(datos.motivo, 'Motivo');
+    return this.idempotencia.ejecutar(
+      {
+        tenantId,
+        usuarioId,
+        clave,
+        operacion: 'caja.movimiento',
+        datos: { turnoId, direccion, motivo, monto: monto.toFixed(2) },
+      },
+      async (tx, claveRecurso) => {
+        const movimiento = await this.registrarMovimiento(tx, contexto, {
+          turnoId,
+          monto,
+          motivo,
+          claveRecurso,
+          origen: { tipo: 'manual', direccion },
+        });
+        await contexto.auditar(tx, {
+          accion: 'caja.movimiento',
+          recursoTipo: 'MovimientoCaja',
+          recursoId: movimiento.id,
+          motivo,
+        });
+        return { recursoTipo: 'MovimientoCaja', recursoId: movimiento.id };
+      },
+    );
+  }
+
+  cerrarTurno(
+    contexto: ContextoOperacionTienda,
+    datos: { turnoId: number; efectivoContado: string; motivo?: string },
+    clave: string | undefined,
+    cierreSupervisado = false,
+  ) {
+    const { tenantId, usuarioId, membresiaId } = contexto;
+    const { turnoId } = datos;
+    const efectivoContado = importeTienda(datos.efectivoContado, true);
+    const motivo = datos.motivo?.trim() || null;
+    return this.idempotencia.ejecutar(
+      {
+        tenantId,
+        usuarioId,
+        clave,
+        operacion: 'caja.cerrar',
+        datos: { turnoId, efectivoContado: efectivoContado.toFixed(2), motivo },
+      },
+      async (tx) => {
+        const { cajaId } = await this.obtenerTurno(tenantId, turnoId, tx);
+        await this.bloquearCaja(tx, tenantId, cajaId);
+        const { fondoInicial } = await this.bloquearTurnoAbierto(
+          tx,
+          contexto,
+          turnoId,
+          cierreSupervisado,
+        );
+        const efectivoEsperado = await this.calcularEfectivo(
+          tx,
+          tenantId,
+          turnoId,
+          fondoInicial,
+        );
+        await tx.turnoCaja.update({
+          where: { tenantId_id: { tenantId, id: turnoId } },
+          data: {
+            estado: 'CERRADO',
+            cierreAt: new Date(),
+            cerradoPorId: membresiaId,
+            efectivoEsperado,
+            efectivoContado,
+            diferencia: efectivoContado.minus(efectivoEsperado),
+            motivoCierre: motivo,
+          },
+        });
+        await contexto.auditar(tx, {
+          accion: 'caja.cerrar',
+          recursoTipo: 'TurnoCaja',
+          recursoId: turnoId,
+          motivo: motivo ?? undefined,
+        });
+        return { recursoTipo: 'TurnoCaja', recursoId: turnoId };
+      },
+    );
+  }
+
   async obtenerTurno(
     tenantId: number,
     id: number,
@@ -174,6 +322,39 @@ export class CajaService {
     });
     if (!turno) throw new NotFoundException('Turno de caja no encontrado');
     return turno;
+  }
+
+  async listarMovimientos(
+    tenantId: number,
+    turnoId: number,
+    pagina?: number,
+    limite?: number,
+  ) {
+    await this.obtenerTurno(tenantId, turnoId);
+    return this.prisma.movimientoCaja.findMany({
+      where: { tenantId, turnoId },
+      orderBy: [{ fecha: 'asc' }, { id: 'asc' }],
+      ...paginacion(pagina, limite),
+    });
+  }
+
+  private async calcularEfectivo(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    turnoId: number,
+    fondo: Prisma.Decimal,
+  ) {
+    const movimientos = await tx.movimientoCaja.groupBy({
+      by: ['tipo'],
+      where: { tenantId, turnoId },
+      _sum: { monto: true },
+    });
+    return movimientos.reduce((saldo, movimiento) => {
+      const monto = movimiento._sum.monto ?? 0;
+      return movimiento.tipo === 'ENTRADA'
+        ? saldo.plus(monto)
+        : saldo.minus(monto);
+    }, fondo);
   }
 
   private async bloquearCaja(
