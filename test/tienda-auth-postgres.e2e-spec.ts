@@ -1282,7 +1282,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       metodo: 'TRANSFERENCIA',
       turnoId: undefined,
       monto: '4',
-      fecha: '2026-05-02T09:00:00-05:00',
+      fecha: '2026-04-30T23:30:00-05:00',
     }).expect(201);
     await http().get(ruta).auth(externo.accessToken, bearer).expect(200, []);
     const consulta = await http()
@@ -1296,6 +1296,52 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       .expect(200);
     const id = (registrado.body as { recursoId: number }).recursoId;
     expect(consulta.body).toMatchObject([{ id, monto: '3.5', turnoId }]);
+    const consultarFinanzas = (
+      token: string,
+      desde: string,
+      hasta: string,
+    ): request.Test =>
+      http()
+        .get('/finanzas/resumen')
+        .auth(token, bearer)
+        .query({ desde, hasta });
+    await consultarFinanzas(
+      lector.accessToken,
+      '2026-04-01',
+      '2026-05-01',
+    ).expect(403);
+    const abril = await consultarFinanzas(
+      owner.accessToken,
+      '2026-04-01',
+      '2026-05-01',
+    ).expect(200);
+    expect(abril.body).toMatchObject({
+      gastosComerciales: '4',
+      resultadoOperativoEstimado: '-4',
+    });
+    const mayo = await consultarFinanzas(
+      owner.accessToken,
+      '2026-05-01',
+      '2026-06-01',
+    ).expect(200);
+    expect(mayo.body).toMatchObject({
+      gastosComerciales: '3.5',
+      resultadoOperativoEstimado: '-3.5',
+    });
+    const otroNegocio = await consultarFinanzas(
+      externo.accessToken,
+      '2026-04-01',
+      '2026-06-01',
+    ).expect(200);
+    expect(otroNegocio.body).toMatchObject({
+      gastosComerciales: '0',
+      resultadoOperativoEstimado: '0',
+    });
+    await consultarFinanzas(
+      owner.accessToken,
+      '2026-05-01',
+      '2026-05-01',
+    ).expect(400);
     await http()
       .get(ruta)
       .auth(lector.accessToken, bearer)
@@ -2410,6 +2456,25 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
     await expect(total(new Date(0), movimiento.fecha)).resolves.toEqual({
       totalPerdidas: '0.0000',
+    });
+    const supervisor = await crearPerfilComercial(
+      tenantId,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    const finanzas = await http()
+      .get('/finanzas/resumen')
+      .auth(supervisor.accessToken, bearer)
+      .query({
+        desde: fechaComercial(movimiento.fecha),
+        hasta: fechaComercial(new Date(Date.now() + 86_400_000)),
+      })
+      .expect(200);
+    expect(finanzas.body).toMatchObject({
+      costoNetoVendido: '0',
+      perdidasInventario: '3.7035',
+      resultadoOperativoEstimado: '-3.7035',
     });
     const saldos = await prisma.loteInventario.aggregate({
       where: { tenantId, productoId: producto.id },
@@ -3543,6 +3608,23 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
         { responsableId: vendedor.context.membresiaId, neto: '5.2', ventas: 1 },
       ],
     });
+    const consultarFinanzas = (): request.Test =>
+      http()
+        .get('/finanzas/resumen')
+        .auth(owner.accessToken, bearer)
+        .query({ desde: filtrosAnalisis.desde, hasta: filtrosAnalisis.hasta });
+    const finanzasDevueltas = await consultarFinanzas().expect(200);
+    expect(finanzasDevueltas.body).toEqual({
+      ventasNetas: '5.2',
+      costoNetoVendido: '1',
+      utilidadBruta: '4.2',
+      dineroRecibido: '15.6',
+      dineroDevuelto: '10.4',
+      flujoCobros: '5.2',
+      gastosComerciales: '0',
+      perdidasInventario: '1',
+      resultadoOperativoEstimado: '3.2',
+    });
     const [pagoRemanente] = (
       vistaRetorno.body as { aplicaciones: { id: number }[] }
     ).aplicaciones;
@@ -3579,6 +3661,18 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       anulada.body as object,
     );
     await anular(sinRetorno).expect(409);
+    const finanzasAnuladas = await consultarFinanzas().expect(200);
+    expect(finanzasAnuladas.body).toEqual({
+      ventasNetas: '0',
+      costoNetoVendido: '0',
+      utilidadBruta: '0',
+      dineroRecibido: '15.6',
+      dineroDevuelto: '15.6',
+      flujoCobros: '0',
+      gastosComerciales: '0',
+      perdidasInventario: '2',
+      resultadoOperativoEstimado: '-2',
+    });
     const netoTrasAnulacion = await consultarAnalisis().expect(200);
     expect(netoTrasAnulacion.body).toMatchObject({
       neto: '0',
@@ -3855,6 +3949,20 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       saldo: '0',
       diasMora: 0,
       aplicacionCobro_cuenta: [{ monto: '60' }, { monto: '20' }],
+    });
+    const resumenFinanciado = await http()
+      .get('/finanzas/resumen')
+      .auth(owner.accessToken, bearer)
+      .query({
+        desde: fechaComercial(new Date(Date.now() - 86_400_000)),
+        hasta: fechaComercial(new Date(Date.now() + 86_400_000)),
+      })
+      .expect(200);
+    expect(resumenFinanciado.body).toMatchObject({
+      ventasNetas: '200',
+      dineroRecibido: '100',
+      dineroDevuelto: '0',
+      costoNetoVendido: '80',
     });
     expect(
       (pagada.body as { aplicacionCobro_cuenta: object[] })

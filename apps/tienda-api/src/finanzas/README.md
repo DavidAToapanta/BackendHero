@@ -19,3 +19,27 @@ La corrección de un gasto registrado queda pendiente de una regla contable.
 
 La [suite HTTP con PostgreSQL](../../../../test/tienda-auth-postgres.e2e-spec.ts)
 verifica reintentos, permisos, aislamiento, medios de pago y cierre de caja.
+
+## B15 · Resumen financiero
+
+`GET /finanzas/resumen?desde=2026-05-01&hasta=2026-06-01` requiere
+`store.reports.read` y usa el negocio de la sesión. Envía fechas
+`AAAA-MM-DD` en Guayaquil. El intervalo incluye el inicio y excluye el
+fin, con un máximo de 366 días. Sirve para un día, una semana, un mes o
+varios meses según los límites enviados.
+
+| Campo | Cálculo |
+| --- | --- |
+| `ventasNetas` | Ventas por fecha de registro menos devoluciones por fecha de aprobación y el remanente de las anulaciones por fecha de anulación. |
+| `costoNetoVendido` | Costo original de los lotes vendidos menos el costo de las unidades devueltas y el costo restante en las anulaciones. |
+| `utilidadBruta` | Ventas netas menos costo neto vendido. |
+| `dineroRecibido`, `dineroDevuelto` | Cobros confirmados por fecha de cobro y reembolsos confirmados por fecha de confirmación. Los abonos se cuentan como cobros. Los cobros reversados quedan excluidos. |
+| `flujoCobros` | Dinero recibido menos dinero devuelto. |
+| `gastosComerciales` | Gastos por la fecha asignada al registrarlos. |
+| `perdidasInventario` | Bajas al costo de A10/A11 más el costo de la mercancía que no retornó al anular. Las devoluciones dañadas cuentan mediante la baja de A11. |
+| `resultadoOperativoEstimado` | Utilidad bruta menos gastos comerciales y pérdidas de inventario. |
+
+Las devoluciones y anulaciones de ventas de un período anterior se
+reconocen en el período en que ocurren. Por eso un período puede tener
+ventas netas negativas. El resumen devuelve los importes como cadenas
+decimales y conserva hasta cuatro decimales en costos y pérdidas.
