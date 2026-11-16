@@ -1,45 +1,49 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
+  ParseUUIDPipe,
+  Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
+import { RequierePermisoTienda } from '../accesos/accesos.module';
+import { ContextoTiendaActual, type ContextoTienda } from '../auth';
 import { AuditoriaService } from './auditoria.service';
-import { CreateAuditoriaDto } from './dto/create-auditoria.dto';
-import { UpdateAuditoriaDto } from './dto/update-auditoria.dto';
+import { ConsultaAuditoriaDto } from './dto/consulta-auditoria.dto';
 
 @Controller('auditoria')
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class AuditoriaController {
   constructor(private readonly auditoriaService: AuditoriaService) {}
 
-  @Post()
-  create(@Body() createAuditoriaDto: CreateAuditoriaDto) {
-    return this.auditoriaService.create(createAuditoriaDto);
-  }
-
   @Get()
-  findAll() {
-    return this.auditoriaService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.auditoriaService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateAuditoriaDto: UpdateAuditoriaDto,
+  @RequierePermisoTienda('store.audit.read')
+  listar(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() filtros: ConsultaAuditoriaDto,
   ) {
-    return this.auditoriaService.update(+id, updateAuditoriaDto);
+    return this.auditoriaService.listar(contexto, filtros);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.auditoriaService.remove(+id);
+  @Get('actividad-reciente')
+  @RequierePermisoTienda('store.audit.read')
+  actividadReciente(@ContextoTiendaActual() contexto: ContextoTienda) {
+    return this.auditoriaService.actividadReciente(contexto);
+  }
+
+  @Get(':correlacionId')
+  @RequierePermisoTienda('store.audit.read')
+  detalle(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param('correlacionId', ParseUUIDPipe) correlacionId: string,
+  ) {
+    return this.auditoriaService.detalle(contexto, correlacionId);
   }
 }

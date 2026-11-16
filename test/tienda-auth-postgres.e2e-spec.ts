@@ -37,6 +37,7 @@ import {
   ACCIONES_AUDITORIA,
   AuditoriaEscrituraService,
 } from '../apps/tienda-api/src/auditoria/auditoria-escritura';
+import { AuditoriaService } from '../apps/tienda-api/src/auditoria/auditoria.service';
 import {
   ContextoTiendaActual,
   type ContextoTienda,
@@ -2149,6 +2150,250 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     ).toMatchObject({ stock: saldos._sum.cantidadFisica });
   }, 20000);
 
+  it('pagina operaciones históricas, filtra sus eventos y protege el bloque de actividad', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const { id: tenantAjeno } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const permisos = await prisma.$transaction((tx) =>
+      app.get(PermisosService).registrarCatalogo(tx),
+    );
+    const permisoId = permisos.find(
+      ({ codigo }) => codigo === 'store.audit.read',
+    )!.id;
+    async function operador(id: number) {
+      const { usuario, credenciales } = await registrarPersonal();
+      const membresia = await vincularPersonal(usuario.id, id);
+      const rol = await asignarRol(id, membresia.id);
+      return { usuario, membresia, rol, ...(await loginTienda(credenciales)) };
+    }
+    const propio = await operador(tenantId);
+    const ajeno = await operador(tenantAjeno);
+    const bearer = { type: 'bearer' } as const;
+    const recibir = (ruta = '', token = propio.accessToken) =>
+      http().get(`/auditoria${ruta}`).auth(token, bearer);
+    const actividad = '/actividad-reciente';
+    const servicio = app.get(AuditoriaService);
+    await http().get(`/auditoria${actividad}`).expect(401);
+    await recibir(actividad).expect(403);
+    await expect(
+      servicio.actividadReciente(propio.context),
+    ).rejects.toMatchObject({ status: 403 });
+    await prisma.rolPermiso.createMany({
+      data: [
+        { tenantId, rolId: propio.rol.id, permisoId },
+        { tenantId: tenantAjeno, rolId: ajeno.rol.id, permisoId },
+      ],
+    });
+    await recibir(actividad).expect(200, { data: [] });
+    await recibir().expect(400);
+    await recibir('/no-es-uuid').expect(400);
+
+    const [productoA, productoB] = await Promise.all(
+      ['A', 'B'].map((nombre) =>
+        prisma.producto.create({
+          data: { tenantId, nombre, precio: 1, stock: 0, estado: true },
+        }),
+      ),
+    );
+    const inicio = '2022-01-01T00:00:00-05:00';
+    const fin = '2022-01-03T00:00:00-05:00';
+    const ventana = { desde: inicio, hasta: fin };
+    const venta = randomUUID();
+    const limite = randomUUID();
+    const abono = randomUUID();
+    const actor = {
+      tenantId,
+      actor: 'USUARIO' as const,
+      usuarioId: propio.usuario.id,
+      membresiaId: propio.membresia.id,
+      rolCodigo: propio.rol.codigo,
+      rolNombre: 'Rol antes del cambio',
+    };
+    await prisma.auditoriaOperacion.createMany({
+      data: [
+        {
+          ...actor,
+          correlacionId: venta,
+          accion: 'ventas.registrar',
+          entidadTipo: 'Venta',
+          entidadId: 77,
+          productoId: productoA.id,
+          createdAt: new Date(inicio),
+          datos: {
+            modalidad: 'CREDITO',
+            financiado: '900.00',
+            clave: 'privada',
+          },
+        },
+        {
+          ...actor,
+          correlacionId: venta,
+          accion: 'ventas.registrar',
+          entidadTipo: 'Venta',
+          entidadId: 77,
+          productoId: productoB.id,
+          createdAt: new Date(inicio),
+          datos: {
+            modalidad: 'CREDITO',
+            financiado: '900.00',
+            clave: 'privada',
+          },
+        },
+        {
+          ...actor,
+          correlacionId: limite,
+          accion: 'devoluciones.registrar',
+          entidadTipo: 'DevolucionVenta',
+          entidadId: 77,
+          motivo: 'Producto dañado',
+          createdAt: new Date(Date.parse(fin) - 1),
+        },
+        {
+          ...actor,
+          correlacionId: limite,
+          accion: 'ventas.anular',
+          entidadTipo: 'Venta',
+          entidadId: 78,
+          motivo: 'Anulación de ensayo',
+          createdAt: new Date(fin),
+        },
+      ],
+    });
+    await prisma.auditoriaOperacion.create({
+      data: {
+        tenantId,
+        actor: 'SISTEMA',
+        correlacionId: abono,
+        accion: 'cartera.abonar',
+        entidadTipo: 'Cobro',
+        entidadId: 42,
+        createdAt: new Date(inicio),
+      },
+    });
+    await prisma.rolNegocio.update({
+      where: { id: propio.rol.id },
+      data: { nombre: 'Rol actual' },
+    });
+    const encontrados = await recibir()
+      .query({ ...ventana, pagina: 1, limite: 1 })
+      .expect(200);
+    expect(encontrados.body).toMatchObject({
+      data: [
+        {
+          correlacionId: abono,
+          actor: { tipo: 'SISTEMA', nombre: null },
+          rol: null,
+        },
+      ],
+      meta: { pagina: 1, limite: 1, total: 2, paginas: 2 },
+    });
+    expect(
+      (
+        await recibir()
+          .query({ ...ventana, pagina: 2, limite: 1 })
+          .expect(200)
+      ).body,
+    ).toMatchObject({ data: [{ correlacionId: venta }] });
+    const listarProducto = (productoId: number) =>
+      recibir()
+        .query({
+          ...ventana,
+          productoId,
+          actor: 'USUARIO',
+          usuarioId: propio.usuario.id,
+          rolCodigo: propio.rol.codigo,
+          accion: 'ventas.registrar',
+        })
+        .expect(200);
+    const listaA = await listarProducto(productoA.id);
+    const listaB = await listarProducto(productoB.id);
+    expect(listaA.body).toEqual(listaB.body);
+    expect(listaA.body).toMatchObject({
+      data: [
+        {
+          correlacionId: venta,
+          fecha: new Date(inicio).toISOString(),
+          actor: {
+            usuarioId: propio.usuario.id,
+            membresiaId: propio.membresia.id,
+            nombre: 'Personal Ensayo',
+          },
+          rol: { codigo: propio.rol.codigo, nombre: 'Rol antes del cambio' },
+        },
+      ],
+      meta: { total: 1, limite: 20 },
+    });
+    const detalle = await recibir(`/${venta}`).expect(200);
+    expect(detalle.body).toMatchObject({
+      productoIds: [productoA.id, productoB.id].sort((a, b) => a - b),
+      eventos: [{ entidad: { tipo: 'Venta', id: 77 } }],
+    });
+    const { eventos } = detalle.body as { eventos: { datos: unknown }[] };
+    expect(eventos[0].datos).toEqual({ modalidad: 'CREDITO' });
+    expect(
+      (
+        await recibir()
+          .query({
+            desde: fin,
+            hasta: '2022-01-04T00:00:00-05:00',
+            accion: 'devoluciones.registrar',
+          })
+          .expect(200)
+      ).body,
+    ).toMatchObject({
+      data: [{ correlacionId: limite, accion: 'ventas.anular' }],
+      meta: { total: 1 },
+    });
+    expect((await recibir(actividad).expect(200)).body).toMatchObject({
+      data: [
+        { correlacionId: limite },
+        { correlacionId: abono },
+        { correlacionId: venta },
+      ],
+    });
+    await recibir('', ajeno.accessToken)
+      .query(ventana)
+      .expect(200, {
+        data: [],
+        meta: { pagina: 1, limite: 20, total: 0, paginas: 0 },
+      });
+    await recibir(`/${venta}`, ajeno.accessToken).expect(404);
+    await recibir()
+      .query({ ...ventana, hasta: '2022-01-03T00:00:00.001-05:00' })
+      .expect(400);
+    await recibir()
+      .query({ ...ventana, hasta: inicio })
+      .expect(400);
+    await recibir()
+      .query({ ...ventana, desde: '2022-01-01T00:00:00' })
+      .expect(400);
+    await recibir()
+      .query({ ...ventana, tenantId: tenantAjeno })
+      .expect(400);
+
+    await prisma.auditoriaOperacion.createMany({
+      data: Array.from({ length: 12 }, (_, orden) => ({
+        ...actor,
+        correlacionId: randomUUID(),
+        accion: 'inventario.baja',
+        entidadTipo: 'MovimientoInventario',
+        entidadId: orden + 1,
+        createdAt: new Date(Date.UTC(2025, 0, orden + 1)),
+      })),
+    });
+    const recientes = await servicio.actividadReciente(propio.context);
+    expect(recientes.data.map(({ fecha }) => fecha.getUTCDate())).toEqual([
+      12, 11, 10, 9, 8, 7, 6, 5, 4, 3,
+    ]);
+    await recibir(actividad).expect(
+      200,
+      JSON.parse(JSON.stringify(recientes)) as object,
+    );
+  }, 20000);
+
   it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
@@ -2665,6 +2910,33 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(resultados.map(({ status }) => status).sort()).toEqual([201, 400]);
     const venta = resultados.find(({ status }) => status === 201)!;
     const { recursoId: ventaId } = venta.body as { recursoId: number };
+    const fechaAuditoria = new Date();
+    const historialVenta = await http()
+      .get('/auditoria')
+      .auth(owner.accessToken, bearer)
+      .query({
+        desde: new Date(fechaAuditoria.getTime() - 60_000).toISOString(),
+        hasta: new Date(fechaAuditoria.getTime() + 60_000).toISOString(),
+        accion: 'ventas.registrar',
+        productoId,
+      })
+      .expect(200);
+    const {
+      data: [registroVenta],
+    } = historialVenta.body as { data: { correlacionId: string }[] };
+    const auditoriaVenta = await http()
+      .get(`/auditoria/${registroVenta.correlacionId}`)
+      .auth(owner.accessToken, bearer)
+      .expect(200);
+    expect(auditoriaVenta.body).toMatchObject({
+      eventos: expect.arrayContaining([
+        expect.objectContaining({
+          accion: 'ventas.registrar',
+          entidad: { tipo: 'Venta', id: ventaId },
+          productoIds: [productoId],
+        }),
+      ]) as unknown,
+    });
     const ganoPrimero = resultados[0].status === 201;
     const claveExitosa = ganoPrimero ? clave : otraClave;
     const turnoVendido = ganoPrimero ? turnoId : otroTurnoId;
