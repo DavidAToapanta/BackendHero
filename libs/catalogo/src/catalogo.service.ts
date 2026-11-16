@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ModuleKey } from '@prisma/client';
 import { traducirErrorCatalogo } from './errores-catalogo';
 
 type FichaProducto = {
@@ -18,6 +18,19 @@ type FichaProducto = {
   descripcion?: string | null;
 };
 
+type FiltrosFicha = {
+  q?: string;
+  activo?: boolean;
+  categoriaId?: number;
+  pagina?: number;
+  limite?: number;
+};
+
+const categoriaFicha = {
+  select: { id: true, nombre: true, modulo: true },
+} as const;
+const imagenesFicha = { orderBy: { orden: 'asc' } } as const;
+
 const SKU_O_BARRAS_DUPLICADO =
   'El SKU o código de barras ya existe en el negocio';
 const PRODUCTO_NO_ENCONTRADO = 'Producto no encontrado';
@@ -26,7 +39,12 @@ const PRODUCTO_NO_ENCONTRADO = 'Producto no encontrado';
 export class CatalogoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(tenantId: number, ficha: FichaProducto, stockInicialLegacy = 0) {
+  async create(
+    tenantId: number,
+    ficha: FichaProducto,
+    stockInicialLegacy = 0,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     if (!Number.isInteger(stockInicialLegacy) || stockInicialLegacy < 0) {
       throw new BadRequestException(
         'El stock inicial debe ser un entero no negativo',
@@ -35,7 +53,7 @@ export class CatalogoService {
 
     const { nombre, precio, estado } = ficha;
     try {
-      return await this.prisma.producto.create({
+      return await tx.producto.create({
         data: {
           ...this.datosFicha(ficha),
           tenantId,
@@ -48,6 +66,86 @@ export class CatalogoService {
     } catch (error) {
       traducirErrorCatalogo(error, { P2002: SKU_O_BARRAS_DUPLICADO });
     }
+  }
+
+  async listarFichas(
+    tenantId: number,
+    modulo: ModuleKey,
+    { q, activo, categoriaId, pagina = 1, limite = 20 }: FiltrosFicha,
+    tx: Prisma.TransactionClient,
+  ) {
+    const skip = (pagina - 1) * limite;
+    if (
+      !Number.isInteger(pagina) ||
+      pagina < 1 ||
+      !Number.isInteger(limite) ||
+      limite < 1 ||
+      limite > 50 ||
+      skip > 2147483647
+    ) {
+      throw new BadRequestException('Paginación inválida');
+    }
+    const texto = q?.trim().replace(/[\\%_]/g, '\\$&');
+    const contiene = { contains: texto, mode: 'insensitive' as const };
+    const where: Prisma.ProductoWhereInput = {
+      tenantId,
+      estado: activo,
+      ...(categoriaId === undefined
+        ? {}
+        : { categoria: { id: categoriaId, modulo } }),
+      ...(texto
+        ? {
+            OR: [
+              { nombre: contiene },
+              { presentacion: contiene },
+              { sku: contiene },
+            ],
+          }
+        : {}),
+    };
+    const [data, total] = await Promise.all([
+      tx.producto.findMany({
+        where,
+        skip,
+        take: limite,
+        orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+        include: {
+          categoria: categoriaFicha,
+          productoImagen_producto: { ...imagenesFicha, take: 1 },
+        },
+      }),
+      tx.producto.count({ where }),
+    ]);
+    return {
+      data,
+      meta: { pagina, limite, total, paginas: Math.ceil(total / limite) },
+    };
+  }
+
+  async obtenerFicha(
+    tenantId: number,
+    identificador: { id: number } | { codigoBarras: string },
+    tx: Prisma.TransactionClient,
+    opciones: { soloActivos?: boolean; todasLasImagenes?: boolean } = {},
+  ) {
+    const producto = await tx.producto.findFirst({
+      where: {
+        tenantId,
+        ...('id' in identificador
+          ? { id: identificador.id }
+          : { codigoBarras: identificador.codigoBarras }),
+        estado: opciones.soloActivos ? true : undefined,
+      },
+      include: {
+        categoria: categoriaFicha,
+        productoImagen_producto: {
+          ...imagenesFicha,
+          take: opciones.todasLasImagenes ? undefined : 1,
+        },
+      },
+    });
+    if (!producto) throw new NotFoundException(PRODUCTO_NO_ENCONTRADO);
+    return producto;
   }
 
   async findOne(tenantId: number, id: number) {

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  HttpCode,
   Put,
   Query,
   UsePipes,
@@ -20,24 +21,32 @@ import {
   CrearCategoriaDto,
   EditarCategoriaDto,
   ListaCategoriasDto,
+  PaginacionCatalogoDto,
   ProductoCategoriaParamDto,
 } from './dto/categoria.dto';
-import { CreateCatalogoDto } from './dto/create-catalogo.dto';
-import { UpdateCatalogoDto } from './dto/update-catalogo.dto';
+import {
+  CodigoBarrasDto,
+  CrearImagenDto,
+  CrearProductoDto,
+  EditarImagenDto,
+  EditarProductoDto,
+  ImagenParamDto,
+  ListaProductosDto,
+} from './dto/producto.dto';
 
-const validacionCategorias = new ValidationPipe({
+const validacionCatalogo = new ValidationPipe({
   transform: true,
   whitelist: true,
   forbidNonWhitelisted: true,
 });
 
 @Controller('catalogo')
+@UsePipes(validacionCatalogo)
 export class CatalogoController {
   constructor(private readonly catalogoService: CatalogoService) {}
 
   @Get('categorias')
   @RequierePermisoTienda('store.catalog.read')
-  @UsePipes(validacionCategorias)
   listarCategorias(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Query() filtros: ListaCategoriasDto,
@@ -47,7 +56,6 @@ export class CatalogoController {
 
   @Post('categorias')
   @RequierePermisoTienda('store.catalog.write')
-  @UsePipes(validacionCategorias)
   crearCategoria(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Body() { nombre }: CrearCategoriaDto,
@@ -57,7 +65,6 @@ export class CatalogoController {
 
   @Patch('categorias/:categoriaId')
   @RequierePermisoTienda('store.catalog.write')
-  @UsePipes(validacionCategorias)
   editarCategoria(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Param() { categoriaId }: CategoriaParamDto,
@@ -68,7 +75,6 @@ export class CatalogoController {
 
   @Put('productos/:productoId/categoria')
   @RequierePermisoTienda('store.catalog.write')
-  @UsePipes(validacionCategorias)
   asignarCategoria(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Param() { productoId }: ProductoCategoriaParamDto,
@@ -81,31 +87,93 @@ export class CatalogoController {
     );
   }
 
-  @Post()
-  create(@Body() createCatalogoDto: CreateCatalogoDto) {
-    return this.catalogoService.create(createCatalogoDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.catalogoService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.catalogoService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateCatalogoDto: UpdateCatalogoDto,
+  @Get('productos')
+  @RequierePermisoTienda('store.catalog.read')
+  listarProductos(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() filtros: ListaProductosDto,
   ) {
-    return this.catalogoService.update(+id, updateCatalogoDto);
+    return this.catalogoService.listarProductos(contexto, filtros);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.catalogoService.remove(+id);
+  @Get('productos/mostrador')
+  @RequierePermisoTienda('store.catalog.read')
+  buscarMostrador(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() filtros: PaginacionCatalogoDto,
+  ) {
+    return this.catalogoService.buscarMostrador(contexto, filtros);
+  }
+
+  @Get('productos/mostrador/por-barras')
+  @RequierePermisoTienda('store.catalog.read')
+  buscarPorBarras(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Query() { codigoBarras }: CodigoBarrasDto,
+  ) {
+    return this.catalogoService.buscarPorBarras(contexto, codigoBarras);
+  }
+
+  @Get('productos/:productoId')
+  @RequierePermisoTienda('store.catalog.read')
+  obtenerProducto(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoCategoriaParamDto,
+  ) {
+    return this.catalogoService.obtenerProducto(contexto, productoId);
+  }
+
+  @Post('productos')
+  @RequierePermisoTienda('store.catalog.write')
+  crearProducto(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Body() dto: CrearProductoDto,
+  ) {
+    return this.catalogoService.crearProducto(contexto, dto);
+  }
+
+  @Patch('productos/:productoId')
+  @RequierePermisoTienda('store.catalog.write')
+  editarProducto(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoCategoriaParamDto,
+    @Body() dto: EditarProductoDto,
+  ) {
+    return this.catalogoService.editarProducto(contexto, productoId, dto);
+  }
+
+  @Post('productos/:productoId/imagenes')
+  @RequierePermisoTienda('store.catalog.write')
+  crearImagen(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoCategoriaParamDto,
+    @Body() dto: CrearImagenDto,
+  ) {
+    return this.catalogoService.crearImagen(contexto, productoId, dto);
+  }
+
+  @Patch('productos/:productoId/imagenes/:imagenId')
+  @RequierePermisoTienda('store.catalog.write')
+  editarImagen(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId, imagenId }: ImagenParamDto,
+    @Body() dto: EditarImagenDto,
+  ) {
+    return this.catalogoService.editarImagen(
+      contexto,
+      productoId,
+      imagenId,
+      dto,
+    );
+  }
+
+  @Delete('productos/:productoId/imagenes/:imagenId')
+  @HttpCode(204)
+  @RequierePermisoTienda('store.catalog.write')
+  async eliminarImagen(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId, imagenId }: ImagenParamDto,
+  ) {
+    await this.catalogoService.eliminarImagen(contexto, productoId, imagenId);
   }
 }

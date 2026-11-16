@@ -19,7 +19,7 @@ const makeTx = () => ({
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   },
   loteInventario: {
-    aggregate: jest.fn(),
+    groupBy: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
   },
@@ -210,9 +210,9 @@ describe('CompraService', () => {
     tx.$queryRaw.mockResolvedValue([producto]);
     tx.userTenant.findUnique.mockResolvedValue({ id: 30 });
     tx.compra.create.mockResolvedValue({ id: 11, productoId: 1, cantidad: 2 });
-    tx.loteInventario.aggregate.mockResolvedValue({
-      _sum: { cantidadFisica: 5 },
-    });
+    tx.loteInventario.groupBy.mockResolvedValue([
+      { productoId: producto.id, _sum: { cantidadFisica: 5 } },
+    ]);
     tx.loteInventario.findFirst.mockResolvedValue({
       costoUnitario: new Prisma.Decimal('2.25'),
     });

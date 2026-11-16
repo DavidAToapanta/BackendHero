@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
+import type { Prisma } from '@prisma/client';
 import { traducirErrorCatalogo } from './errores-catalogo';
 
 type ImagenProducto = {
@@ -22,11 +23,16 @@ export class ImagenesProductoService {
     });
   }
 
-  async create(tenantId: number, productoId: number, imagen: ImagenProducto) {
+  async create(
+    tenantId: number,
+    productoId: number,
+    imagen: ImagenProducto,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     const { url, orden, claveArchivo, textoAlternativo } = imagen;
     this.validarImagen(url, orden);
     try {
-      return await this.prisma.productoImagen.create({
+      return await tx.productoImagen.create({
         data: {
           url: url.trim(),
           orden,
@@ -49,10 +55,11 @@ export class ImagenesProductoService {
     productoId: number,
     id: number,
     { url, orden, claveArchivo, textoAlternativo }: Partial<ImagenProducto>,
+    tx: Prisma.TransactionClient = this.prisma,
   ) {
     this.validarImagen(url, orden);
     try {
-      return await this.prisma.productoImagen.update({
+      return await tx.productoImagen.update({
         where: { tenantId_id: { tenantId, id }, productoId },
         data: { url: url?.trim(), orden, claveArchivo, textoAlternativo },
       });
@@ -64,9 +71,14 @@ export class ImagenesProductoService {
     }
   }
 
-  async remove(tenantId: number, productoId: number, id: number) {
+  async remove(
+    tenantId: number,
+    productoId: number,
+    id: number,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     try {
-      return await this.prisma.productoImagen.delete({
+      return await tx.productoImagen.delete({
         where: { tenantId_id: { tenantId, id }, productoId },
       });
     } catch (error) {

@@ -72,6 +72,10 @@ Los ejemplos indican los valores de `entidadTipo`, `entidadId`, `productoIds`,
 - **`catalogo.productos.categoria.asignar`** y
   **`catalogo.productos.categoria.desasignar`** registran `Producto` con
   su ID en `productoIds` y `datos: { categoriaIdAnterior, categoriaId }`.
+- **`catalogo.productos.crear`** y **`catalogo.productos.editar`** registran
+  `Producto` y su ID en `productoIds`. **`catalogo.imagenes.crear`**,
+  **`catalogo.imagenes.editar`** y **`catalogo.imagenes.eliminar`** registran
+  `ProductoImagen`, el producto relacionado y el orden.
 
 A04 conserva los códigos `ACCESOS_ROLES_PREPARAR` y
 `ACCESOS_PERMISOS_ACTIVAR` para `Tenant`; `ACCESOS_PERSONAL_ALTA`,
