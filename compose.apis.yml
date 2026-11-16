@@ -1,0 +1,44 @@
+x-api: &api
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 15s
+  healthcheck:
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        'fetch("http://127.0.0.1:"+process.env.PORT+"/health/ready").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+      ]
+    interval: 5s
+    timeout: 4s
+    retries: 3
+    start_period: 15s
+
+services:
+  gym-api:
+    <<: *api
+    build:
+      context: .
+      target: gym
+    environment:
+      PORT: '8080'
+      DATABASE_URL: ${GYM_DATABASE_URL:?Configura GYM_DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:-supersecret}
+      PRISMA_POOL_LOG: ${PRISMA_POOL_LOG:-0}
+    ports:
+      - '127.0.0.1:${GYM_HOST_PORT:-8080}:8080'
+
+  tienda-api:
+    <<: *api
+    build:
+      context: .
+      target: tienda
+    environment:
+      PORT: '8081'
+      DATABASE_URL: ${TIENDA_DATABASE_URL:?Configura TIENDA_DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:-supersecret}
+      TIENDA_JWT_SECRET: ${TIENDA_JWT_SECRET:?Configura TIENDA_JWT_SECRET}
+      PRISMA_POOL_LOG: ${PRISMA_POOL_LOG:-0}
+    ports:
+      - '127.0.0.1:${TIENDA_HOST_PORT:-8081}:8081'

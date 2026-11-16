@@ -2,10 +2,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as bodyParser from 'body-parser';
+import { configurarOperacionHttp } from '../../../libs/operacion-http';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const port = Number(process.env.PORT ?? 8080);
+  configurarOperacionHttp(app, 'gym-api');
 
   // Aumentar el límite de tamaño del body a 50MB para imágenes en base64
   app.use(bodyParser.json({ limit: '50mb' }));
