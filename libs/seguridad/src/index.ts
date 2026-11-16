@@ -7,4 +7,7 @@ export {
   createJwtModuleOptions,
   getJwtSecret,
 } from './jwt/jwt.config';
-export { JwtStrategyBase } from './jwt/jwt-strategy.base';
+export {
+  createJwtStrategyBase,
+  JwtStrategyBase,
+} from './jwt/jwt-strategy.base';

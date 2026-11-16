@@ -1,6 +1,7 @@
 import { PrismaService } from '@app/prisma';
 import { Injectable } from '@nestjs/common';
 import {
+  ModuleKey,
   Prisma,
   TenantEstado,
   TenantRole,
@@ -118,6 +119,37 @@ export class MembresiasPersonalService {
         tenantId: true,
         role: true,
         tenant: { select: { nombre: true } },
+      },
+      orderBy: { tenantId: 'asc' },
+    });
+  }
+
+  listarActivasPorModulo(
+    usuarioId: number,
+    modulo: ModuleKey,
+    tenantId?: number,
+  ) {
+    return this.prisma.userTenant.findMany({
+      relationLoadStrategy: 'join',
+      where: {
+        usuarioId,
+        ...(tenantId === undefined ? {} : { tenantId }),
+        estado: UserTenantEstado.ACTIVO,
+        tenant: {
+          estado: TenantEstado.ACTIVO,
+          modules: { some: { module: modulo, activo: true } },
+        },
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        role: true,
+        versionAutorizacion: true,
+        tenant: { select: { nombre: true, autorizacionVersion: true } },
+        asignacionRol_membresia: {
+          where: { rol: { activo: true } },
+          select: { rol: { select: { codigo: true, nombre: true } } },
+        },
       },
       orderBy: { tenantId: 'asc' },
     });
