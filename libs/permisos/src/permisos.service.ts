@@ -10,6 +10,7 @@ import {
   CATALOGO_PERMISOS,
   coincideConCatalogo,
   GESTION_POR_MODULO,
+  obtenerDefinicionPermiso,
   type CodigoPermiso,
 } from './catalogo-permisos';
 
@@ -58,19 +59,29 @@ export class PermisosService {
     return permisos;
   }
 
-  autorizar(contexto: ContextoPermisos, codigo: CodigoPermiso) {
+  async autorizar(
+    contexto: ContextoPermisos,
+    requerido: CodigoPermiso | readonly CodigoPermiso[],
+  ) {
+    const codigos = typeof requerido === 'string' ? [requerido] : requerido;
+    if (codigos.length === 0) {
+      throw new ForbiddenException('Permiso insuficiente');
+    }
+
     return this.prisma.$transaction(
       async (tx) => {
         const acceso = await this.resolver(contexto, tx);
-        const permiso = CATALOGO_PERMISOS.find(
-          (item) => item.codigo === codigo,
-        );
-        if (
-          acceso.modo !== 'PERMISOS' ||
-          !permiso ||
-          !acceso.modulos.has(permiso.modulo) ||
-          (!acceso.owner && !acceso.permisos.has(codigo))
-        ) {
+        const autorizado =
+          acceso.modo === 'PERMISOS' &&
+          codigos.every((codigo) => {
+            const permiso = obtenerDefinicionPermiso(codigo);
+            return (
+              permiso !== undefined &&
+              acceso.modulos.has(permiso.modulo) &&
+              (acceso.owner || acceso.permisos.has(codigo))
+            );
+          });
+        if (!autorizado) {
           throw new ForbiddenException('Permiso insuficiente');
         }
       },

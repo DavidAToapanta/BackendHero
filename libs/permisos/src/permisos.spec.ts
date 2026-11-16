@@ -73,6 +73,35 @@ describe('PermisosService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('exige todos los permisos y resuelve el acceso una vez por solicitud', async () => {
+    const datos = membresia();
+    datos.asignacionRol_membresia[0].rol.rolPermiso_rol = catalogo
+      .filter(
+        ({ codigo }) =>
+          codigo === 'gym.staff.read' || codigo === 'gym.staff.write',
+      )
+      .map((permiso) => ({ permiso }));
+    findUnique.mockResolvedValueOnce(datos);
+
+    const codigos = ['gym.staff.read', 'gym.staff.write'] as const;
+    await expect(service.autorizar(contexto, codigos)).resolves.toBeUndefined();
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    await expect(service.autorizar(contexto, codigos)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechaza una lista vacía y conserva un código único por permiso del catálogo', async () => {
+    await expect(service.autorizar(contexto, [])).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(new Set(catalogo.map(({ codigo }) => codigo)).size).toBe(
+      catalogo.length,
+    );
+  });
+
   it('rechaza otra cuenta, otra versión y módulos que no están habilitados', async () => {
     await expect(
       service.autorizar({ ...contexto, usuarioId: 99 }, 'gym.staff.read'),
