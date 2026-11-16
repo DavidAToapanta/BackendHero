@@ -1,14 +1,8 @@
 import { Injectable, NotImplementedException } from '@nestjs/common';
-import { CreateVentaDto } from './dto/create-venta.dto';
 import { UpdateVentaDto } from './dto/update-venta.dto';
 
 @Injectable()
 export class VentasService {
-  create(createVentaDto: CreateVentaDto): never {
-    void createVentaDto;
-    throw new NotImplementedException();
-  }
-
   findAll(): never {
     throw new NotImplementedException();
   }

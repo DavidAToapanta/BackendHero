@@ -1646,7 +1646,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     await editar(categoria.id, { activo: false }).expect(401);
   }, 20000);
 
-  it('administra fichas, consulta el stock vendible y escanea barras con ceros iniciales', async () => {
+  it('encuentra por barras, selecciona lotes y confirma la venta de contado', async () => {
     const { id: tenantId } = await crearNegocio({
       autorizacionVersion: 'PERMISOS',
     });
@@ -2078,6 +2078,146 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       ACCIONES_AUDITORIA.IMAGENES_ELIMINAR,
     ]);
     expect(JSON.stringify(eventosImagen)).not.toContain(reemplazo.url);
+
+    const owner = await crearPerfilComercial(tenantId, 'OWNER', [], 'OWNER');
+    const cajero = await crearPerfilComercial(
+      tenantId,
+      'CAJERO',
+      ['store.cash.open', 'store.sales.create'],
+      'CAJERO',
+    );
+    const abrirTurno = async (codigo: string, operador: AccesoTienda) => {
+      const caja = await http()
+        .post('/caja')
+        .auth(owner.accessToken, bearer)
+        .send({ codigo, nombre: 'Caja de ensayo' })
+        .expect(201);
+      const turno = await http()
+        .post(`/caja/${(caja.body as { id: number }).id}/turnos`)
+        .auth(operador.accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({ fondoInicial: '5' })
+        .expect(201);
+      return (turno.body as { recursoId: number }).recursoId;
+    };
+    const turnoId = await abrirTurno('MOSTRADOR', owner);
+    const otroTurnoId = await abrirTurno('MOSTRADOR2', cajero);
+    const loteId = (lotesMostrador[0] as { loteId: number }).loteId;
+    const datos = {
+      turnoId,
+      lineas: [{ productoId, cantidad: 3, lotes: [{ loteId, cantidad: 3 }] }],
+      pago: { metodo: 'EFECTIVO', monto: '15.609' },
+    };
+    const vender = (
+      clave: string,
+      body: object = datos,
+      token = owner.accessToken,
+    ) =>
+      http()
+        .post('/ventas')
+        .auth(token, bearer)
+        .set('Idempotency-Key', clave)
+        .send(body);
+    await vender(randomUUID(), datos, accessToken).expect(403);
+    await vender(randomUUID(), { ...datos, descuento: '1' }).expect(400);
+    await vender(randomUUID(), {
+      ...datos,
+      pago: { ...datos.pago, monto: '15.59' },
+    }).expect(400);
+
+    const auditService = app.get<AuditoriaEscrituraService>(
+      AuditoriaEscrituraService,
+    );
+    const registrarAuditoria = auditService.registrar.bind(
+      auditService,
+    ) as AuditoriaEscrituraService['registrar'];
+    const fallaVenta = jest
+      .spyOn(auditService, 'registrar')
+      .mockImplementation((tx, actor, evento) => {
+        if (evento.accion === ACCIONES_AUDITORIA.VENTAS_REGISTRAR) {
+          throw new Error('Fallo al auditar la venta');
+        }
+        return registrarAuditoria(tx, actor, evento);
+      });
+    const clave = randomUUID();
+    try {
+      await vender(clave).expect(500);
+    } finally {
+      fallaVenta.mockRestore();
+    }
+    expect(await prisma.venta.count({ where: { tenantId } })).toBe(0);
+    expect(await prisma.cobro.count({ where: { tenantId } })).toBe(0);
+    expect(
+      await prisma.movimientoCaja.count({ where: { tenantId, turnoId } }),
+    ).toBe(0);
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      stockDisponible: 3,
+    });
+
+    const otraClave = randomUUID();
+    const resultados = await Promise.all([
+      vender(clave),
+      vender(otraClave, { ...datos, turnoId: otroTurnoId }, cajero.accessToken),
+    ]);
+    expect(resultados.map(({ status }) => status).sort()).toEqual([201, 400]);
+    const venta = resultados.find(({ status }) => status === 201)!;
+    const { recursoId: ventaId } = venta.body as { recursoId: number };
+    const ganoPrimero = resultados[0].status === 201;
+    const claveExitosa = ganoPrimero ? clave : otraClave;
+    const turnoVendido = ganoPrimero ? turnoId : otroTurnoId;
+    const vendedor = ganoPrimero ? owner : cajero;
+    await vender(
+      claveExitosa,
+      {
+        ...datos,
+        turnoId: turnoVendido,
+        pago: { ...datos.pago, monto: '15.60' },
+      },
+      vendedor.accessToken,
+    ).expect(201, venta.body as object);
+    const detalleVenta = await prisma.venta.findUniqueOrThrow({
+      where: { tenantId_id: { tenantId, id: ventaId } },
+      include: {
+        detalleVenta_venta: {
+          include: { asignacionLoteVenta_detalleVenta: true },
+        },
+      },
+    });
+    expect(detalleVenta).toMatchObject({
+      total: new Prisma.Decimal('15.60'),
+      descuento: new Prisma.Decimal(0),
+      impuesto: new Prisma.Decimal(0),
+      detalleVenta_venta: [
+        {
+          productoId,
+          precioUnitario: new Prisma.Decimal('5.20'),
+          cantidad: 3,
+          asignacionLoteVenta_detalleVenta: [{ loteId, cantidad: 3 }],
+        },
+      ],
+    });
+    expect(await prisma.cobro.count({ where: { tenantId } })).toBe(1);
+    expect(
+      await prisma.movimientoCaja.count({
+        where: { tenantId, turnoId: turnoVendido },
+      }),
+    ).toBe(1);
+    expect((await escanear('001234').expect(200)).body).toMatchObject({
+      stockDisponible: 0,
+    });
+    await http()
+      .post(`/caja/turnos/${turnoVendido}/cierre`)
+      .auth(owner.accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ efectivoContado: '20.60', motivo: 'Cierre de ensayo' })
+      .expect(200);
+    expect(
+      await prisma.turnoCaja.findUniqueOrThrow({ where: { id: turnoVendido } }),
+    ).toMatchObject({
+      estado: 'CERRADO',
+      efectivoEsperado: new Prisma.Decimal('20.60'),
+      diferencia: new Prisma.Decimal(0),
+    });
   }, 25000);
 
   it('localiza una venta por ambos productos y revierte venta, existencias y auditoría juntas', async () => {
