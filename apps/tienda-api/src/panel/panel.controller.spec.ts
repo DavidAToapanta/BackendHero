@@ -3,7 +3,6 @@ import { PermisosTiendaGuard } from '../accesos/permisos-tienda';
 import { TiendaJwtGuard } from '../auth';
 import { ConsultaPanelService } from './consulta-panel.service';
 import { PanelController } from './panel.controller';
-import { PanelService } from './panel.service';
 
 describe('PanelController', () => {
   let controller: PanelController;
@@ -11,10 +10,7 @@ describe('PanelController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PanelController],
-      providers: [
-        PanelService,
-        { provide: ConsultaPanelService, useValue: {} },
-      ],
+      providers: [{ provide: ConsultaPanelService, useValue: {} }],
     })
       .overrideGuard(TiendaJwtGuard)
       .useValue({})

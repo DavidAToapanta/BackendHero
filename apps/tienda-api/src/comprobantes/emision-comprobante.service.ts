@@ -105,6 +105,17 @@ export class EmisionComprobanteService {
             total: detalle.total,
           })),
         });
+        if (venta.clienteComercialId !== null) {
+          await tx.eventoSalida.create({
+            data: {
+              tenantId,
+              tipo: 'COMPROBANTE_DISPONIBLE',
+              entidadTipo: 'ComprobanteVenta',
+              entidadId: comprobante.id,
+              payload: { clienteComercialId: venta.clienteComercialId },
+            },
+          });
+        }
         await contexto.auditar(tx, {
           accion: ACCIONES_AUDITORIA.COMPROBANTES_EMITIR,
           recursoTipo: 'ComprobanteVenta',

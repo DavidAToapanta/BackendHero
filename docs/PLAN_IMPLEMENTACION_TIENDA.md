@@ -61,16 +61,17 @@ Para ejecutar ese reparto, usar el [plan detallado por persona](./TAREAS_POR_PER
 
 ## 4. Aplicación del cliente
 
-Esta etapa se retoma después de la operación interna. Incluye vínculo con una
-cuenta, portal, carrito, pedidos y avisos al cliente. Despacho y abonos en línea
-se evaluarán en esa etapa.
+Esta etapa incluye vínculo con una cuenta, portal, carrito, pedidos para retiro
+y avisos al cliente. El [contrato HTTP del portal](../apps/tienda-api/src/portal/README.md)
+describe el flujo y la prueba reproducible. El despacho y los abonos en línea
+quedan para una ampliación del canal.
 
-- [ ] Verificar el vínculo entre el cliente comercial y su cuenta, y exponer su historial propio en `portal/`.
-- [ ] `carrito/` — Gestionar los productos seleccionados. La disponibilidad se compromete al confirmar el pedido.
-- [ ] `pedidos/` — Fijar el precio al confirmar y reservar stock con `ReservasInventarioService`. Liberar al cancelar o al vencer en un máximo de una hora. Verificar el vencimiento al entregar y requerir un pedido nuevo tras la expiración.
-- [ ] Convertir el pedido en una sola venta al entregar. Consumir la reserva y descontar el stock físico en esa transición. Registrar el pago en tienda y comprobar que emitir el comprobante mantiene el stock resultante.
-- [ ] Procesar los avisos al cliente mediante `EventoSalida`, con reintentos y deduplicación.
-- [ ] Publicar el contrato y probar cancelaciones, expiración, entregas simultáneas o reintentadas y aislamiento del historial por cliente y negocio.
+- [x] Verificar el vínculo entre el cliente comercial y su cuenta, y exponer su historial propio en `portal/`.
+- [x] `carrito/` — Gestionar los productos seleccionados. La disponibilidad se compromete al confirmar el pedido.
+- [x] `pedidos/` — Fijar el precio al confirmar y reservar stock con `ReservasInventarioService`. Liberar al cancelar o al vencer en un máximo de una hora. Verificar el vencimiento al entregar y requerir un pedido nuevo tras la expiración.
+- [x] Convertir el pedido en una sola venta al entregar. Consumir la reserva y descontar el stock físico en esa transición. Registrar el pago en tienda y comprobar que emitir el comprobante mantiene el stock resultante.
+- [x] Procesar los avisos al cliente mediante `EventoSalida`, con reintentos y deduplicación.
+- [x] Publicar el contrato y probar cancelaciones, expiración, entregas simultáneas o reintentadas y aislamiento del historial por cliente y negocio.
 
 **Evidencia de cierre.** El frontend del cliente puede reproducir el flujo de catálogo a retiro en tienda y consultar los estados de sus pedidos.
 

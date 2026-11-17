@@ -50,7 +50,7 @@ class LineaVentaDto {
   lotes: LoteVentaDto[];
 }
 
-class PagoVentaDto {
+export class PagoVentaDto {
   @IsEnum(MetodoCobro)
   metodo: MetodoCobro;
 
@@ -64,7 +64,7 @@ class PagoVentaDto {
   referencia?: string;
 }
 
-class VentaMostradorDto {
+export class VentaMostradorDto {
   @IsInt()
   @Min(1)
   @Max(MAX_PRISMA_INT)

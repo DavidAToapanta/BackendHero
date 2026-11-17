@@ -229,6 +229,14 @@ export class CatalogoService {
     );
   }
 
+  buscarPortal(tenantId: number, filtros: PaginacionCatalogoDto) {
+    return this.listarFichas(
+      { tenantId },
+      { ...filtros, activo: true },
+      fichaMostrador,
+    );
+  }
+
   buscarPorBarras(contexto: ContextoTienda, codigoBarras: string) {
     return this.leerCatalogo(contexto, async (tx) => {
       const { tenantId } = contexto;
@@ -419,31 +427,36 @@ export class CatalogoService {
   }
 
   private listarFichas<T>(
-    contexto: ContextoTienda,
+    contexto: ContextoTienda | Pick<ContextoTienda, 'tenantId'>,
     filtros: ListaProductosDto,
     presentar: (producto: FichaCatalogo, stockDisponible: number) => T,
   ) {
-    return this.leerCatalogo(contexto, async (tx) => {
-      const { tenantId } = contexto;
-      const { data, meta } = await this.fichas.listarFichas(
-        tenantId,
-        'STORE',
-        filtros,
-        tx,
-      );
-      const disponibles = await this.inventario.consultarDisponibles(
-        tx,
-        tenantId,
-        data,
-        new Date(),
-      );
-      return {
-        data: data.map((producto) =>
-          presentar(producto, disponibles.get(producto.id) ?? 0),
-        ),
-        meta,
-      };
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        if ('membresiaId' in contexto)
+          await this.permisos.autorizar(contexto, 'store.catalog.read', tx);
+        const { tenantId } = contexto;
+        const { data, meta } = await this.fichas.listarFichas(
+          tenantId,
+          'STORE',
+          filtros,
+          tx,
+        );
+        const disponibles = await this.inventario.consultarDisponibles(
+          tx,
+          tenantId,
+          data,
+          new Date(),
+        );
+        return {
+          data: data.map((producto) =>
+            presentar(producto, disponibles.get(producto.id) ?? 0),
+          ),
+          meta,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   private async detalleProducto(

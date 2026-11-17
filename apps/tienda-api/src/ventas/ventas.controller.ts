@@ -5,9 +5,7 @@ import {
   Post,
   Body,
   Headers,
-  Patch,
   Param,
-  Delete,
   Query,
   UsePipes,
   ValidationPipe,
@@ -22,14 +20,12 @@ import {
 } from '../devoluciones/dto/create-devolucion.dto';
 import { VentaMostradorService } from './venta-mostrador.service';
 import { ConsultaVentasService } from './consulta-ventas.service';
-import { VentasService } from './ventas.service';
 import { CreateVentaCreditoDto, CreateVentaDto } from './dto/create-venta.dto';
 import {
   AnalizarVentasDto,
   ListarVentasDto,
   VentaParamDto,
 } from './dto/consulta-ventas.dto';
-import { UpdateVentaDto } from './dto/update-venta.dto';
 
 const validarVenta = new ValidationPipe({
   transform: true,
@@ -40,7 +36,6 @@ const validarVenta = new ValidationPipe({
 @Controller('ventas')
 export class VentasController {
   constructor(
-    private readonly ventasService: VentasService,
     private readonly mostrador: VentaMostradorService,
     private readonly auditoria: AuditoriaEscrituraService,
     private readonly devoluciones: DevolucionesOperacionService,
@@ -136,15 +131,5 @@ export class VentasController {
     @Param() { id }: VentaParamDto,
   ) {
     return this.consultas.obtener(contexto.tenantId, id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateVentaDto: UpdateVentaDto) {
-    return this.ventasService.update(+id, updateVentaDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.ventasService.remove(+id);
   }
 }

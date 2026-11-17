@@ -12,7 +12,6 @@ import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { DevolucionesModule } from '../devoluciones/devoluciones.module';
 import { VentaMostradorService } from './venta-mostrador.service';
 import { ConsultaVentasService } from './consulta-ventas.service';
-import { VentasService } from './ventas.service';
 import { VentasController } from './ventas.controller';
 
 @Module({
@@ -30,7 +29,7 @@ import { VentasController } from './ventas.controller';
     DevolucionesModule,
   ],
   controllers: [VentasController],
-  providers: [VentasService, VentaMostradorService, ConsultaVentasService],
+  providers: [VentaMostradorService, ConsultaVentasService],
   exports: [ConsultaVentasService],
 })
 export class VentasModule {}

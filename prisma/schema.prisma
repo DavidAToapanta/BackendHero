@@ -928,7 +928,7 @@ model MovimientoInventario {
   detalleDevolucionId                     Int?
   compraLegacyId                          Int?
   movimientoOriginalId                    Int?
-  responsableId                           Int
+  responsableId                           Int?
   tenantId                                Int
   createdAt                               DateTime                 @default(now()) @db.Timestamptz(3)
   updatedAt                               DateTime                 @updatedAt @db.Timestamptz(3)
@@ -941,7 +941,7 @@ model MovimientoInventario {
   compraLegacy                            Compra?                  @relation("MovimientoInventario_compraLegacy", fields: [tenantId, compraLegacyId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
   movimientoOriginal                      MovimientoInventario?    @relation("MovimientoInventario_movimientoOriginal", fields: [tenantId, movimientoOriginalId, productoId], references: [tenantId, id, productoId], onDelete: Restrict, onUpdate: NoAction)
   movimientoInventario_movimientoOriginal MovimientoInventario[]   @relation("MovimientoInventario_movimientoOriginal")
-  responsable                             UserTenant               @relation("MovimientoInventario_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+  responsable                             UserTenant?              @relation("MovimientoInventario_responsable", fields: [tenantId, responsableId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
   tenant                                  Tenant                   @relation("MovimientoInventario_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   asignacionVentaReferencia               AsignacionLoteVenta?     @relation("MovimientoInventario_asignacionVentaReferencia", fields: [tenantId, asignacionVentaId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
   detalleDevolucionReferencia             DetalleDevolucionVenta?  @relation("MovimientoInventario_detalleDevolucionReferencia", fields: [tenantId, detalleDevolucionId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)

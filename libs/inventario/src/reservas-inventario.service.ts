@@ -22,7 +22,9 @@ export class ReservasInventarioService {
 
   async reservar(
     tx: Prisma.TransactionClient,
-    operacion: OperacionInventario,
+    operacion: Omit<OperacionInventario, 'responsableId'> & {
+      responsableId: number | null;
+    },
     pedidoId: number,
     detallePedidoId: number,
   ) {
@@ -80,7 +82,9 @@ export class ReservasInventarioService {
 
   async liberar(
     tx: Prisma.TransactionClient,
-    operacion: OperacionInventario,
+    operacion: Omit<OperacionInventario, 'responsableId'> & {
+      responsableId: number | null;
+    },
     pedidoId: number,
     reservaId: number,
     motivo: string,

@@ -18,6 +18,6 @@ import { AnulacionComprobanteService } from './anulacion-comprobante.service';
   ],
   controllers: [ComprobantesController],
   providers: [EmisionComprobanteService, AnulacionComprobanteService],
-  exports: [AnulacionComprobanteService],
+  exports: [AnulacionComprobanteService, EmisionComprobanteService],
 })
 export class ComprobantesModule {}

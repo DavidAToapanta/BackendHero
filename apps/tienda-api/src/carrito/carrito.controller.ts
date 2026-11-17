@@ -1,42 +1,70 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
+import { IdPortalDto } from '../portal/portal.dto';
+import { ClientePortalActual, PortalGuard } from '../portal/portal.guard';
+import type { ClientePortal } from '../portal/portal.service';
+import { GuardarCarritoDto } from './carrito.dto';
 import { CarritoService } from './carrito.service';
-import { CreateCarritoDto } from './dto/create-carrito.dto';
-import { UpdateCarritoDto } from './dto/update-carrito.dto';
 
 @Controller('carrito')
+@UseGuards(PortalGuard)
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class CarritoController {
-  constructor(private readonly carritoService: CarritoService) {}
+  constructor(private readonly carrito: CarritoService) {}
 
   @Post()
-  create(@Body() createCarritoDto: CreateCarritoDto) {
-    return this.carritoService.create(createCarritoDto);
+  crear(
+    @ClientePortalActual() cliente: ClientePortal,
+    @Body() datos: GuardarCarritoDto,
+  ) {
+    return this.carrito.guardar(cliente, datos);
   }
 
   @Get()
-  findAll() {
-    return this.carritoService.findAll();
+  activo(@ClientePortalActual() cliente: ClientePortal) {
+    return this.carrito.consultar(cliente);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.carritoService.findOne(+id);
+  obtener(
+    @ClientePortalActual() cliente: ClientePortal,
+    @Param() { id }: IdPortalDto,
+  ) {
+    return this.carrito.consultar(cliente, id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCarritoDto: UpdateCarritoDto) {
-    return this.carritoService.update(+id, updateCarritoDto);
+  editar(
+    @ClientePortalActual() cliente: ClientePortal,
+    @Param() { id }: IdPortalDto,
+    @Body() datos: GuardarCarritoDto,
+  ) {
+    return this.carrito.guardar(cliente, datos, id);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.carritoService.remove(+id);
+  @HttpCode(204)
+  abandonar(
+    @ClientePortalActual() cliente: ClientePortal,
+    @Param() { id }: IdPortalDto,
+  ) {
+    return this.carrito.abandonar(cliente, id);
   }
 }

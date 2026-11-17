@@ -8,7 +8,6 @@ import { FinanzasModule } from '../finanzas/finanzas.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { VentasModule } from '../ventas/ventas.module';
 import { ConsultaPanelService } from './consulta-panel.service';
-import { PanelService } from './panel.service';
 import { PanelController } from './panel.controller';
 
 @Module({
@@ -23,7 +22,7 @@ import { PanelController } from './panel.controller';
     VentasModule,
   ],
   controllers: [PanelController],
-  providers: [PanelService, ConsultaPanelService],
+  providers: [ConsultaPanelService],
   exports: [ConsultaPanelService],
 })
 export class PanelModule {}

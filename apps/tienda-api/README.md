@@ -22,12 +22,12 @@ Las rutas de [clientes comerciales](./src/clientes/README.md),
 y [exportaciones](./src/exportaciones/README.md)
 usan el contexto y los permisos de Tienda.
 Cada escritura registra su auditoría dentro de la transacción. Los recursos
-que aún esperan implementación responden `501 Not Implemented`.
+del comprador se describen en el [contrato del portal](./src/portal/README.md).
+Incluye vinculación, catálogo, carrito, pedidos para retiro y avisos.
 
-El objetivo es un despliegue independiente del gimnasio, utilizando el PostgreSQL
-existente. Los datos comunes y las responsabilidades de escritura se delimitarán
-antes de conectar las aplicaciones. La existencia de tablas o relaciones en el
-esquema actual no supone que haya una API de tiendas operativa.
+Tienda se despliega de forma independiente de Gym y comparte PostgreSQL. Aplica
+las migraciones vigentes antes de arrancar. El portal usa una sesión de
+comprador y el personal sigue usando el contrato de autenticación de Tienda.
 
 Seguir el [plan de implementación de Tienda](../../docs/PLAN_IMPLEMENTACION_TIENDA.md)
 para completar y verificar cada etapa y la

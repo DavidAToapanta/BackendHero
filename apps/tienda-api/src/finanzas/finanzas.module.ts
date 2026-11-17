@@ -7,7 +7,6 @@ import { CajaModule } from '../caja/caja.module';
 import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { GastosComercialesController } from './gastos-comerciales.controller';
 import { GastosComercialesService } from './gastos-comerciales.service';
-import { FinanzasService } from './finanzas.service';
 import { FinanzasController } from './finanzas.controller';
 import { ConsultaFinanzasService } from './consulta-finanzas.service';
 
@@ -21,11 +20,7 @@ import { ConsultaFinanzasService } from './consulta-finanzas.service';
     InventarioModule,
   ],
   controllers: [GastosComercialesController, FinanzasController],
-  providers: [
-    FinanzasService,
-    GastosComercialesService,
-    ConsultaFinanzasService,
-  ],
+  providers: [GastosComercialesService, ConsultaFinanzasService],
   exports: [ConsultaFinanzasService],
 })
 export class FinanzasModule {}

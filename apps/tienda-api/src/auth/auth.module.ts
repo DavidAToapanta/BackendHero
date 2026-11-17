@@ -23,6 +23,6 @@ import { TiendaJwtStrategy } from './tienda-jwt.strategy';
   ],
   controllers: [AuthController],
   providers: [AuthService, TiendaJwtGuard, TiendaJwtStrategy],
-  exports: [TiendaJwtGuard],
+  exports: [TiendaJwtGuard, JwtModule],
 })
 export class AuthModule {}

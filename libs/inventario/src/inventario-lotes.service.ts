@@ -192,6 +192,7 @@ export class InventarioLotesService {
     tx: Prisma.TransactionClient,
     tenantId: number,
     lineas: readonly LineaSalidaVenta[],
+    reservasPropias: ReadonlyMap<number, number> = new Map(),
   ): Promise<LineaSalidaValidada[]> {
     if (lineas.length === 0)
       throw new BadRequestException('Selecciona al menos una línea de venta');
@@ -274,7 +275,8 @@ export class InventarioLotesService {
     for (const producto of productos) {
       if (
         porProducto.get(producto.id)!.cantidad >
-        (disponibles.get(producto.id) ?? 0)
+        (disponibles.get(producto.id) ?? 0) +
+          (reservasPropias.get(producto.id) ?? 0)
       ) {
         throw new BadRequestException(
           `Stock disponible insuficiente para el producto ${producto.nombre}`,
@@ -881,7 +883,9 @@ export class InventarioLotesService {
 
   registrarMovimiento(
     tx: Prisma.TransactionClient,
-    operacion: OperacionInventario,
+    operacion: Omit<OperacionInventario, 'responsableId'> & {
+      responsableId: number | null;
+    },
     datos: Omit<
       Prisma.MovimientoInventarioUncheckedCreateInput,
       'tenantId' | 'responsableId' | 'claveIdempotencia' | 'correlacionId'

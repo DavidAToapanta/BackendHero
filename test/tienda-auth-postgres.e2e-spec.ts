@@ -52,6 +52,7 @@ import { CuentasService } from '../apps/tienda-api/src/cartera/cuentas.service';
 import { fechaComercial } from '../apps/tienda-api/src/comun/fecha-comercial';
 import { InventarioService as InventarioTiendaService } from '../apps/tienda-api/src/inventario/inventario.service';
 import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
+import { NotificacionesService } from '../apps/tienda-api/src/notificaciones/notificaciones.service';
 import { reservarPedidoEnsayo } from './fixtures/tienda';
 
 const suite =
@@ -4755,4 +4756,449 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       await prisma.auditoriaOperacion.count({ where: { correlacionId } }),
     ).toBe(0);
   });
+  it('Portal: verifica cuentas, reserva, cancela y entrega una sola venta con avisos aislados', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const staff = await crearPerfilComercial(tenantId, 'OWNER', [], 'OWNER');
+    const bearer = { type: 'bearer' } as const;
+    const auth = staff.accessToken;
+    async function comprador() {
+      const { credenciales } = await registrarPersonal();
+      const ficha = await prisma.clienteComercial.create({
+        data: { tenantId, nombres: 'Portal ensayo' },
+      });
+      const datos = { ...credenciales, tenantId };
+      await http().post('/portal/login').send(datos).expect(403);
+      const prueba = (
+        await http().post('/portal/verificar-cuenta').send(datos).expect(200)
+      ).body as { prueba: string };
+      await http()
+        .post(`/portal/clientes/${ficha.id}/vinculacion`)
+        .auth(auth, bearer)
+        .send(prueba)
+        .expect(201);
+      const acceso = (
+        await http().post('/portal/login').send(datos).expect(200)
+      ).body as { accessToken: string };
+      return { ficha, datos, prueba, token: acceso.accessToken };
+    }
+    const [cliente, otro] = await Promise.all([comprador(), comprador()]);
+    const { id: otraTienda } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const otroStaff = await crearPerfilComercial(
+      otraTienda,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    await http()
+      .post('/portal/login')
+      .send({ ...cliente.datos, tenantId: otraTienda })
+      .expect(403);
+    await http()
+      .post(`/portal/clientes/${cliente.ficha.id}/vinculacion`)
+      .auth(otroStaff.accessToken, bearer)
+      .send(cliente.prueba)
+      .expect(403);
+    await http().get('/portal/historial').auth(auth, bearer).expect(401);
+    await http().get('/ventas').auth(cliente.token, bearer).expect(401);
+    const producto = await prisma.producto.create({
+      data: {
+        tenantId,
+        nombre: 'Producto portal',
+        precio: '5.20',
+        stock: 0,
+        estado: true,
+      },
+    });
+    const productoId = producto.id;
+    await http()
+      .post(`/inventario/productos/${productoId}/apertura`)
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        motivo: 'Apertura de prueba',
+        lotes: [],
+      })
+      .expect(201);
+    await http()
+      .post(`/inventario/productos/${productoId}/entradas`)
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        motivo: 'Entrada de prueba',
+        lotes: [{ codigo: 'PORTAL', cantidad: 3, costoUnitario: '2.00' }],
+      })
+      .expect(201);
+    const catalogo = await http()
+      .get('/portal/catalogo')
+      .auth(cliente.token, bearer)
+      .expect(200);
+    expect(catalogo.body).toMatchObject({
+      data: [{ productoId, stockDisponible: 3 }],
+    });
+
+    const crearCarrito = async (cantidad: number) => {
+      const res = await http()
+        .post('/carrito')
+        .auth(cliente.token, bearer)
+        .send({ lineas: [{ productoId, cantidad }] })
+        .expect(201);
+      return (res.body as { id: number }).id;
+    };
+    const confirmar = (carritoId: number, clave = randomUUID()) =>
+      http()
+        .post('/pedidos')
+        .auth(cliente.token, bearer)
+        .set('Idempotency-Key', clave)
+        .send({ carritoId });
+    const saldo = async (stock: number, stockReservado: number) => {
+      expect(
+        await prisma.producto.findUnique({ where: { id: productoId } }),
+      ).toMatchObject({ stock, stockReservado });
+    };
+
+    const primerCarrito = await crearCarrito(4);
+    await http()
+      .get(`/carrito/${primerCarrito}`)
+      .auth(otro.token, bearer)
+      .expect(404);
+    await confirmar(primerCarrito).expect(400);
+    await saldo(3, 0);
+    await http()
+      .patch(`/carrito/${primerCarrito}`)
+      .auth(cliente.token, bearer)
+      .send({ lineas: [{ productoId, cantidad: 1 }] })
+      .expect(200);
+    const primerPedido = (await confirmar(primerCarrito).expect(201)).body as {
+      recursoId: number;
+    };
+    await saldo(3, 1);
+    await http()
+      .delete(`/pedidos/${primerPedido.recursoId}`)
+      .auth(otro.token, bearer)
+      .send({ motivo: 'Ajeno' })
+      .expect(404);
+    await http()
+      .delete(`/pedidos/${primerPedido.recursoId}`)
+      .auth(cliente.token, bearer)
+      .send({ motivo: 'Ya no lo necesito' })
+      .expect(200);
+    await saldo(3, 0);
+
+    const carritoId = await crearCarrito(2);
+    const clave = randomUUID();
+    const resultado = await Promise.all([
+      confirmar(carritoId, clave).expect(201),
+      confirmar(carritoId, clave).expect(201),
+    ]);
+    expect(resultado[0].body).toEqual(resultado[1].body);
+    const pedidoId = (resultado[0].body as { recursoId: number }).recursoId;
+    await saldo(3, 2);
+    await http()
+      .get(`/pedidos/operacion/${pedidoId}`)
+      .auth(otroStaff.accessToken, bearer)
+      .expect(404);
+    await http()
+      .get(`/pedidos/${pedidoId}`)
+      .auth(otro.token, bearer)
+      .expect(404);
+    await http()
+      .get('/pedidos/operacion')
+      .auth(cliente.token, bearer)
+      .expect(401);
+    const pedido = (
+      await http()
+        .get(`/pedidos/${pedidoId}`)
+        .auth(cliente.token, bearer)
+        .expect(200)
+    ).body as {
+      confirmadoAt: string;
+      reservaHasta: string;
+      total: string;
+    };
+    expect(
+      Date.parse(pedido.reservaHasta) - Date.parse(pedido.confirmadoAt),
+    ).toBe(3_600_000);
+    expect(pedido.total).toBe('10.4');
+    await prisma.producto.update({
+      where: { id: productoId },
+      data: { precio: '9.00' },
+    });
+    await http()
+      .patch(`/pedidos/${pedidoId}/preparacion`)
+      .auth(auth, bearer)
+      .expect(200);
+
+    const caja = await http()
+      .post('/caja')
+      .auth(auth, bearer)
+      .send({ codigo: 'PORTAL', nombre: 'Caja portal' })
+      .expect(201);
+    const cajaId = (caja.body as { id: number }).id;
+    const turno = await http()
+      .post(`/caja/${cajaId}/turnos`)
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '5.00' })
+      .expect(201);
+    const turnoId = (turno.body as { recursoId: number }).recursoId;
+    const lote = await prisma.loteInventario.findFirstOrThrow({
+      where: { tenantId, productoId, cantidadFisica: 3 },
+    });
+    const seleccionar = (cantidad: number, loteId = lote.id) => [
+      { productoId, cantidad, lotes: [{ loteId, cantidad }] },
+    ];
+    const entregar = (
+      claveEntrega: string,
+      monto = '10.40',
+      loteId = lote.id,
+    ) =>
+      http()
+        .post(`/pedidos/${pedidoId}/entrega`)
+        .auth(auth, bearer)
+        .set('Idempotency-Key', claveEntrega)
+        .send({
+          turnoId,
+          lineas: seleccionar(2, loteId),
+          pago: { monto, metodo: 'EFECTIVO' },
+        });
+    await entregar(randomUUID(), '18.00').expect(400);
+    await entregar(randomUUID(), '10.40', 2147483647).expect(404);
+    await saldo(3, 2);
+    const claveEntrega = randomUUID();
+    const entregas = await Promise.all([
+      entregar(claveEntrega).expect(200),
+      entregar(claveEntrega).expect(200),
+    ]);
+    expect(entregas[0].body).toEqual(entregas[1].body);
+    const ventaId = (entregas[0].body as { recursoId: number }).recursoId;
+    await entregar(randomUUID()).expect(409);
+    expect(await prisma.venta.count({ where: { tenantId, pedidoId } })).toBe(1);
+    expect(
+      await prisma.venta.findUnique({ where: { id: ventaId } }),
+    ).toMatchObject({
+      origen: 'PORTAL',
+      total: new Prisma.Decimal('10.40'),
+      clienteComercialId: cliente.ficha.id,
+    });
+    await saldo(1, 0);
+    const comprobante = await http()
+      .post('/comprobantes')
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ventaId })
+      .expect(201);
+    const comprobanteId = (comprobante.body as { recursoId: number }).recursoId;
+    await http()
+      .get(`/portal/comprobantes/${comprobanteId}/pdf`)
+      .auth(cliente.token, bearer)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
+    await http()
+      .get(`/portal/comprobantes/${comprobanteId}/pdf`)
+      .auth(otro.token, bearer)
+      .expect(404);
+    await saldo(1, 0);
+    const historial = await http()
+      .get('/portal/historial')
+      .auth(cliente.token, bearer)
+      .expect(200);
+    expect(historial.body).toMatchObject({
+      tienda: { ventas: [{ id: ventaId }], comprobantes: [{ ventaId }] },
+    });
+    const historialAjeno = await http()
+      .get('/portal/historial')
+      .auth(otro.token, bearer)
+      .expect(200);
+    expect(historialAjeno.body).toMatchObject({
+      tienda: { ventas: [], comprobantes: [], cuentas: [] },
+    });
+
+    const procesador = app.get(NotificacionesService);
+    await Promise.all([
+      procesador.procesarPendientes(),
+      procesador.procesarPendientes(),
+    ]);
+    await procesador.procesarPendientes();
+    const avisos = await http()
+      .get('/notificaciones')
+      .auth(cliente.token, bearer)
+      .expect(200);
+    const lista = avisos.body as {
+      id: number;
+      tipo: string;
+      pedidoId: number | null;
+    }[];
+    expect(lista.filter((aviso) => aviso.pedidoId === pedidoId)).toHaveLength(
+      3,
+    );
+    expect(
+      lista.filter((aviso) => aviso.tipo === 'COMPROBANTE_DISPONIBLE'),
+    ).toHaveLength(1);
+    await http()
+      .get(`/notificaciones/${lista[0].id}`)
+      .auth(otro.token, bearer)
+      .expect(404);
+    await http()
+      .patch(`/notificaciones/${lista[0].id}`)
+      .auth(cliente.token, bearer)
+      .expect(200);
+    const avisoLeido = await prisma.notificacionCliente.findUniqueOrThrow({
+      where: { id: lista[0].id },
+    });
+    expect(avisoLeido.leidaAt).toBeInstanceOf(Date);
+
+    const pedidoBreve = await prisma.$transaction(async (tx) => {
+      const confirmadoAt = new Date();
+      const claveBreve = randomUUID();
+      const breve = await tx.pedido.create({
+        data: {
+          tenantId,
+          clienteComercialId: cliente.ficha.id,
+          numero: claveBreve,
+          confirmadoAt,
+          reservaHasta: new Date(confirmadoAt.getTime() + 1_200),
+          claveIdempotencia: claveBreve,
+          subtotal: '9',
+          total: '9',
+        },
+      });
+      const linea = await tx.detallePedido.create({
+        data: {
+          tenantId,
+          pedidoId: breve.id,
+          productoId,
+          nombreProducto: producto.nombre,
+          precioUnitario: '9',
+          cantidad: 1,
+          subtotal: '9',
+          total: '9',
+        },
+      });
+      await app.get(ReservasInventarioService).reservar(
+        tx,
+        {
+          tenantId,
+          responsableId: null,
+          clave: claveBreve,
+          correlacionId: claveBreve,
+        },
+        breve.id,
+        linea.id,
+      );
+      return breve;
+    });
+    await saldo(1, 1);
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        Math.max(0, pedidoBreve.reservaHasta.getTime() - Date.now() + 20),
+      ),
+    );
+    const expirado = await http()
+      .get(`/pedidos/${pedidoBreve.id}`)
+      .auth(cliente.token, bearer)
+      .expect(200);
+    expect(expirado.body).toMatchObject({ estado: 'EXPIRADO' });
+    await http()
+      .post(`/pedidos/${pedidoBreve.id}/entrega`)
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        turnoId,
+        lineas: seleccionar(1),
+        pago: { monto: '9', metodo: 'EFECTIVO' },
+      })
+      .expect(409);
+    await saldo(1, 0);
+
+    const carritoCredito = await crearCarrito(1);
+    const pedidoCredito = (await confirmar(carritoCredito).expect(201))
+      .body as { recursoId: number };
+    const entregaCredito = (token: string) =>
+      http()
+        .post(`/pedidos/${pedidoCredito.recursoId}/entrega`)
+        .auth(token, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          turnoId,
+          vencimiento: fechaComercial(new Date()),
+          lineas: seleccionar(1),
+        });
+    await http()
+      .patch(`/pedidos/${pedidoCredito.recursoId}/preparacion`)
+      .auth(auth, bearer)
+      .expect(200);
+    const cajeroSinCredito = await crearPerfilComercial(
+      tenantId,
+      'CAJERO_PORTAL',
+      ['store.sales.create'],
+      'CAJERO',
+    );
+    await entregaCredito(cajeroSinCredito.accessToken).expect(403);
+    const credito = await entregaCredito(auth).expect(200);
+    const cuenta = await prisma.cuentaPorCobrar.findFirstOrThrow({
+      where: {
+        tenantId,
+        ventaId: (credito.body as { recursoId: number }).recursoId,
+      },
+    });
+    expect(cuenta.saldo.toFixed(2)).toBe('9.00');
+    const rutaRecordatorio = `/notificaciones/cartera/${cuenta.id}/recordatorio`;
+    await http()
+      .post(rutaRecordatorio)
+      .auth(cliente.token, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .expect(401);
+    const claveAviso = randomUUID();
+    const recordar = () =>
+      http()
+        .post(rutaRecordatorio)
+        .auth(auth, bearer)
+        .set('Idempotency-Key', claveAviso);
+    const primerAviso = await recordar().expect(201);
+    await recordar().expect(201, primerAviso.body as object);
+    await procesador.procesarPendientes();
+    const avisosCartera = await http()
+      .get('/notificaciones')
+      .auth(cliente.token, bearer)
+      .expect(200);
+    const notificacionesCartera = avisosCartera.body as {
+      cuentaId: number | null;
+      tipo: string;
+    }[];
+    expect(
+      notificacionesCartera.filter(
+        ({ cuentaId, tipo }) =>
+          cuentaId === cuenta.id && tipo === 'RECORDATORIO_DEUDA',
+      ),
+    ).toHaveLength(1);
+    await http()
+      .post(`/caja/turnos/${turnoId}/cierre`)
+      .auth(auth, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ efectivoContado: '15.40' })
+      .expect(200);
+    const cierre = await prisma.turnoCaja.findUniqueOrThrow({
+      where: { id: turnoId },
+    });
+    expect(cierre.diferencia?.isZero()).toBe(true);
+
+    await http()
+      .delete(`/portal/clientes/${cliente.ficha.id}/vinculacion`)
+      .auth(auth, bearer)
+      .expect(204);
+    await http()
+      .get('/portal/historial')
+      .auth(cliente.token, bearer)
+      .expect(401);
+    await http()
+      .post(`/portal/clientes/${cliente.ficha.id}/vinculacion`)
+      .auth(auth, bearer)
+      .send(cliente.prueba)
+      .expect(409);
+  }, 30_000);
 });

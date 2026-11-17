@@ -2,6 +2,10 @@
 
 **16 de noviembre de 2026 · Rama de prueba `dev3` · Base `origin/dev2` en `3845c40`.**
 
+Este informe conserva la verificación de la base `3845c40`. El contrato actual
+para las rutas de comprador implementadas después del ensayo está en el
+[README del portal](../apps/tienda-api/src/portal/README.md).
+
 ## Alcance de la revisión
 
 La comparación de `dev` (`ecce8c2`) con `dev2` abarca 440 archivos, con 33 589 líneas añadidas y 1 246 eliminadas. La revisión se guió por el [README de Tienda](../apps/tienda-api/README.md), la [guía de pruebas](../test/README.md), el [plan de implementación](PLAN_IMPLEMENTACION_TIENDA.md) y los README de cada módulo. El inventario se cotejó con las rutas que registra el servidor compilado.
