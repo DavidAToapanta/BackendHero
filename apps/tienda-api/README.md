@@ -14,6 +14,25 @@ Para trabajar con recarga automática, ejecutar `npm run start:dev -- tienda-api
 desde la raíz. Tienda compila en `build/tienda-api` y Gym en `dist`, así que
 pueden recompilarse en terminales separadas.
 
+## Conexión desde el frontend
+
+Configura `TIENDA_CORS_ORIGINS` en el entorno de Tienda con los orígenes exactos
+del frontend (protocolo, host y puerto si aplica), separados por comas y sin
+rutas. Por ejemplo, en PowerShell:
+
+```powershell
+$env:TIENDA_CORS_ORIGINS = 'http://localhost:5173,https://tienda.example.com'
+```
+
+En ejecución local, si la variable no existe, se permiten
+`http://localhost:5173` y `http://127.0.0.1:5173`. En producción y con
+`compose.apis.yml`, configura la lista explícitamente para permitir llamadas
+desde otro origen. Un valor vacío deja la lista vacía.
+
+El navegador puede enviar `Authorization`, `Content-Type`, `Idempotency-Key`
+y `X-Request-Id`, y leer `Content-Disposition` de las descargas y
+`X-Request-Id` de las respuestas.
+
 Las rutas de [clientes comerciales](./src/clientes/README.md),
 [caja](./src/caja/README.md), [cobros](./src/cobros/README.md),
 [cartera](./src/cartera/README.md), [ventas](./src/ventas/README.md),
