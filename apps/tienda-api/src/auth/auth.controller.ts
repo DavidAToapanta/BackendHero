@@ -13,13 +13,23 @@ import { AuthService } from './auth.service';
 import type { ContextoTienda } from './auth.types';
 import { ContextoTiendaActual } from './contexto-tienda.decorator';
 import { LoginDto } from './dto/login.dto';
+import { RegistroPropietarioDto } from './dto/registro-propietario.dto';
 import { SelectContextDto } from './dto/select-context.dto';
+import { RegistroPropietarioService } from './registro-propietario.service';
 import { TiendaJwtGuard } from './tienda-jwt.guard';
 
 @Controller('auth')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly registro: RegistroPropietarioService,
+  ) {}
+
+  @Post('register-owner')
+  registerOwner(@Body() dto: RegistroPropietarioDto) {
+    return this.registro.registrar(dto);
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)

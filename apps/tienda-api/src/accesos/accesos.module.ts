@@ -7,7 +7,7 @@ import { AuthModule } from '../auth';
 import { AccesosService } from './accesos.service';
 import { AccesosController } from './accesos.controller';
 import { PermisosTiendaGuard } from './permisos-tienda';
-import { PreparacionTiendaService } from './preparacion-tienda.service';
+import { PreparacionTiendaModule } from './preparacion-tienda.module';
 
 export { RequierePermisoTienda } from './permisos-tienda';
 export { AccesosService } from './accesos.service';
@@ -19,9 +19,10 @@ export { AccesosService } from './accesos.service';
     NegociosModule,
     PermisosModule,
     AuditoriaEscrituraModule,
+    PreparacionTiendaModule,
   ],
   controllers: [AccesosController],
-  providers: [AccesosService, PermisosTiendaGuard, PreparacionTiendaService],
+  providers: [AccesosService, PermisosTiendaGuard],
   exports: [AuthModule, PermisosModule, PermisosTiendaGuard, AccesosService],
 })
 export class AccesosModule {}

@@ -10,8 +10,12 @@ Compilar con `npx nest build tienda-api` y arrancar con
 `TIENDA_JWT_SECRET`. El [contrato de autenticación](./src/auth/README.md)
 documenta login, selección de tienda y consulta de sesión.
 
-Para trabajar con recarga automática, ejecutar `npm run start:dev -- tienda-api`
-desde la raíz. Tienda compila en `build/tienda-api` y Gym en `dist`, así que
+Para trabajar con recarga automática, configurar `DATABASE_URL` y una clave
+`TIENDA_JWT_SECRET` propia de Tienda en el archivo `.env` local y ejecutar
+`npm run start:dev:tienda` desde la raíz. Este comando carga `.env`
+explícitamente; `npm run start:dev -- tienda-api` solo usa el entorno del
+proceso. La clave de Tienda debe ser distinta del `JWT_SECRET` efectivo de Gym.
+Tienda compila en `build/tienda-api` y Gym en `dist`, así que
 pueden recompilarse en terminales separadas.
 
 ## Conexión desde el frontend

@@ -4,6 +4,7 @@ import type { ContextoTienda } from '../auth';
 import type { ContextoOperacionTienda } from '../comun/operacion-tienda';
 
 export const ACCIONES_AUDITORIA = {
+  TIENDA_REGISTRAR: 'tienda.registrar',
   ACCESOS_ROLES_PREPARAR: 'ACCESOS_ROLES_PREPARAR',
   ACCESOS_PERMISOS_ACTIVAR: 'ACCESOS_PERMISOS_ACTIVAR',
   ACCESOS_PERSONAL_ALTA: 'ACCESOS_PERSONAL_ALTA',

@@ -10,7 +10,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { ContextoTienda } from '../auth';
+import type { ContextoTienda } from '../auth/auth.types';
 
 const perfiles = {
   ADMIN: {

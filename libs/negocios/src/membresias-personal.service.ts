@@ -128,8 +128,9 @@ export class MembresiasPersonalService {
     usuarioId: number,
     modulo: ModuleKey,
     tenantId?: number,
+    tx: Prisma.TransactionClient = this.prisma,
   ) {
-    return this.prisma.userTenant.findMany({
+    return tx.userTenant.findMany({
       relationLoadStrategy: 'join',
       where: {
         usuarioId,

@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { Prisma } from '@prisma/client';
 import {
   JWT_TIENDA_ACCESO,
   JWT_TIENDA_EMISOR,
@@ -88,7 +89,7 @@ export class AuthService {
     tenantId,
   }: SelectContextDto): Promise<AccesoTienda> {
     const payload = await this.verificarSeleccion(selectionToken);
-    const [contexto] = await this.listarContextos(payload.sub, tenantId);
+    const contexto = await this.buscarContexto(payload.sub, tenantId);
     if (!contexto) {
       throw new ForbiddenException('La tienda seleccionada no está disponible');
     }
@@ -109,10 +110,7 @@ export class AuthService {
       throw new UnauthorizedException('Token de acceso inválido');
     }
 
-    const [contexto] = await this.listarContextos(
-      payload.sub,
-      payload.tenantId,
-    );
+    const contexto = await this.buscarContexto(payload.sub, payload.tenantId);
     if (
       !contexto ||
       contexto.membresiaId !== payload.membresiaId ||
@@ -121,6 +119,15 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('La sesión de Tienda ya no es válida');
     }
+    return contexto;
+  }
+
+  async buscarContexto(
+    usuarioId: number,
+    tenantId: number,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ContextoTienda | undefined> {
+    const [contexto] = await this.listarContextos(usuarioId, tenantId, tx);
     return contexto;
   }
 
@@ -145,11 +152,13 @@ export class AuthService {
   private async listarContextos(
     usuarioId: number,
     tenantId?: number,
+    tx?: Prisma.TransactionClient,
   ): Promise<ContextoTienda[]> {
     const membresias = await this.membresias.listarActivasPorModulo(
       usuarioId,
       'STORE',
       tenantId,
+      tx,
     );
     return membresias.flatMap((membresia) => {
       const modoAutorizacion = membresia.tenant.autorizacionVersion;
@@ -173,7 +182,7 @@ export class AuthService {
     });
   }
 
-  private async emitirAcceso(context: ContextoTienda): Promise<AccesoTienda> {
+  async emitirAcceso(context: ContextoTienda): Promise<AccesoTienda> {
     const {
       usuarioId,
       tenantId,

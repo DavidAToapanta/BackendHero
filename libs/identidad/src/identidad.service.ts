@@ -64,8 +64,9 @@ export class IdentidadService {
   async verifyCredentials(
     cedula: string,
     password: string,
+    tx: Prisma.TransactionClient = this.prisma,
   ): Promise<CredentialResult> {
-    const usuario = await this.prisma.usuario.findUnique({
+    const usuario = await tx.usuario.findUnique({
       where: { cedula },
       select: { ...tokenAccountSelect, password: true },
     });
@@ -79,6 +80,19 @@ export class IdentidadService {
     }
 
     return { status: 'valid', account };
+  }
+
+  async emailPerteneceAOtraCuenta(
+    email: string,
+    usuarioId: number | null,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const [coincidencia] = await tx.$queryRaw<{ id: number }[]>`
+      SELECT id FROM "Usuario"
+      WHERE LOWER(TRIM(email)) = ${email} AND id IS DISTINCT FROM ${usuarioId}::integer
+      LIMIT 1
+    `;
+    return coincidencia !== undefined;
   }
 
   async findConflicts(

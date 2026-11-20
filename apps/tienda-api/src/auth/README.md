@@ -9,10 +9,82 @@ distintos. Tienda requiere su secreto para arrancar. El puerto por defecto es
 `8081`.
 
 ```powershell
-npm.cmd run start:dev -- tienda-api --env-file .env
+npm.cmd run start:dev:tienda
 ```
 
+Este comando carga el `.env` de la raíz. Agrega allí `DATABASE_URL` y
+`TIENDA_JWT_SECRET`; Nest no carga ese archivo automáticamente al usar
+`npm run start:dev -- tienda-api` sin `--env-file .env`.
+
 ## HTTP v1
+
+### Registrar propietario y tienda
+
+`POST http://localhost:8081/auth/register-owner` recibe `Content-Type:
+application/json`. La ruta es pública y no requiere token de Gym ni de Tienda.
+
+```json
+{
+  "cedula": "0503791022",
+  "password": "<contraseña>",
+  "nombres": "Juan",
+  "apellidos": "Pérez",
+  "email": "juan@example.com",
+  "tenantNombre": "Mi Tienda",
+  "tenantSlug": "mi-tienda",
+  "telefono": "0991234567",
+  "direccion": "Dirección de la tienda",
+  "ciudad": "Latacunga",
+  "pais": "Ecuador"
+}
+```
+
+`tenantSlug`, `telefono`, `direccion`, `ciudad` y `pais` son opcionales. Si se
+omite el slug, se deriva del nombre de la tienda. El slug se normaliza a letras
+ASCII minúsculas, números y guiones y debe ser único. La cédula se envía como
+cadena para conservar sus ceros iniciales. El correo identifica a la cuenta.
+
+Una cuenta nueva se crea con su contraseña hasheada. La contraseña nueva debe
+tener entre 6 y 72 bytes UTF-8. Si la cédula ya existe, se verifica su contraseña
+y se conserva su perfil, credenciales y membresías. Los nombres y apellidos
+enviados se ignoran en ese caso. El correo se compara sin distinguir mayúsculas.
+Si la cuenta tiene correo, debe coincidir. Si carece de correo, puede enviarse
+uno libre y el registro no lo guarda en la cuenta.
+
+La respuesta `201 Created` siempre contiene acceso directo a la tienda recién
+creada, aunque la cuenta ya sea propietaria de otras tiendas.
+
+```json
+{
+  "requiresContextSelection": false,
+  "accessToken": "<JWT de Tienda>",
+  "context": {
+    "usuarioId": 17,
+    "tenantId": 42,
+    "tenantNombre": "Mi Tienda",
+    "membresiaId": 31,
+    "versionAutorizacion": 3,
+    "modoAutorizacion": "PERMISOS",
+    "rolEfectivo": { "codigo": "OWNER", "nombre": "OWNER" }
+  }
+}
+```
+
+La tienda queda activa con `STORE`, los roles iniciales y su propietario
+habilitados. Usa el `accessToken` como `Authorization: Bearer <token>` para
+consultar `GET /auth/session` o `GET /catalogo/categorias`. Una sesión queda
+asociada a su tienda. Para entrar a otra, usa `POST /auth/login` y selecciona
+el contexto si se muestran varias opciones.
+
+- `400` indica datos inválidos o campos adicionales, como `ownerUserId`,
+  `tenantId`, `roles` o `permisos`.
+- `401` indica que la contraseña de la cuenta existente es incorrecta.
+- `409` indica un conflicto de correo, slug o registro concurrente. Si el
+  mensaje solicita reintentar, envía de nuevo la solicitud.
+- `500` indica un fallo inesperado. La cuenta nueva, tienda, membresía y
+  configuración inicial se guardan en conjunto, o la operación se revierte.
+
+### Iniciar sesión
 
 `POST /auth/login` recibe `{"cedula":"00123","password":"clave-de-ensayo"}`.
 Con una sola tienda elegible, devuelve `200` con el siguiente formato.

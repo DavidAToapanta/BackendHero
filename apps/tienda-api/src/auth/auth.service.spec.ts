@@ -59,7 +59,12 @@ describe('AuthService de Tienda', () => {
       },
     });
     expect(verifyCredentials).toHaveBeenCalledWith('00123', ' secreta ');
-    expect(listarActivasPorModulo).toHaveBeenCalledWith(17, 'STORE', undefined);
+    expect(listarActivasPorModulo).toHaveBeenCalledWith(
+      17,
+      'STORE',
+      undefined,
+      undefined,
+    );
   });
 
   it.each(['invalid-password', 'account-not-found'])(

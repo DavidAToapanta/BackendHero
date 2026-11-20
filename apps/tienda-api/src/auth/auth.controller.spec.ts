@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import type { ContextoTienda } from './auth.types';
+import { RegistroPropietarioService } from './registro-propietario.service';
 
 describe('AuthController de Tienda', () => {
   it('delega el login y la selección y expone en sesión el contexto del guard', async () => {
@@ -9,7 +10,10 @@ describe('AuthController de Tienda', () => {
     const selectContext = jest.fn();
     const module = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: { login, selectContext } }],
+      providers: [
+        { provide: AuthService, useValue: { login, selectContext } },
+        { provide: RegistroPropietarioService, useValue: {} },
+      ],
     }).compile();
     const controller = module.get(AuthController);
     const credenciales = { cedula: '00234', password: 'clave' };

@@ -12,6 +12,7 @@
     "format": "prettier --write \"apps/gym-api/src/**/*.ts\" \"libs/prisma/src/**/*.ts\" \"libs/seguridad/src/**/*.ts\" \"libs/identidad/src/**/*.ts\" \"libs/negocios/src/**/*.ts\" \"libs/permisos/src/**/*.ts\" \"libs/catalogo/src/**/*.ts\" \"libs/inventario/src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:dev:tienda": "nest start tienda-api --watch --env-file .env",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/apps/gym-api/src/main",
     "start:prod:tienda": "node build/tienda-api/apps/tienda-api/src/main",
