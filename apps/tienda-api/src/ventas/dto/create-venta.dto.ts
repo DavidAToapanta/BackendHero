@@ -1,4 +1,5 @@
 import { MetodoCobro } from '@prisma/client';
+import { OmitType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -15,6 +16,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
 
@@ -50,6 +52,17 @@ class LineaVentaDto {
   lotes: LoteVentaDto[];
 }
 
+class LineaMostradorDto extends OmitType(LineaVentaDto, ['lotes'] as const) {
+  @ValidateIf((_objeto: object, valor: unknown) => valor !== undefined)
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => LoteVentaDto)
+  lotes?: LoteVentaDto[];
+}
+
 export class PagoVentaDto {
   @IsEnum(MetodoCobro)
   metodo: MetodoCobro;
@@ -79,7 +92,19 @@ export class VentaMostradorDto {
   lineas: LineaVentaDto[];
 }
 
-export class CreateVentaDto extends VentaMostradorDto {
+class VentaConAsignacionOpcionalDto extends OmitType(VentaMostradorDto, [
+  'lineas',
+] as const) {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => LineaMostradorDto)
+  lineas: LineaMostradorDto[];
+}
+
+export class CreateVentaDto extends VentaConAsignacionOpcionalDto {
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -93,7 +118,7 @@ export class CreateVentaDto extends VentaMostradorDto {
   pago: PagoVentaDto;
 }
 
-export class CreateVentaCreditoDto extends VentaMostradorDto {
+export class CreateVentaCreditoDto extends VentaConAsignacionOpcionalDto {
   @IsInt()
   @Min(1)
   @Max(MAX_PRISMA_INT)

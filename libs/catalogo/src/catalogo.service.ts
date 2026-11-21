@@ -33,6 +33,18 @@ const imagenesFicha = { orderBy: { orden: 'asc' } } as const;
 
 const SKU_O_BARRAS_DUPLICADO =
   'El SKU o código de barras ya existe en el negocio';
+
+function mensajeCodigoDuplicado(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const campos = error.meta?.target;
+    if (Array.isArray(campos)) {
+      if (campos.includes('codigoBarras'))
+        return 'El código de barras ya existe en el negocio';
+      if (campos.includes('sku')) return 'El SKU ya existe en el negocio';
+    }
+  }
+  return SKU_O_BARRAS_DUPLICADO;
+}
 const PRODUCTO_NO_ENCONTRADO = 'Producto no encontrado';
 
 @Injectable()
@@ -64,7 +76,7 @@ export class CatalogoService {
         },
       });
     } catch (error) {
-      traducirErrorCatalogo(error, { P2002: SKU_O_BARRAS_DUPLICADO });
+      traducirErrorCatalogo(error, { P2002: mensajeCodigoDuplicado(error) });
     }
   }
 
@@ -99,6 +111,7 @@ export class CatalogoService {
               { nombre: contiene },
               { presentacion: contiene },
               { sku: contiene },
+              { codigoBarras: contiene },
             ],
           }
         : {}),
@@ -214,7 +227,7 @@ export class CatalogoService {
     } catch (error) {
       traducirErrorCatalogo(error, {
         P2025: PRODUCTO_NO_ENCONTRADO,
-        P2002: SKU_O_BARRAS_DUPLICADO,
+        P2002: mensajeCodigoDuplicado(error),
       });
     }
   }

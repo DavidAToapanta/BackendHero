@@ -53,7 +53,7 @@ La [guía de auditoría](../auditoria/README.md) documenta las acciones.
 Todas las rutas de productos usan el tenant de la sesión. Las consultas
 requieren `store.catalog.read` y las escrituras `store.catalog.write`.
 
-- **`GET /catalogo/productos`** admite `q` por nombre, presentación o SKU,
+- **`GET /catalogo/productos`** admite `q` por nombre, presentación, SKU o barras,
   `activo=true|false`, `categoriaId`, `pagina` y `limite`. Devuelve
   `{ data, meta: { pagina, limite, total, paginas } }`. El orden es nombre
   e ID, el límite predeterminado es 20 y el máximo es 50. Incluye productos
@@ -115,8 +115,13 @@ Productos LEGACY o inactivos tienen disponibilidad cero para venta STORE.
   reemplaza la referencia. El orden es un entero desde cero, es único en
   el producto y determina la imagen principal por su menor valor.
 - **`DELETE /catalogo/productos/:productoId/imagenes/:imagenId`** elimina
-  la referencia y devuelve `204`. La API guarda URLs y metadatos de
-  imágenes externas.
+  la referencia y devuelve `204`.
+- **`POST /catalogo/productos/:productoId/imagenes/archivo`** carga un archivo, y
+  **`PATCH /catalogo/productos/:productoId/imagenes/:imagenId/archivo`** lo reemplaza.
+  Envía `multipart/form-data` con `archivo`, `orden` y `textoAlternativo` opcional.
+  Se admiten JPG, PNG y WebP de hasta 3 MiB. Los archivos se guardan en
+  PostgreSQL y siguen el ciclo de vida de la ficha de la imagen. La respuesta
+  incluye una ruta de Tienda API para mostrar el archivo.
 - **B06** importa `CatalogoModule` e inyecta `CatalogoService` de Tienda.
   Dentro de su transacción y tras bloquear el producto, llama a
   `obtenerSnapshotVenta(tx, tenantId, productoId)`. Recibe `productoId`,

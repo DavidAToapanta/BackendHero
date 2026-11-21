@@ -82,6 +82,23 @@ export class InventarioController {
     );
   }
 
+  @Post('productos/:productoId/recepcion')
+  @RequierePermisoTienda('store.inventory.receive')
+  recibirUnidades(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoParamDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @Body() datos: RegistrarEntradaInventarioDto,
+  ) {
+    return this.inventario.registrarEntrada(
+      contexto,
+      productoId,
+      'RECEPCION',
+      clave,
+      datos,
+    );
+  }
+
   @Post('productos/:productoId/entradas')
   @RequierePermisoTienda('store.inventory.receive')
   recibirLotes(

@@ -77,8 +77,7 @@ export class RolParamDto {
 }
 
 export class AltaPersonalDto extends AsignarRolDto {
-  @Matches(/\S/)
-  @MaxLength(60)
+  @Matches(/^\d{10}$/, { message: 'La cédula debe tener 10 dígitos' })
   cedula: string;
 
   @Matches(/\S/)

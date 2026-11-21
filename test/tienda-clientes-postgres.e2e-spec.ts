@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '@app/prisma';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClientesModule } from '../apps/tienda-api/src/clientes/clientes.module';
 import { ClientesService } from '../apps/tienda-api/src/clientes/clientes.service';
@@ -95,11 +99,38 @@ suite('Clientes comerciales con PostgreSQL', () => {
     return auditoria.paraOperacion(contexto, correlacionId);
   }
 
+  it('valida el formato si cambia la identificación y permite editar fichas antiguas', async () => {
+    const ficha = {
+      nombres: 'Cliente de prueba',
+      tipoIdentificacion: 'RUC',
+      identificacion: '123ABC',
+    };
+    await expect(clientes.registrar(operacion(), ficha)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    const antiguo = await prisma.clienteComercial.create({
+      data: { tenantId: contexto.tenantId, ...ficha },
+    });
+    await expect(
+      clientes.editar(operacion(), antiguo.id, {
+        nombres: 'Cliente existente',
+      }),
+    ).resolves.toMatchObject({
+      nombres: 'Cliente existente',
+      identificacion: '123ABC',
+    });
+    await expect(
+      clientes.editar(operacion(), antiguo.id, {
+        identificacion: '0012345678001',
+      }),
+    ).resolves.toMatchObject({ identificacion: '0012345678001' });
+  });
+
   it('busca, edita y desactiva fichas aisladas por negocio', async () => {
     const ficha = {
       nombres: 'Ana de Ensayo',
       tipoIdentificacion: 'cedula',
-      identificacion: randomUUID(),
+      identificacion: '0102345678',
     };
     const cliente = await clientes.registrar(operacion(), ficha);
     await expect(clientes.registrar(operacion(), ficha)).rejects.toBeInstanceOf(
@@ -177,7 +208,7 @@ suite('Clientes comerciales con PostgreSQL', () => {
     const ficha = {
       nombres: 'Ficha con fallo de auditoría',
       tipoIdentificacion: 'cedula',
-      identificacion: randomUUID(),
+      identificacion: '0102345679',
     };
     const correlacionId = randomUUID();
     const contextoOperacion = operacion(correlacionId);

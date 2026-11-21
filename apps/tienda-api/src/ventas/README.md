@@ -13,7 +13,7 @@ comercial es opcional y, si se indica, debe estar activo.
 {
   "turnoId": 12,
   "lineas": [
-    { "productoId": 15, "cantidad": 2, "lotes": [{ "loteId": 8, "cantidad": 2 }] }
+    { "productoId": 15, "cantidad": 2 }
   ],
   "pago": { "metodo": "EFECTIVO", "monto": "10.40" }
 }
@@ -28,7 +28,10 @@ y en el importe recibido del pago, de modo que `10.409` se toma como
 `10.40`. El importe del pago debe coincidir con el total. Registra el
 monto aplicado a la venta, una vez descontado cualquier vuelto.
 
-El servidor vuelve a validar los lotes y guarda el costo histórico. El
+Si se omite `lotes`, el servidor asigna primero los lotes vigentes con el
+vencimiento más próximo, seguido por los lotes sin vencimiento. Para elegir
+lotes manualmente, envía `lotes: [{ loteId, cantidad }]` con la cantidad total
+de la línea. El servidor vuelve a validar los lotes y guarda el costo histórico. El
 cobro, la salida de inventario y la auditoría se confirman en la misma
 transacción. Solo el efectivo suma al saldo de caja. Repetir la misma
 operación con la misma clave devuelve el recurso original.

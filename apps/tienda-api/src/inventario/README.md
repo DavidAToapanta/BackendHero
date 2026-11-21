@@ -67,6 +67,11 @@ costo conciliado para cada lote y cero unidades reservadas. Para abrir un
 producto con saldo cero, enviar `{"motivo":"Alta de inventario","lotes":[]}`.
 La apertura desde cero deja una entrada auditada sin movimientos.
 
+`POST /inventario/productos/:productoId/recepcion` recibe el mismo cuerpo que
+una entrada. Si el producto sigue en `LEGACY` con saldo cero, lo abre y
+registra las unidades en la misma transacción. Para un producto con saldo
+previo en `LEGACY`, registra primero la apertura con sus existencias actuales.
+
 **Recepción para un producto en `LOTES`**
 
 ```http

@@ -49,9 +49,11 @@ export class VentaMostradorService {
       .map(({ productoId, cantidad, lotes }) => ({
         productoId,
         cantidad,
-        lotes: lotes
-          .map(({ loteId, cantidad }) => ({ loteId, cantidad }))
-          .sort((a, b) => a.loteId - b.loteId),
+        ...(lotes && {
+          lotes: lotes
+            .map(({ loteId, cantidad }) => ({ loteId, cantidad }))
+            .sort((a, b) => a.loteId - b.loteId),
+        }),
       }))
       .sort((a, b) => a.productoId - b.productoId);
     const productos = lineas.map(({ productoId }) => productoId);

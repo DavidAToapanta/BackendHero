@@ -85,14 +85,8 @@ export class ImagenParamDto extends ProductoCategoriaParamDto {
   imagenId: number;
 }
 
-export class CrearImagenDto {
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsUrl({ protocols: ['https'], require_protocol: true, disallow_auth: true })
-  @MaxLength(2048)
-  url: string;
-
+export class DatosArchivoImagenDto {
+  @Transform(enteroHttp)
   @IsInt()
   @Min(0)
   @Max(MAX_PRISMA_INT)
@@ -102,6 +96,15 @@ export class CrearImagenDto {
   @IsString()
   @MaxLength(255)
   textoAlternativo?: string | null;
+}
+
+export class CrearImagenDto extends DatosArchivoImagenDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsUrl({ protocols: ['https'], require_protocol: true, disallow_auth: true })
+  @MaxLength(2048)
+  url: string;
 }
 
 export class EditarImagenDto extends PartialType(CrearImagenDto, {

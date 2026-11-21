@@ -7,11 +7,17 @@ import {
   Param,
   Delete,
   HttpCode,
+  Header,
+  ParseUUIDPipe,
   Put,
   Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RequierePermisoTienda } from '../accesos/accesos.module';
 import { ContextoTiendaActual, type ContextoTienda } from '../auth';
 import { CatalogoService } from './catalogo.service';
@@ -28,6 +34,7 @@ import {
   CodigoBarrasDto,
   CrearImagenDto,
   CrearProductoDto,
+  DatosArchivoImagenDto,
   EditarImagenDto,
   EditarProductoDto,
   ImagenParamDto,
@@ -38,6 +45,9 @@ const validacionCatalogo = new ValidationPipe({
   transform: true,
   whitelist: true,
   forbidNonWhitelisted: true,
+});
+const archivoImagen = FileInterceptor('archivo', {
+  limits: { fileSize: 3 * 1024 * 1024, files: 1, fields: 2, fieldSize: 2048 },
 });
 
 @Controller('catalogo')
@@ -140,6 +150,54 @@ export class CatalogoController {
     @Body() dto: EditarProductoDto,
   ) {
     return this.catalogoService.editarProducto(contexto, productoId, dto);
+  }
+
+  @Get('imagenes/archivo/:clave')
+  @Header('Cache-Control', 'public, max-age=300')
+  @Header('X-Content-Type-Options', 'nosniff')
+  @Header('Cross-Origin-Resource-Policy', 'cross-origin')
+  async obtenerArchivoImagen(
+    @Param('clave', new ParseUUIDPipe({ version: '4' })) clave: string,
+  ) {
+    const { tipo, contenido } =
+      await this.catalogoService.obtenerArchivoImagen(clave);
+    return new StreamableFile(contenido, { type: tipo });
+  }
+
+  @Post('productos/:productoId/imagenes/archivo')
+  @RequierePermisoTienda('store.catalog.write')
+  @UseInterceptors(archivoImagen)
+  crearArchivoImagen(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId }: ProductoCategoriaParamDto,
+    @Body() dto: DatosArchivoImagenDto,
+    @UploadedFile() archivo?: { buffer: Buffer },
+  ) {
+    return this.catalogoService.guardarArchivoImagen(
+      contexto,
+      productoId,
+      null,
+      dto,
+      archivo?.buffer,
+    );
+  }
+
+  @Patch('productos/:productoId/imagenes/:imagenId/archivo')
+  @RequierePermisoTienda('store.catalog.write')
+  @UseInterceptors(archivoImagen)
+  editarArchivoImagen(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { productoId, imagenId }: ImagenParamDto,
+    @Body() dto: DatosArchivoImagenDto,
+    @UploadedFile() archivo?: { buffer: Buffer },
+  ) {
+    return this.catalogoService.guardarArchivoImagen(
+      contexto,
+      productoId,
+      imagenId,
+      dto,
+      archivo?.buffer,
+    );
   }
 
   @Post('productos/:productoId/imagenes')

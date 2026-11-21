@@ -141,9 +141,9 @@ export class ClientesService {
         );
         const opcional = (valor?: string | null) =>
           valor === undefined ? undefined : valor?.trim() || null;
-        const tipoIdentificacion = opcional(
-          ficha.tipoIdentificacion,
-        )?.toUpperCase();
+        const tipoRecibido = opcional(ficha.tipoIdentificacion)?.toUpperCase();
+        const tipoIdentificacion =
+          tipoRecibido === 'CÉDULA' ? 'CEDULA' : tipoRecibido;
         const identificacion = opcional(ficha.identificacion);
         const tipoFinal =
           ficha.tipoIdentificacion === undefined
@@ -157,6 +157,12 @@ export class ClientesService {
           throw new BadRequestException(
             'Indique tipo y número de identificación juntos',
           );
+        }
+        const identificacionModificada =
+          tipoFinal !== (anterior?.tipoIdentificacion ?? undefined) ||
+          (idFinal ?? undefined) !== (anterior?.identificacion ?? undefined);
+        if (tipoFinal && idFinal && (!anterior || identificacionModificada)) {
+          validarIdentificacion(tipoFinal, idFinal);
         }
         if (ficha.clienteGymId != null) {
           const clienteGym = await tx.cliente.findUnique({
@@ -203,4 +209,26 @@ export class ClientesService {
       );
     }
   }
+}
+
+function validarIdentificacion(tipo: string, numero: string) {
+  if (tipo === 'CEDULA') {
+    if (!/^\d{10}$/.test(numero))
+      throw new BadRequestException('La cédula debe tener 10 dígitos');
+    return;
+  }
+  if (tipo === 'RUC') {
+    if (!/^\d{13}$/.test(numero))
+      throw new BadRequestException('El RUC debe tener 13 dígitos');
+    return;
+  }
+  if (tipo === 'PASAPORTE') {
+    if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(numero)) {
+      throw new BadRequestException(
+        'El pasaporte admite letras, números y guiones',
+      );
+    }
+    return;
+  }
+  throw new BadRequestException('Selecciona Cédula, RUC o Pasaporte');
 }

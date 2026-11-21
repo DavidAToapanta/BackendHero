@@ -858,9 +858,18 @@ model ProductoImagen {
   updatedAt        DateTime @updatedAt @db.Timestamptz(3)
   producto         Producto @relation("ProductoImagen_producto", fields: [tenantId, productoId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
   tenant           Tenant   @relation("ProductoImagen_tenant", fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  archivo          ArchivoProductoImagen?
 
   @@unique([tenantId, productoId, orden])
   @@unique([tenantId, id])
+}
+
+model ArchivoProductoImagen {
+  clave     String         @id @db.Uuid
+  imagenId  Int            @unique
+  tipo      String
+  contenido Bytes
+  imagen    ProductoImagen @relation(fields: [imagenId], references: [id], onDelete: Cascade)
 }
 
 model EntradaInventario {

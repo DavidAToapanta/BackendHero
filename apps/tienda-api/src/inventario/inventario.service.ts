@@ -78,7 +78,7 @@ export class InventarioService {
   registrarEntrada(
     contexto: ContextoTienda,
     productoId: number,
-    tipo: 'APERTURA' | 'ENTRADA',
+    tipo: 'APERTURA' | 'ENTRADA' | 'RECEPCION',
     clave: string | undefined,
     datos: RegistrarEntradaInventarioDto,
   ) {
@@ -105,8 +105,7 @@ export class InventarioService {
       recepcion,
       'La entrada de inventario ya está registrada',
       {
-        operacion:
-          tipo === 'APERTURA' ? 'inventario.apertura' : 'inventario.entrada',
+        operacion: 'inventario.' + tipo.toLowerCase(),
         clave,
         datos: {
           productoId,
@@ -125,12 +124,13 @@ export class InventarioService {
             tx,
             operacion,
             productoId,
-            tipo,
+            tipo === 'RECEPCION' ? 'ENTRADA' : tipo,
             motivo,
             lotes,
             {
               referenciaExterna: referenciaExterna ?? undefined,
               exigirVigencia: true,
+              abrirSiVacio: tipo === 'RECEPCION',
             },
           );
         await this.auditoria.registrar(tx, contexto, {
@@ -141,7 +141,7 @@ export class InventarioService {
           correlacionId: operacion.correlacionId,
           productoIds: [productoId],
           datos: {
-            tipo,
+            tipo: tipo === 'RECEPCION' ? 'ENTRADA' : tipo,
             referenciaExterna,
             loteIds: lotesCreados.map(({ id }) => id),
           },

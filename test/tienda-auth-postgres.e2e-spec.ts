@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import {
   InventarioLotesService,
   InventarioService,
@@ -845,7 +845,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     const ficha = {
       nombres: 'Ana de Mostrador',
       tipoIdentificacion: 'cedula',
-      identificacion: '00123456',
+      identificacion: '0012345678',
     };
     await http().get('/clientes').expect(401);
     await http()
@@ -871,7 +871,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     const ruta = `/clientes/${id}`;
     expect(creada.body).toMatchObject({
       tenantId: tienda.id,
-      identificacion: '00123456',
+      identificacion: '0012345678',
       tipoIdentificacion: 'CEDULA',
     });
     await http()
@@ -1918,7 +1918,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     expect(bodega.permisos).toContain('store.inventory.loss');
 
     const datosAlta = {
-      cedula: 'nuevo-' + randomUUID(),
+      cedula: String(randomInt(0, 10_000_000_000)).padStart(10, '0'),
       password: 'clave de alta',
       nombres: 'Elena',
       apellidos: 'Mostrador',
@@ -2357,6 +2357,124 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
     await http().get(rutaCategorias).auth(accessToken, bearer).expect(401);
     await editar(categoria.id, { activo: false }).expect(401);
+  }, 20000);
+
+  it('carga la foto, recibe unidades y vende con asignación automática por vencimiento', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const { accessToken } = await crearPerfilComercial(
+      tenantId,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    const bearer = { type: 'bearer' } as const;
+    const creado = await http()
+      .post(rutaProductos)
+      .auth(accessToken, bearer)
+      .send({ nombre: 'Agua de ensayo', precio: '1.00' })
+      .expect(201);
+    const { productoId } = creado.body as { productoId: number };
+    const ficha = rutaProductos + '/' + productoId;
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/Xy8AAAAASUVORK5CYII=',
+      'base64',
+    );
+    const subir = (archivo: Buffer) =>
+      http()
+        .post(ficha + '/imagenes/archivo')
+        .auth(accessToken, bearer)
+        .field('orden', '0')
+        .attach('archivo', archivo, 'agua.png');
+    await subir(Buffer.from('texto en vez de imagen')).expect(400);
+    const foto = await subir(png).expect(201);
+    const { id: imagenId, url } = foto.body as { id: number; url: string };
+    const archivo = await http()
+      .get('/' + url)
+      .expect(200)
+      .expect('Content-Type', /image\/png/);
+    expect(archivo.body).toEqual(png);
+
+    const claveRecepcion = randomUUID();
+    const recepcion = (
+      clave: string,
+      codigo: string,
+      cantidad: number,
+      vencimiento?: string,
+    ) =>
+      http()
+        .post(`/inventario/productos/${productoId}/recepcion`)
+        .auth(accessToken, bearer)
+        .set('Idempotency-Key', clave)
+        .send({
+          motivo: 'Recepción de prueba',
+          lotes: [{ codigo, cantidad, costoUnitario: '0.50', vencimiento }],
+        });
+    const primera = await recepcion(claveRecepcion, 'SIN-FECHA', 4).expect(201);
+    await recepcion(claveRecepcion, 'SIN-FECHA', 4).expect(
+      201,
+      primera.body as object,
+    );
+    await recepcion(
+      randomUUID(),
+      'VENCE-PRIMERO',
+      1,
+      '2099-01-02T00:00:00Z',
+    ).expect(201);
+    const disponibilidad = () =>
+      http().get(ficha).auth(accessToken, bearer).expect(200);
+    expect((await disponibilidad()).body).toMatchObject({
+      codigoBarras: null,
+      stockDisponible: 5,
+    });
+    const caja = await http()
+      .post('/caja')
+      .auth(accessToken, bearer)
+      .send({ codigo: 'AGUA', nombre: 'Caja de agua' })
+      .expect(201);
+    const turno = await http()
+      .post(`/caja/${(caja.body as { id: number }).id}/turnos`)
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '5' })
+      .expect(201);
+    const { recursoId: turnoId } = turno.body as { recursoId: number };
+    const vender = (cantidad: number) =>
+      http()
+        .post('/ventas')
+        .auth(accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          turnoId,
+          lineas: [{ productoId, cantidad }],
+          pago: { metodo: 'EFECTIVO', monto: String(cantidad) },
+        });
+    await vender(6).expect(400);
+    const venta = await vender(2).expect(201);
+    const asignaciones = await prisma.asignacionLoteVenta.findMany({
+      where: {
+        tenantId,
+        ventaId: (venta.body as { recursoId: number }).recursoId,
+      },
+      select: { loteId: true, cantidad: true },
+    });
+    const lotes = await prisma.loteInventario.findMany({
+      where: { tenantId, productoId },
+    });
+    expect(asignaciones).toEqual(
+      expect.arrayContaining(
+        lotes.map(({ id }) => ({ loteId: id, cantidad: 1 })),
+      ),
+    );
+    expect((await disponibilidad()).body).toMatchObject({ stockDisponible: 3 });
+    await http()
+      .delete(ficha + '/imagenes/' + imagenId)
+      .auth(accessToken, bearer)
+      .expect(204);
+    await http()
+      .get('/' + url)
+      .expect(404);
   }, 20000);
 
   it('concilia aperturas y recibe lotes con idempotencia y auditoría atómicas', async () => {

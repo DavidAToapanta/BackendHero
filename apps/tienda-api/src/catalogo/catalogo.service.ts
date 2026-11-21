@@ -31,6 +31,7 @@ import type {
 import type {
   CrearImagenDto,
   CrearProductoDto,
+  DatosArchivoImagenDto,
   EditarImagenDto,
   EditarProductoDto,
   ListaProductosDto,
@@ -43,6 +44,24 @@ type FichaCatalogo = Awaited<
 
 function imagenPublica({ id, url, orden, textoAlternativo }: ProductoImagen) {
   return { id, url, orden, textoAlternativo };
+}
+
+function tipoDeImagen(contenido?: Buffer) {
+  if (contenido?.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+    return 'image/jpeg';
+  }
+  if (
+    contenido?.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+  ) {
+    return 'image/png';
+  }
+  if (
+    contenido?.toString('ascii', 0, 4) === 'RIFF' &&
+    contenido.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  throw new BadRequestException('Selecciona una imagen JPG, PNG o WebP válida');
 }
 
 function categoriaStore({ categoria }: FichaCatalogo) {
@@ -379,8 +398,8 @@ export class CatalogoService {
       contexto,
       productoId,
       ACCIONES_AUDITORIA.IMAGENES_EDITAR,
-      (tx) =>
-        this.imagenes.update(
+      async (tx) => {
+        const imagen = await this.imagenes.update(
           contexto.tenantId,
           productoId,
           imagenId,
@@ -389,8 +408,67 @@ export class CatalogoService {
             claveArchivo: dto.url === undefined ? undefined : null,
           },
           tx,
-        ),
+        );
+        if (dto.url !== undefined) {
+          await tx.archivoProductoImagen.deleteMany({
+            where: { imagenId: imagen.id },
+          });
+        }
+        return imagen;
+      },
     );
+  }
+
+  guardarArchivoImagen(
+    contexto: ContextoTienda,
+    productoId: number,
+    imagenId: number | null,
+    dto: DatosArchivoImagenDto,
+    contenido?: Buffer,
+  ) {
+    const tipo = tipoDeImagen(contenido);
+    const clave = randomUUID();
+    const datos = {
+      url: 'catalogo/imagenes/archivo/' + clave,
+      claveArchivo: clave,
+      orden: dto.orden,
+      textoAlternativo: dto.textoAlternativo?.trim() || null,
+    };
+    return this.escribirImagen(
+      contexto,
+      productoId,
+      imagenId === null
+        ? ACCIONES_AUDITORIA.IMAGENES_CREAR
+        : ACCIONES_AUDITORIA.IMAGENES_EDITAR,
+      async (tx) => {
+        const { tenantId } = contexto;
+        const imagen =
+          imagenId === null
+            ? await this.imagenes.create(tenantId, productoId, datos, tx)
+            : await this.imagenes.update(
+                tenantId,
+                productoId,
+                imagenId,
+                datos,
+                tx,
+              );
+        await tx.archivoProductoImagen.upsert({
+          where: { imagenId: imagen.id },
+          create: { imagenId: imagen.id, clave, tipo, contenido: contenido! },
+          update: { clave, tipo, contenido: contenido! },
+        });
+        return imagen;
+      },
+    );
+  }
+
+  async obtenerArchivoImagen(clave: string) {
+    const archivo = await this.prisma.archivoProductoImagen.findUnique({
+      where: { clave },
+      select: { tipo: true, contenido: true },
+    });
+    if (!archivo) throw new NotFoundException('Imagen no encontrada');
+    return archivo;
   }
 
   eliminarImagen(
