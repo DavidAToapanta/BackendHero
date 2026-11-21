@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -20,6 +21,7 @@ import {
   DevolucionParamDto,
   ListaDevolucionesDto,
 } from './dto/create-devolucion.dto';
+import { VistaPreviaDevolucionDto } from './dto/vista-previa-devolucion.dto';
 
 @Controller('devoluciones')
 @UsePipes(
@@ -68,6 +70,17 @@ export class DevolucionesController {
     @Param() { id }: DevolucionParamDto,
   ) {
     return this.consultas.consultarVenta(contexto.tenantId, id);
+  }
+
+  @Post('ventas/:id/vista-previa')
+  @HttpCode(200)
+  @RequierePermisoTienda('store.returns.read')
+  vistaPrevia(
+    @ContextoTiendaActual() contexto: ContextoTienda,
+    @Param() { id }: DevolucionParamDto,
+    @Body() datos: VistaPreviaDevolucionDto,
+  ) {
+    return this.consultas.vistaPrevia(contexto.tenantId, id, datos.lineas);
   }
 
   @Get(':id')

@@ -11,6 +11,7 @@ import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 import { DevolucionesOperacionService } from './devoluciones-operacion.service';
 import { DevolucionesService } from './devoluciones.service';
 import { DevolucionesController } from './devoluciones.controller';
+import { CalculoDevolucionesService } from './calculo-devoluciones.service';
 
 @Module({
   imports: [
@@ -25,7 +26,11 @@ import { DevolucionesController } from './devoluciones.controller';
     PrismaModule,
   ],
   controllers: [DevolucionesController],
-  providers: [DevolucionesService, DevolucionesOperacionService],
+  providers: [
+    DevolucionesService,
+    DevolucionesOperacionService,
+    CalculoDevolucionesService,
+  ],
   exports: [DevolucionesOperacionService],
 })
 export class DevolucionesModule {}

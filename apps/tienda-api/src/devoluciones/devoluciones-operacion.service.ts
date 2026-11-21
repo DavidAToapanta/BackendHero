@@ -8,12 +8,11 @@ import {
   ConflictException,
   Injectable,
 } from '@nestjs/common';
+import { MetodoCobro, Prisma } from '@prisma/client';
 import {
-  DestinoDevolucionVenta,
-  MetodoCobro,
-  Prisma,
-  Venta,
-} from '@prisma/client';
+  CalculoDevolucionesService,
+  type LineaDevuelta,
+} from './calculo-devoluciones.service';
 import { ACCIONES_AUDITORIA } from '../auditoria/auditoria-escritura';
 import { CajaService } from '../caja/caja.service';
 import { CuentasService } from '../cartera/cuentas.service';
@@ -26,12 +25,6 @@ import {
   importeTienda,
   textoObligatorio,
 } from '../comun/operacion-tienda';
-
-interface LineaDevuelta {
-  asignacionVentaId: number;
-  cantidad: number;
-  destino: DestinoDevolucionVenta;
-}
 
 interface MedioReembolso {
   metodo: MetodoCobro;
@@ -63,6 +56,7 @@ export class DevolucionesOperacionService {
     private readonly inventario: InventarioLotesService,
     private readonly comprobantes: AnulacionComprobanteService,
     private readonly prisma: PrismaService,
+    private readonly calculo: CalculoDevolucionesService,
   ) {}
 
   devolver(
@@ -111,9 +105,7 @@ export class DevolucionesOperacionService {
     const { ventaId } = datos;
     const motivo = textoObligatorio(datos.motivo, 'Motivo');
     const turnoId = datos.turnos?.reembolso ?? null;
-    const lineas = [...datos.lineas].sort(
-      (a, b) => a.asignacionVentaId - b.asignacionVentaId,
-    );
+    const lineas = this.calculo.ordenarLineas(datos.lineas, anular);
     const liberar = datos.liberar
       .map(({ aplicacionId, monto, reembolso }) => ({
         aplicacionId,
@@ -123,13 +115,7 @@ export class DevolucionesOperacionService {
       }))
       .sort((a, b) => a.aplicacionId - b.aplicacionId);
     if (
-      (!anular &&
-        (!lineas.length || lineas.length > 100 || liberar.length > 100)) ||
-      lineas.some(
-        ({ cantidad }) => !Number.isInteger(cantidad) || cantidad <= 0,
-      ) ||
-      new Set(lineas.map(({ asignacionVentaId }) => asignacionVentaId)).size !==
-        lineas.length ||
+      (!anular && liberar.length > 100) ||
       new Set(liberar.map(({ aplicacionId }) => aplicacionId)).size !==
         liberar.length
     ) {
@@ -210,15 +196,13 @@ export class DevolucionesOperacionService {
         const cuenta = cuentaVista
           ? await this.cuentas.bloquear(tx, tenantId, cuentaVista.id)
           : null;
-        const detalles = await this.prepararLineas(tx, venta, lineas);
-        const sumar = (
-          campo: 'subtotal' | 'descuento' | 'impuesto' | 'total',
-        ) =>
-          detalles.reduce(
-            (total, item) => total.plus(item[campo]),
-            new Prisma.Decimal(0),
-          );
-        const totalDevuelto = sumar('total');
+        const {
+          detalles,
+          subtotal,
+          descuento,
+          impuesto,
+          total: totalDevuelto,
+        } = await this.calculo.calcular(tx, venta, lineas);
 
         const porId = new Map(
           aplicaciones.map((aplicacion) => [aplicacion.id, aplicacion]),
@@ -267,9 +251,9 @@ export class DevolucionesOperacionService {
                 aprobadaAt: new Date(),
                 estado: 'APROBADA',
                 motivo,
-                subtotal: sumar('subtotal'),
-                descuento: sumar('descuento'),
-                impuesto: sumar('impuesto'),
+                subtotal,
+                descuento,
+                impuesto,
                 total: totalDevuelto,
                 claveIdempotencia: claveRecurso,
               },
@@ -444,106 +428,5 @@ export class DevolucionesOperacionService {
         return resultado;
       },
     );
-  }
-
-  private async prepararLineas(
-    tx: Prisma.TransactionClient,
-    venta: Venta,
-    lineas: LineaDevuelta[],
-  ) {
-    if (!lineas.length) return [];
-    const { id: ventaId, tenantId } = venta;
-    const asignaciones = await tx.asignacionLoteVenta.findMany({
-      where: {
-        tenantId,
-        ventaId,
-        id: { in: lineas.map(({ asignacionVentaId }) => asignacionVentaId) },
-      },
-      include: { detalleVenta: true },
-    });
-    const porId = new Map(asignaciones.map((fila) => [fila.id, fila]));
-    const criterio = {
-      tenantId,
-      ventaId,
-      devolucion: { estado: 'APROBADA' as const },
-    };
-    const anterioresPorAsignacion = await tx.detalleDevolucionVenta.groupBy({
-      by: ['asignacionVentaId'],
-      where: criterio,
-      _sum: { cantidad: true },
-    });
-    const anterioresPorDetalle = await tx.detalleDevolucionVenta.groupBy({
-      by: ['detalleVentaId'],
-      where: criterio,
-      _sum: { cantidad: true, descuento: true, impuesto: true },
-    });
-    const cantidadesPorAsignacion = new Map(
-      anterioresPorAsignacion.map((fila) => [
-        fila.asignacionVentaId,
-        fila._sum.cantidad ?? 0,
-      ]),
-    );
-    const acumulados = new Map(
-      anterioresPorDetalle.map(({ detalleVentaId, _sum }) => [
-        detalleVentaId,
-        {
-          cantidad: _sum.cantidad ?? 0,
-          descuento: _sum.descuento ?? new Prisma.Decimal(0),
-          impuesto: _sum.impuesto ?? new Prisma.Decimal(0),
-        },
-      ]),
-    );
-    return lineas.map((linea) => {
-      const asignacion = porId.get(linea.asignacionVentaId);
-      if (
-        !asignacion ||
-        (cantidadesPorAsignacion.get(asignacion.id) ?? 0) + linea.cantidad >
-          asignacion.cantidad
-      ) {
-        throw new ConflictException(
-          'La cantidad excede las unidades de la asignación disponibles para devolución',
-        );
-      }
-      const detalle = asignacion.detalleVenta;
-      const anterior = acumulados.get(detalle.id) ?? {
-        cantidad: 0,
-        descuento: new Prisma.Decimal(0),
-        impuesto: new Prisma.Decimal(0),
-      };
-      const restantes = detalle.cantidad - anterior.cantidad;
-      if (linea.cantidad > restantes)
-        throw new ConflictException('La cantidad supera el detalle de venta');
-      const prorratear = (original: Prisma.Decimal, devuelto: Prisma.Decimal) =>
-        original
-          .minus(devuelto)
-          .times(linea.cantidad)
-          .div(restantes)
-          .toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN);
-      const subtotal = detalle.precioUnitario.times(linea.cantidad);
-      const descuento = prorratear(detalle.descuento, anterior.descuento);
-      const impuesto = prorratear(detalle.impuesto, anterior.impuesto);
-      if (descuento.gt(subtotal) || descuento.lt(0) || impuesto.lt(0))
-        throw new ConflictException(
-          'Los importes históricos de devolución no concilian',
-        );
-      acumulados.set(detalle.id, {
-        cantidad: anterior.cantidad + linea.cantidad,
-        descuento: anterior.descuento.plus(descuento),
-        impuesto: anterior.impuesto.plus(impuesto),
-      });
-      return {
-        ...linea,
-        ventaId,
-        detalleVentaId: detalle.id,
-        productoId: asignacion.productoId,
-        loteId: asignacion.loteId,
-        costoUnitario: asignacion.costoUnitario,
-        costoTotal: asignacion.costoUnitario.times(linea.cantidad),
-        subtotal,
-        descuento,
-        impuesto,
-        total: subtotal.minus(descuento).plus(impuesto),
-      };
-    });
   }
 }

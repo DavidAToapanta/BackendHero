@@ -53,6 +53,7 @@ import { fechaComercial } from '../apps/tienda-api/src/comun/fecha-comercial';
 import { InventarioService as InventarioTiendaService } from '../apps/tienda-api/src/inventario/inventario.service';
 import { AnulacionComprobanteService } from '../apps/tienda-api/src/comprobantes/anulacion-comprobante.service';
 import { NotificacionesService } from '../apps/tienda-api/src/notificaciones/notificaciones.service';
+import type { VistaPreviaDevolucion } from '../apps/tienda-api/src/devoluciones/dto/vista-previa-devolucion.dto';
 import { reservarPedidoEnsayo } from './fixtures/tienda';
 
 const suite =
@@ -432,6 +433,397 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     });
     return { rol, credenciales, ...(await loginTienda(credenciales)) };
   }
+
+  async function prepararVentaParaVistaPrevia(
+    precio: string,
+    pago?: string,
+    abono?: string,
+    historicos?: { descuento: string; impuesto: string },
+  ) {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const owner = await crearPerfilComercial(tenantId, 'OWNER', [], 'OWNER');
+    const cliente = await prisma.clienteComercial.create({
+      data: { tenantId, nombres: 'Comprador vista previa' },
+    });
+    const producto = await prisma.producto.create({
+      data: {
+        tenantId,
+        nombre: 'Producto histórico para devolución',
+        precio,
+        stock: 3,
+        estado: true,
+      },
+    });
+    const entrada = randomUUID();
+    const inventario = app.get<InventarioLotesService>(InventarioLotesService);
+    const {
+      lotes: [lote],
+    } = await prisma.$transaction((tx) =>
+      inventario.registrarEntrada(
+        tx,
+        {
+          tenantId,
+          responsableId: owner.context.membresiaId,
+          clave: entrada,
+          correlacionId: entrada,
+        },
+        producto.id,
+        'APERTURA',
+        'Ensayo vista previa',
+        [
+          {
+            codigo: 'PREVIA',
+            cantidad: 3,
+            costoUnitario: new Prisma.Decimal('1'),
+          },
+        ],
+      ),
+    );
+    const caja = await prisma.caja.create({
+      data: { tenantId, codigo: 'PREVIA', nombre: 'Caja de ensayo' },
+    });
+    const turno = await prisma.turnoCaja.create({
+      data: {
+        tenantId,
+        cajaId: caja.id,
+        cajeroId: owner.context.membresiaId,
+        fondoInicial: '0',
+      },
+    });
+    let ventaId: number;
+    if (historicos) {
+      // El snapshot se inserta completo: los detalles históricos son inmutables.
+      ventaId = await prisma.$transaction(async (tx) => {
+        const subtotal = new Prisma.Decimal(precio).times(3);
+        const total = subtotal
+          .minus(historicos.descuento)
+          .plus(historicos.impuesto);
+        const venta = await tx.venta.create({
+          data: {
+            tenantId,
+            origen: 'CAJA',
+            responsableId: owner.context.membresiaId,
+            clienteComercialId: cliente.id,
+            claveIdempotencia: randomUUID(),
+            subtotal,
+            descuento: historicos.descuento,
+            impuesto: historicos.impuesto,
+            total,
+          },
+        });
+        const detalle = await tx.detalleVenta.create({
+          data: {
+            tenantId,
+            ventaId: venta.id,
+            productoId: producto.id,
+            nombreProducto: producto.nombre,
+            cantidad: 3,
+            precioUnitario: precio,
+            subtotal,
+            descuento: historicos.descuento,
+            impuesto: historicos.impuesto,
+            total,
+          },
+        });
+        await tx.asignacionLoteVenta.create({
+          data: {
+            tenantId,
+            ventaId: venta.id,
+            detalleVentaId: detalle.id,
+            productoId: producto.id,
+            loteId: lote.id,
+            cantidad: 3,
+            costoUnitario: lote.costoUnitario,
+            costoTotal: lote.costoUnitario.times(3),
+          },
+        });
+        const clave = randomUUID();
+        await inventario.retirarVenta(
+          tx,
+          {
+            tenantId,
+            responsableId: owner.context.membresiaId,
+            clave,
+            correlacionId: clave,
+          },
+          detalle.id,
+        );
+        await app.get(CuentasService).crear(tx, {
+          tenantId,
+          ventaId: venta.id,
+          clienteComercialId: cliente.id,
+          vencimiento: new Date('2099-03-05T05:00:00Z'),
+          financiado: total,
+        });
+        return venta.id;
+      });
+    } else {
+      const respuesta = await http()
+        .post('/ventas/credito')
+        .auth(owner.accessToken, { type: 'bearer' })
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          turnoId: turno.id,
+          clienteComercialId: cliente.id,
+          vencimiento: '2099-03-05',
+          lineas: [
+            {
+              productoId: producto.id,
+              cantidad: 3,
+              lotes: [{ loteId: lote.id, cantidad: 3 }],
+            },
+          ],
+          ...(pago ? { pago: { metodo: 'TRANSFERENCIA', monto: pago } } : {}),
+        })
+        .expect(201);
+      ventaId = (respuesta.body as { recursoId: number }).recursoId;
+    }
+    const cuenta = await prisma.cuentaPorCobrar.findUniqueOrThrow({
+      where: { tenantId_ventaId: { tenantId, ventaId } },
+    });
+    if (abono)
+      await http()
+        .post('/cobros')
+        .auth(owner.accessToken, { type: 'bearer' })
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          cuentaId: cuenta.id,
+          ventaId,
+          metodo: 'TRANSFERENCIA',
+          monto: abono,
+        })
+        .expect(201);
+    const asignacion = await prisma.asignacionLoteVenta.findFirstOrThrow({
+      where: { tenantId, ventaId },
+    });
+    const lineas = [
+      {
+        asignacionVentaId: asignacion.id,
+        cantidad: 1,
+        destino: 'REINTEGRO_APTO',
+      },
+    ];
+    const vista = (
+      token = owner.accessToken,
+      seleccion = lineas,
+      id = ventaId,
+    ) =>
+      http()
+        .post(`/devoluciones/ventas/${id}/vista-previa`)
+        .auth(token, { type: 'bearer' })
+        .send({ lineas: seleccion });
+    const confirmar = (
+      liberar: VistaPreviaDevolucion['liberarSugerido'] = [],
+      token = owner.accessToken,
+    ) =>
+      http()
+        .post('/devoluciones')
+        .auth(token, { type: 'bearer' })
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          ventaId,
+          motivo: 'Confirmar devolución prevista',
+          lineas,
+          liberar,
+        });
+    return {
+      tenantId,
+      owner,
+      ventaId,
+      cuenta,
+      asignacion,
+      lineas,
+      vista,
+      confirmar,
+      producto,
+    };
+  }
+
+  async function estadoVistaPrevia(tenantId: number) {
+    const consulta = { where: { tenantId }, orderBy: { id: 'asc' as const } };
+    return Promise.all([
+      prisma.venta.findMany(consulta),
+      prisma.devolucionVenta.findMany(consulta),
+      prisma.detalleDevolucionVenta.findMany(consulta),
+      prisma.reembolso.findMany(consulta),
+      prisma.producto.findMany(consulta),
+      prisma.loteInventario.findMany(consulta),
+      prisma.movimientoInventario.findMany(consulta),
+      prisma.cobro.findMany(consulta),
+      prisma.aplicacionCobro.findMany(consulta),
+      prisma.reversionAplicacionCobro.findMany(consulta),
+      prisma.cuentaPorCobrar.findMany(consulta),
+      prisma.ajusteCuentaPorCobrar.findMany(consulta),
+      prisma.turnoCaja.findMany(consulta),
+      prisma.movimientoCaja.findMany(consulta),
+      prisma.auditoriaOperacion.findMany(consulta),
+      prisma.solicitudIdempotente.findMany(consulta),
+    ]);
+  }
+
+  async function comprobarConfirmacionPrevista(
+    e: Awaited<ReturnType<typeof prepararVentaParaVistaPrevia>>,
+    prevista: VistaPreviaDevolucion,
+  ) {
+    const respuesta = await e.confirmar(prevista.liberarSugerido).expect(201);
+    expect(respuesta.body).toEqual({
+      recursoTipo: 'DevolucionVenta',
+      recursoId: expect.any(Number) as number,
+    });
+    const devolucion = await prisma.devolucionVenta.findUniqueOrThrow({
+      where: { id: (respuesta.body as { recursoId: number }).recursoId },
+    });
+    for (const campo of [
+      'subtotal',
+      'descuento',
+      'impuesto',
+      'total',
+    ] as const) {
+      expect(devolucion[campo].toFixed(2)).toBe(prevista[campo]);
+    }
+    const cuenta = await prisma.cuentaPorCobrar.findUniqueOrThrow({
+      where: { id: e.cuenta.id },
+    });
+    expect(cuenta.saldo.toFixed(2)).toBe(
+      new Prisma.Decimal(prevista.saldoPendiente)
+        .minus(prevista.reduccionSaldoSugerida)
+        .toFixed(2),
+    );
+  }
+
+  it('vista previa reduce solo deuda, coincide con la confirmación y no escribe', async () => {
+    const e = await prepararVentaParaVistaPrevia('30.00');
+    const antes = await estadoVistaPrevia(e.tenantId);
+    const respuesta = await e.vista().expect(200);
+    expect(respuesta.body).toEqual({
+      ventaId: e.ventaId,
+      subtotal: '30.00',
+      descuento: '0.00',
+      impuesto: '0.00',
+      total: '30.00',
+      saldoPendiente: '90.00',
+      reduccionSaldoSugerida: '30.00',
+      importeALiberar: '0.00',
+      liberarSugerido: [],
+    });
+    expect(await estadoVistaPrevia(e.tenantId)).toEqual(antes);
+    await comprobarConfirmacionPrevista(
+      e,
+      respuesta.body as VistaPreviaDevolucion,
+    );
+  }, 30000);
+
+  it('vista previa combina deuda y liberación, protege permisos y aísla tiendas sin escrituras', async () => {
+    const e = await prepararVentaParaVistaPrevia('70.00', '20.00', '150.00');
+    const lector = await crearPerfilComercial(
+      e.tenantId,
+      'LECTOR_DEVOLUCIONES',
+      ['store.returns.read'],
+      'EMPLEADO',
+    );
+    const escritor = await crearPerfilComercial(
+      e.tenantId,
+      'ESCRITOR_DEVOLUCIONES',
+      ['store.returns.write'],
+      'EMPLEADO',
+    );
+    const ajena = await prepararVentaParaVistaPrevia('10.00');
+    const antes = await estadoVistaPrevia(e.tenantId);
+    const antesAjena = await estadoVistaPrevia(ajena.tenantId);
+    const aplicaciones = await prisma.aplicacionCobro.findMany({
+      where: { tenantId: e.tenantId, ventaId: e.ventaId },
+      orderBy: { id: 'asc' },
+    });
+    const respuesta = await e.vista(lector.accessToken).expect(200);
+    const prevista = respuesta.body as VistaPreviaDevolucion;
+    expect(prevista).toMatchObject({
+      total: '70.00',
+      saldoPendiente: '40.00',
+      reduccionSaldoSugerida: '40.00',
+      importeALiberar: '30.00',
+      liberarSugerido: [
+        { aplicacionId: aplicaciones[0].id, monto: '20.00' },
+        { aplicacionId: aplicaciones[1].id, monto: '10.00' },
+      ],
+    });
+    await http()
+      .post(`/devoluciones/ventas/${e.ventaId}/vista-previa`)
+      .send({ lineas: e.lineas })
+      .expect(401);
+    await e.vista(escritor.accessToken).expect(403);
+    await e.confirmar([], lector.accessToken).expect(403);
+    await e.vista(ajena.owner.accessToken).expect(404);
+    await e.vista(e.owner.accessToken, ajena.lineas).expect(409);
+    await e.vista(e.owner.accessToken, e.lineas, ajena.ventaId).expect(404);
+    const ruta = `/devoluciones/ventas/${e.ventaId}/vista-previa`;
+    for (const body of [
+      { lineas: [] },
+      { lineas: [e.lineas[0], e.lineas[0]] },
+      { lineas: [{ ...e.lineas[0], cantidad: 0 }] },
+      { lineas: [{ ...e.lineas[0], cantidad: 1.5 }] },
+      { lineas: [{ ...e.lineas[0], destino: 'OTRO' }] },
+      { lineas: e.lineas, tenantId: ajena.tenantId },
+      { lineas: e.lineas, ventaId: ajena.ventaId },
+      { lineas: e.lineas, liberar: [] },
+    ])
+      await http()
+        .post(ruta)
+        .auth(lector.accessToken, { type: 'bearer' })
+        .send(body)
+        .expect(400);
+    expect(await estadoVistaPrevia(e.tenantId)).toEqual(antes);
+    expect(await estadoVistaPrevia(ajena.tenantId)).toEqual(antesAjena);
+    await comprobarConfirmacionPrevista(e, prevista);
+    expect(
+      await prisma.reembolso.count({ where: { tenantId: e.tenantId } }),
+    ).toBe(0);
+    // Las aplicaciones sugeridas ya fueron revertidas/reemplazadas: se revalidan.
+    await e.confirmar(prevista.liberarSugerido).expect(409);
+    await e
+      .vista(e.owner.accessToken, [{ ...e.lineas[0], cantidad: 3 }])
+      .expect(409);
+  }, 45000);
+
+  it('vista previa parcial conserva descuentos, impuestos y redondeo histórico al confirmar sucesivamente', async () => {
+    const e = await prepararVentaParaVistaPrevia(
+      '10.00',
+      undefined,
+      undefined,
+      {
+        descuento: '1.00',
+        impuesto: '2.00',
+      },
+    );
+    await prisma.producto.update({
+      where: { id: e.producto.id },
+      data: { precio: '999.99' },
+    });
+    for (const [descuento, impuesto, total] of [
+      ['0.33', '0.66', '10.33'],
+      ['0.33', '0.67', '10.34'],
+      ['0.34', '0.67', '10.33'],
+    ]) {
+      const antes = await estadoVistaPrevia(e.tenantId);
+      const respuesta = await e.vista().expect(200);
+      expect(respuesta.body).toMatchObject({
+        subtotal: '10.00',
+        descuento,
+        impuesto,
+        total,
+      });
+      expect(await estadoVistaPrevia(e.tenantId)).toEqual(antes);
+      await comprobarConfirmacionPrevista(
+        e,
+        respuesta.body as VistaPreviaDevolucion,
+      );
+    }
+    const antesRechazo = await estadoVistaPrevia(e.tenantId);
+    await e.vista().expect(409);
+    await e.confirmar().expect(409);
+    expect(await estadoVistaPrevia(e.tenantId)).toEqual(antesRechazo);
+  }, 30000);
 
   it('habilita clientes con permisos efectivos, aislamiento de negocio y auditoría real', async () => {
     const tienda = await crearNegocio({ autorizacionVersion: 'PERMISOS' });
