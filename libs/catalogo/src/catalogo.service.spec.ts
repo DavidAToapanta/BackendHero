@@ -61,7 +61,7 @@ describe('Catálogo compartido', () => {
 
     await expect(catalogo.remove(9, 5)).rejects.toThrow(ConflictException);
     expect(prisma.producto.delete).toHaveBeenCalledWith({
-      where: { tenantId_id: { tenantId: 9, id: 5 } },
+      where: { tenantId_id: { tenantId: 9, id: 5 }, unidadVenta: 'UNIDAD' },
     });
   });
 

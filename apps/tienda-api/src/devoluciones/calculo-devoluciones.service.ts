@@ -79,7 +79,7 @@ export class CalculoDevolucionesService {
     const anterioresPorDetalle = await tx.detalleDevolucionVenta.groupBy({
       by: ['detalleVentaId'],
       where: criterio,
-      _sum: { cantidad: true, descuento: true, impuesto: true },
+      _sum: { cantidad: true, descuento: true, impuesto: true, subtotal: true },
     });
     const cantidadesPorAsignacion = new Map(
       anterioresPorAsignacion.map((fila) => [
@@ -94,6 +94,7 @@ export class CalculoDevolucionesService {
           cantidad: _sum.cantidad ?? 0,
           descuento: _sum.descuento ?? new Prisma.Decimal(0),
           impuesto: _sum.impuesto ?? new Prisma.Decimal(0),
+          subtotal: _sum.subtotal ?? new Prisma.Decimal(0),
         },
       ]),
     );
@@ -113,6 +114,7 @@ export class CalculoDevolucionesService {
         cantidad: 0,
         descuento: new Prisma.Decimal(0),
         impuesto: new Prisma.Decimal(0),
+        subtotal: new Prisma.Decimal(0),
       };
       const restantes = detalle.cantidad - anterior.cantidad;
       if (linea.cantidad > restantes)
@@ -133,7 +135,12 @@ export class CalculoDevolucionesService {
             .times(detalle.cantidad)
             .minus(detalle.impuesto),
         );
-      const subtotal = incluyeIva ? bruto.minus(impuesto) : bruto;
+      const subtotal =
+        detalle.unidadVenta === 'LIBRA'
+          ? prorratear(detalle.subtotal, anterior.subtotal)
+          : incluyeIva
+            ? bruto.minus(impuesto)
+            : bruto;
       if (descuento.gt(subtotal) || descuento.lt(0) || impuesto.lt(0))
         throw new ConflictException(
           'Los importes históricos de devolución no concilian',
@@ -142,6 +149,7 @@ export class CalculoDevolucionesService {
         cantidad: anterior.cantidad + linea.cantidad,
         descuento: anterior.descuento.plus(descuento),
         impuesto: anterior.impuesto.plus(impuesto),
+        subtotal: anterior.subtotal.plus(subtotal),
       });
       return {
         ...linea,

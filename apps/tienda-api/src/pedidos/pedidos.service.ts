@@ -173,6 +173,7 @@ export class PedidosService {
             ficha.precioUnitario,
             cantidad,
             ficha.tasaImpuesto ?? cero,
+            ficha.unidadVenta,
           );
           detalles.push({ ...ficha, cantidad, ...importes });
         }
@@ -419,6 +420,7 @@ export class PedidosService {
             categoriaId,
             categoriaNombre,
             precioUnitario,
+            unidadVenta,
             descuento,
             tasaImpuesto,
             subtotal,
@@ -441,6 +443,7 @@ export class PedidosService {
               categoriaId,
               categoriaNombre,
               precioUnitario,
+              unidadVenta,
               descuento,
               tasaImpuesto,
               subtotal,

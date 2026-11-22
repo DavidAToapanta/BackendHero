@@ -1545,7 +1545,14 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
         { periodo: '2026-10-26', neto: '10', ventas: 1 },
         { periodo: '2026-11-02', neto: '0', ventas: 0 },
       ],
-      productos: [{ productoId: producto.id, neto: '10', unidades: 1 }],
+      productos: [
+        {
+          productoId: producto.id,
+          neto: '10',
+          unidades: 1,
+          unidadVenta: 'UNIDAD',
+        },
+      ],
       cajeros: [
         { responsableId: owner.context.membresiaId, neto: '10', ventas: 1 },
       ],
@@ -2599,6 +2606,141 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       .auth(accessToken, bearer)
       .expect(200)
       .expect('Content-Type', /application\/pdf/);
+  }, 20000);
+
+  it('vende libras fraccionarias y unidades juntas, con stock, IVA, comprobante y devolución', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const { accessToken } = await crearPerfilComercial(
+      tenantId,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    const bearer = { type: 'bearer' } as const;
+    await http()
+      .put('/configuracion/iva')
+      .auth(accessToken, bearer)
+      .send({ porcentaje: '15' })
+      .expect(200);
+    const alta = (body: object) =>
+      http()
+        .post(rutaProductos)
+        .auth(accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send(body)
+        .expect(201);
+    const arroz = await alta({
+      nombre: 'Arroz por peso',
+      codigoBarras: '02001',
+      precio: '8.02',
+      unidadVenta: 'LIBRA',
+      stockMinimo: 750,
+      stockInicial: { cantidad: 2000, costoUnitario: '2.4123' },
+    });
+    const agua = await alta({
+      nombre: 'Agua',
+      precio: '1',
+      stockInicial: { cantidad: 3, costoUnitario: '0.50' },
+    });
+    const productoId = (arroz.body as { productoId: number }).productoId;
+    const aguaId = (agua.body as { productoId: number }).productoId;
+    const caja = await http()
+      .post('/caja')
+      .auth(accessToken, bearer)
+      .send({ codigo: 'PESO', nombre: 'Caja' })
+      .expect(201);
+    const turno = await http()
+      .post('/caja/' + (caja.body as { id: number }).id + '/turnos')
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '0' })
+      .expect(201);
+    const turnoId = (turno.body as { recursoId: number }).recursoId;
+    const lineas = [
+      { productoId, cantidad: 1250 },
+      { productoId: aguaId, cantidad: 1 },
+    ];
+    const venta = (seleccion: typeof lineas) =>
+      http()
+        .post('/ventas')
+        .auth(accessToken, bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          turnoId,
+          lineas: seleccion,
+          pago: { metodo: 'EFECTIVO', monto: '11.03' },
+        });
+    await venta([{ productoId, cantidad: 2001 }]).expect(400);
+    const registrada = await venta(lineas).expect(201);
+    const ventaId = (registrada.body as { recursoId: number }).recursoId;
+    const alerta = await http()
+      .get(rutaProductos + '/stock-bajo')
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(alerta.body).toMatchObject({
+      productos: [
+        {
+          productoId,
+          unidadVenta: 'LIBRA',
+          stockDisponible: 750,
+          stockMinimo: 750,
+        },
+      ],
+    });
+    const asignacion = await prisma.asignacionLoteVenta.findFirstOrThrow({
+      where: { tenantId, ventaId, productoId },
+    });
+    expect(asignacion.costoTotal.eq('3.015375')).toBe(true);
+    const emitido = await http()
+      .post('/comprobantes')
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ventaId })
+      .expect(201);
+    const id = (emitido.body as { recursoId: number }).recursoId;
+    const comprobante = await http()
+      .get('/comprobantes/' + id)
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(comprobante.body).toMatchObject({
+      subtotal: '9.59',
+      impuesto: '1.44',
+      total: '11.03',
+    });
+    const { detalleComprobanteVenta_comprobante: detalle } =
+      comprobante.body as {
+        detalleComprobanteVenta_comprobante: unknown[];
+      };
+    expect(detalle).toContainEqual(
+      expect.objectContaining({
+        unidadVenta: 'LIBRA',
+        cantidad: 1250,
+        total: '10.03',
+      }),
+    );
+    expect(detalle).toContainEqual(
+      expect.objectContaining({
+        unidadVenta: 'UNIDAD',
+        cantidad: 1,
+        total: '1',
+      }),
+    );
+    const vista = await http()
+      .post('/devoluciones/ventas/' + ventaId + '/vista-previa')
+      .auth(accessToken, bearer)
+      .send({
+        lineas: [
+          {
+            asignacionVentaId: asignacion.id,
+            cantidad: 500,
+            destino: 'REINTEGRO_APTO',
+          },
+        ],
+      })
+      .expect(200);
+    expect(vista.body).toMatchObject({ total: '4.00' });
   }, 20000);
 
   it('concilia aperturas y recibe lotes con idempotencia y auditoría atómicas', async () => {
@@ -3844,6 +3986,7 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       loteId: lotesMostrador[0].loteId,
       codigo: 'VIGENTE',
       vencimiento: null,
+      unidadVenta: 'UNIDAD',
       cantidadDisponible: 3,
     });
     const vencidos = await http()
@@ -4241,7 +4384,9 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       neto: '5.2',
       ventas: 1,
       ticketPromedio: '5.2',
-      productos: [{ productoId, neto: '5.2', unidades: 1 }],
+      productos: [
+        { productoId, neto: '5.2', unidades: 1, unidadVenta: 'UNIDAD' },
+      ],
       cajeros: [
         { responsableId: vendedor.context.membresiaId, neto: '5.2', ventas: 1 },
       ],

@@ -60,7 +60,7 @@ export class CompraService {
       for (const detalle of detalles) {
         const { productoId, cantidad, lotes } = detalle;
         const producto = productosPorId.get(productoId);
-        if (!producto) {
+        if (!producto || producto.unidadVenta === 'LIBRA') {
           throw new BadRequestException(
             `Producto con ID ${productoId} no encontrado`,
           );

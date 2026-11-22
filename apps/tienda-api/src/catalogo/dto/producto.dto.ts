@@ -2,6 +2,7 @@ import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsObject,
   IsOptional,
@@ -14,6 +15,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { UnidadVenta } from '@prisma/client';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
 import {
   enteroHttp,
@@ -48,6 +50,10 @@ class StockInicialDto {
 }
 
 export class CrearProductoDto {
+  @ValidateIf(presente)
+  @IsEnum(UnidadVenta)
+  unidadVenta?: UnidadVenta;
+
   @Matches(/\S/)
   @MaxLength(120)
   nombre: string;
@@ -102,7 +108,7 @@ export class CrearProductoDto {
 }
 
 export class EditarProductoDto extends PartialType(
-  OmitType(CrearProductoDto, ['stockInicial']),
+  OmitType(CrearProductoDto, ['stockInicial', 'unidadVenta']),
   {
     skipNullProperties: false,
   },

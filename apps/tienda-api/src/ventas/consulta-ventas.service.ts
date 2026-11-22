@@ -82,7 +82,10 @@ export class ConsultaVentasService {
     const { categoriaId, productoId, cajeroId } = filtros;
     const lineas = Prisma.sql`
       SELECT v.id "ventaId", v."responsableId", v.fecha, d."productoId",
-        d.cantidad - COALESCE(r.cantidad, 0) unidades, d.total - COALESCE(r.total, 0) neto
+        d."unidadVenta",
+        (d.cantidad - COALESCE(r.cantidad, 0))
+          / CASE WHEN d."unidadVenta" = 'LIBRA' THEN 1000.0 ELSE 1.0 END unidades,
+        d.total - COALESCE(r.total, 0) neto
       FROM "Venta" v
       JOIN "DetalleVenta" d ON d."tenantId" = v."tenantId" AND d."ventaId" = v.id
       LEFT JOIN LATERAL (
@@ -117,11 +120,16 @@ export class ConsultaVentasService {
         GROUP BY p.inicio ORDER BY p.inicio
       `,
         this.prisma.$queryRaw<
-          { productoId: number; neto: Prisma.Decimal; unidades: number }[]
+          {
+            productoId: number;
+            neto: Prisma.Decimal;
+            unidades: number;
+            unidadVenta: 'UNIDAD' | 'LIBRA';
+          }[]
         >`
         WITH lineas AS (${lineas})
-        SELECT "productoId", SUM(neto) neto, SUM(unidades)::float8 unidades
-        FROM lineas GROUP BY "productoId" ORDER BY unidades DESC, "productoId" LIMIT 25
+        SELECT "productoId", "unidadVenta"::text "unidadVenta", SUM(neto) neto, SUM(unidades)::float8 unidades
+        FROM lineas GROUP BY "productoId", "unidadVenta" ORDER BY unidades DESC, "productoId" LIMIT 25
       `,
         this.prisma.$queryRaw<
           { responsableId: number; neto: Prisma.Decimal; ventas: number }[]

@@ -67,13 +67,15 @@ export class ProductoService {
         scopedTenantId,
         id,
         ficha,
+        undefined,
+        'UNIDAD',
       );
       return this.toLegacyResponse(producto);
     }
 
     const producto = await this.prisma.$transaction(async (tx) => {
       await this.inventario.fijarStockLegacy(tx, scopedTenantId, id, stock);
-      return this.catalogo.updateFicha(scopedTenantId, id, ficha, tx);
+      return this.catalogo.updateFicha(scopedTenantId, id, ficha, tx, 'UNIDAD');
     });
     return this.toLegacyResponse(producto);
   }

@@ -77,3 +77,12 @@ identificadores del comprobante, la cuenta cancelada, la devolución, los
 movimientos y los reembolsos, además de los importes cancelado y liberado.
 La venta y el comprobante conservan su historial. Si falla un efecto,
 toda la operación se revierte.
+## Cantidades por libra
+
+Tienda admite `unidadVenta: "UNIDAD"` y `unidadVenta: "LIBRA"`. En el JSON y en
+PostgreSQL las cantidades siguen siendo enteros. Para productos por libra se
+expresan en milésimas de libra. Una línea con `cantidad: 1250` corresponde a
+1,250 lb. La misma escala se usa para existencias, reservas, lotes, pedidos,
+devoluciones y comprobantes. El precio y el costo de entrada siguen expresados
+en dólares por la unidad comercial del producto. Tienda multiplica el precio
+por el peso, redondea el total de la línea a centavos y desglosa el IVA incluido.

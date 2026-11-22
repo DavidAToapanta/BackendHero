@@ -14,6 +14,7 @@ import {
   TipoMovimientoInventario,
 } from '@prisma/client';
 import { InventarioService, ProductoInventario } from './inventario.service';
+import { factorCantidad } from './unidades';
 import type {
   LoteEntrada,
   LineaSalidaVenta,
@@ -56,6 +57,7 @@ export class InventarioLotesService {
       productoId,
     );
     const apertura = tipo === 'APERTURA';
+    const factor = factorCantidad(producto.unidadVenta);
     const legacy = producto.modoInventario === ModoInventario.LEGACY;
     const iniciarVacio =
       !apertura && legacy && opciones.abrirSiVacio && producto.stock === 0;
@@ -87,7 +89,7 @@ export class InventarioLotesService {
           !lote.costoUnitario.isFinite() ||
           lote.costoUnitario.isNegative() ||
           lote.costoUnitario.decimalPlaces() > 4 ||
-          lote.costoUnitario.mul(lote.cantidad).gte(limiteCosto) ||
+          lote.costoUnitario.mul(lote.cantidad).div(factor).gte(limiteCosto) ||
           (lote.vencimiento !== undefined &&
             !Number.isFinite(lote.vencimiento.getTime())),
       )
@@ -131,6 +133,7 @@ export class InventarioLotesService {
     });
     const creados: LoteInventario[] = [];
     for (const lote of lotes) {
+      const costoUnitario = lote.costoUnitario.div(factor);
       const creado = await tx.loteInventario.create({
         data: {
           tenantId,
@@ -138,7 +141,7 @@ export class InventarioLotesService {
           entradaId: entrada.id,
           codigo: lote.codigo.trim(),
           cantidadFisica: lote.cantidad,
-          costoUnitario: lote.costoUnitario,
+          costoUnitario,
           vencimiento: lote.vencimiento,
           esApertura: apertura,
         },
@@ -155,8 +158,8 @@ export class InventarioLotesService {
           entradaId: entrada.id,
           deltaFisico: lote.cantidad,
           deltaReservado: 0,
-          costoUnitario: lote.costoUnitario,
-          costoTotal: lote.costoUnitario.mul(lote.cantidad),
+          costoUnitario,
+          costoTotal: costoUnitario.mul(lote.cantidad),
           motivo: entrada.motivo,
         },
         `lote:${creado.id}`,
@@ -275,16 +278,18 @@ export class InventarioLotesService {
     for (const producto of productos) this.validarProductoActivo(producto);
 
     const ahora = new Date();
-    const seleccionados = await tx.loteInventario.findMany({
-      where: { tenantId, id: { in: [...loteIds] } },
-      select: {
-        id: true,
-        productoId: true,
-        vencimiento: true,
-        cantidadFisica: true,
-        costoUnitario: true,
-      },
-    });
+    const seleccionados = loteIds.size
+      ? await tx.loteInventario.findMany({
+          where: { tenantId, id: { in: [...loteIds] } },
+          select: {
+            id: true,
+            productoId: true,
+            vencimiento: true,
+            cantidadFisica: true,
+            costoUnitario: true,
+          },
+        })
+      : [];
     const porLote = new Map(seleccionados.map((lote) => [lote.id, lote]));
     for (const [productoId, { lotes }] of porProducto) {
       for (const [loteId, cantidad] of lotes) {
@@ -319,35 +324,36 @@ export class InventarioLotesService {
       }
     }
     // Los productos siguen bloqueados hasta el descuento y el registro de la venta.
-    for (const [productoId, asignados] of automaticos) {
-      let pendiente = porProducto.get(productoId)!.cantidad;
-      const lotesVigentes = await tx.loteInventario.findMany({
-        where: {
-          tenantId,
-          productoId,
-          cantidadFisica: { gt: 0 },
-          OR: [{ vencimiento: null }, { vencimiento: { gt: ahora } }],
-        },
-        orderBy: [
-          { vencimiento: { sort: 'asc', nulls: 'last' } },
-          { id: 'asc' },
-        ],
-        take: pendiente,
-        select: {
-          id: true,
-          productoId: true,
-          vencimiento: true,
-          cantidadFisica: true,
-          costoUnitario: true,
-        },
-      });
+    const pendientes = new Map(
+      [...automaticos.keys()].map((id) => [id, porProducto.get(id)!.cantidad]),
+    );
+    if (pendientes.size) {
+      const valores = [...pendientes].map(
+        ([id, cantidad]) => Prisma.sql`(${id}::int, ${cantidad}::int)`,
+      );
+      const lotesVigentes = await tx.$queryRaw<typeof seleccionados>`
+        SELECT lote.id, lote."productoId", lote.vencimiento, lote."cantidadFisica", lote."costoUnitario"
+        FROM (VALUES ${Prisma.join(valores)}) AS solicitado(id, cantidad)
+        CROSS JOIN LATERAL (
+          SELECT id, "productoId", vencimiento, "cantidadFisica", "costoUnitario"
+          FROM "LoteInventario"
+          WHERE "tenantId" = ${tenantId} AND "productoId" = solicitado.id AND "cantidadFisica" > 0
+            AND (vencimiento IS NULL OR vencimiento > ${ahora})
+          ORDER BY vencimiento NULLS LAST, id
+          LIMIT solicitado.cantidad
+        ) lote
+        ORDER BY lote."productoId", lote.vencimiento NULLS LAST, lote.id
+      `;
       for (const lote of lotesVigentes) {
+        const pendiente = pendientes.get(lote.productoId)!;
+        if (pendiente === 0) continue;
         const cantidad = Math.min(pendiente, lote.cantidadFisica);
-        asignados.push({ loteId: lote.id, cantidad });
+        automaticos.get(lote.productoId)!.push({ loteId: lote.id, cantidad });
         porLote.set(lote.id, lote);
-        pendiente -= cantidad;
-        if (pendiente === 0) break;
+        pendientes.set(lote.productoId, pendiente - cantidad);
       }
+    }
+    for (const pendiente of pendientes.values()) {
       if (pendiente > 0) {
         throw new BadRequestException(
           'La cantidad supera el stock de los lotes asignables',
@@ -376,9 +382,18 @@ export class InventarioLotesService {
     operacion: OperacionInventario,
     detalleVentaId: number,
   ) {
+    await this.retirarLineasVenta(tx, operacion, [detalleVentaId]);
+  }
+
+  async retirarLineasVenta(
+    tx: Prisma.TransactionClient,
+    operacion: OperacionInventario,
+    detallesIds: readonly number[],
+  ) {
     const { tenantId } = operacion;
-    const detalle = await tx.detalleVenta.findUnique({
-      where: { tenantId_id: { tenantId, id: detalleVentaId } },
+    const detalles = await tx.detalleVenta.findMany({
+      where: { tenantId, id: { in: [...detallesIds] } },
+      orderBy: { productoId: 'asc' },
       select: {
         productoId: true,
         cantidad: true,
@@ -387,44 +402,70 @@ export class InventarioLotesService {
       },
     });
     if (
-      !detalle ||
-      detalle.venta.estado !== EstadoVenta.COMPLETADA ||
-      detalle.venta.pedidoId !== null
+      detalles.length !== detallesIds.length ||
+      detalles.some(
+        ({ venta }) =>
+          venta.estado !== EstadoVenta.COMPLETADA || venta.pedidoId !== null,
+      )
     ) {
       throw new ConflictException(
         'La salida requiere una venta de mostrador completada',
       );
     }
-    const producto = await this.inventario.bloquearProducto(
-      tx,
-      tenantId,
-      detalle.productoId,
-    );
-    const asignaciones = detalle.asignacionLoteVenta_detalleVenta;
-    if (
-      asignaciones.reduce((total, lote) => total + lote.cantidad, 0) !==
-      detalle.cantidad
-    ) {
-      throw new ConflictException(
-        'Los lotes asignados deben cubrir la cantidad vendida',
-      );
+    const cantidades = new Map<number, number>();
+    for (const {
+      productoId,
+      cantidad,
+      asignacionLoteVenta_detalleVenta,
+    } of detalles) {
+      if (
+        asignacionLoteVenta_detalleVenta.reduce(
+          (total, lote) => total + lote.cantidad,
+          0,
+        ) !== cantidad
+      ) {
+        throw new ConflictException(
+          'Los lotes asignados deben cubrir la cantidad vendida',
+        );
+      }
+      cantidades.set(productoId, (cantidades.get(productoId) ?? 0) + cantidad);
     }
     const ahora = new Date();
-    await this.validarDisponible(tx, producto, detalle.cantidad, ahora);
-    for (const asignacion of asignaciones) {
-      await this.retirarLote(
-        tx,
-        operacion,
-        producto.id,
-        asignacion,
-        {
-          asignacionVentaId: asignacion.id,
-        },
-        ahora,
-        asignacion,
-      );
+    const productos = await this.inventario.bloquearProductos(tx, tenantId, [
+      ...cantidades.keys(),
+    ]);
+    if (productos.length !== cantidades.size)
+      throw new NotFoundException('Producto no encontrado');
+    for (const producto of productos) this.validarProductoActivo(producto);
+    const disponibles = await this.consultarDisponibles(
+      tx,
+      tenantId,
+      productos,
+      ahora,
+    );
+    for (const producto of productos) {
+      if ((disponibles.get(producto.id) ?? 0) < cantidades.get(producto.id)!) {
+        throw new BadRequestException(
+          `Stock disponible insuficiente para el producto ${producto.nombre}`,
+        );
+      }
     }
-    await this.descontarSaldos(tx, producto, detalle.cantidad, 0);
+    for (const detalle of detalles) {
+      for (const asignacion of detalle.asignacionLoteVenta_detalleVenta) {
+        await this.retirarLote(
+          tx,
+          operacion,
+          detalle.productoId,
+          asignacion,
+          { asignacionVentaId: asignacion.id },
+          ahora,
+          asignacion,
+        );
+      }
+    }
+    for (const producto of productos) {
+      await this.descontarSaldos(tx, producto, cantidades.get(producto.id)!, 0);
+    }
   }
 
   async bloquearVentaParaDevolucion(

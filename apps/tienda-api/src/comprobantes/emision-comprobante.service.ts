@@ -1,4 +1,5 @@
 import { PrismaService } from '@app/prisma';
+import { mostrarCantidad } from '@app/inventario';
 import type { Prisma } from '@prisma/client';
 import {
   ConflictException,
@@ -98,6 +99,7 @@ export class EmisionComprobanteService {
             codigoBarrasProducto: detalle.codigoBarrasProducto,
             categoriaNombre: detalle.categoriaNombre,
             cantidad: detalle.cantidad,
+            unidadVenta: detalle.unidadVenta,
             precioUnitario: detalle.precioUnitario,
             descuento: detalle.descuento,
             tasaImpuesto: detalle.tasaImpuesto,
@@ -198,9 +200,10 @@ export class EmisionComprobanteService {
           (linea) =>
             linea.nombreProducto +
             '  |  ' +
-            linea.cantidad +
+            mostrarCantidad(linea.cantidad, linea.unidadVenta) +
             ' × $' +
             linea.precioUnitario.toFixed(2) +
+            (linea.unidadVenta === 'LIBRA' ? '/lb' : '') +
             '  |  $' +
             linea.total.toFixed(2),
         ),

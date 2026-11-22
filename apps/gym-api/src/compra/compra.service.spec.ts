@@ -109,6 +109,7 @@ describe('CompraService', () => {
         id: 1,
         tenantId: 9,
         modoInventario: ModoInventario.LEGACY,
+        unidadVenta: 'UNIDAD',
         stock: { gte: 2 },
       },
       data: {

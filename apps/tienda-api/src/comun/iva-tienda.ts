@@ -1,4 +1,6 @@
 import { Prisma } from '@prisma/client';
+import { factorCantidad } from '@app/inventario';
+import type { UnidadVenta } from '@prisma/client';
 import { importeTienda } from './operacion-tienda';
 
 export function tarifaIvaVigente(
@@ -16,9 +18,18 @@ export function desglosarIva(
   precioFinal: Prisma.Decimal,
   cantidad: number,
   tasaImpuesto: Prisma.Decimal,
+  unidadVenta?: UnidadVenta,
 ) {
   const total = importeTienda(
-    precioFinal.times(cantidad).toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN),
+    precioFinal
+      .times(cantidad)
+      .div(factorCantidad(unidadVenta))
+      .toDecimalPlaces(
+        2,
+        unidadVenta === 'LIBRA'
+          ? Prisma.Decimal.ROUND_HALF_UP
+          : Prisma.Decimal.ROUND_DOWN,
+      ),
     true,
   );
   const subtotal = total

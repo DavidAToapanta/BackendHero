@@ -65,20 +65,22 @@ function tipoDeImagen(contenido?: Buffer) {
   throw new BadRequestException('Selecciona una imagen JPG, PNG o WebP válida');
 }
 
-function categoriaStore({ categoria }: FichaCatalogo) {
+function categoriaStore({ categoria }: Pick<FichaCatalogo, 'categoria'>) {
   return categoria?.modulo === 'STORE'
     ? { id: categoria.id, nombre: categoria.nombre }
     : null;
 }
 
 function fichaMostrador(producto: FichaCatalogo, stockDisponible: number) {
-  const { id, nombre, presentacion, precio, sku, codigoBarras } = producto;
+  const { id, nombre, presentacion, precio, sku, codigoBarras, unidadVenta } =
+    producto;
   const [imagenPrincipal] = producto.productoImagen_producto;
   return {
     productoId: id,
     nombre,
     presentacion,
     precio: precio.toFixed(2),
+    unidadVenta,
     sku,
     codigoBarras,
     categoria: categoriaStore(producto),
@@ -263,6 +265,7 @@ export class CatalogoService {
           estado: true,
           modoInventario: true,
           stockMinimo: true,
+          unidadVenta: true,
         },
         orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
       });
@@ -272,12 +275,22 @@ export class CatalogoService {
         candidatos,
         new Date(),
       );
-      const alertas = candidatos.flatMap(({ id, nombre, stockMinimo }) => {
-        const stockDisponible = disponibles.get(id) ?? 0;
-        return stockMinimo !== null && stockDisponible <= stockMinimo
-          ? [{ productoId: id, nombre, stockMinimo, stockDisponible }]
-          : [];
-      });
+      const alertas = candidatos.flatMap(
+        ({ id, nombre, stockMinimo, unidadVenta }) => {
+          const stockDisponible = disponibles.get(id) ?? 0;
+          return stockMinimo !== null && stockDisponible <= stockMinimo
+            ? [
+                {
+                  productoId: id,
+                  nombre,
+                  stockMinimo,
+                  stockDisponible,
+                  unidadVenta,
+                },
+              ]
+            : [];
+        },
+      );
       return { total: alertas.length, productos: alertas.slice(0, 5) };
     });
   }
@@ -329,28 +342,57 @@ export class CatalogoService {
     productoId: number,
     tasaGeneral?: Prisma.Decimal,
   ) {
-    const producto = await this.fichas.obtenerFicha(
-      tenantId,
-      { id: productoId },
+    const [ficha] = await this.obtenerSnapshotsVenta(
       tx,
-      { soloActivos: true },
+      tenantId,
+      [productoId],
+      tasaGeneral,
     );
-    const categoria = categoriaStore(producto);
-    return {
-      productoId: producto.id,
-      nombreProducto: producto.nombre,
-      presentacionProducto: producto.presentacion,
-      skuProducto: producto.sku,
-      codigoBarrasProducto: producto.codigoBarras,
-      categoriaId: categoria?.id ?? null,
-      categoriaNombre: categoria?.nombre ?? null,
-      precioUnitario: producto.precio,
-      ...(tasaGeneral && {
-        tasaImpuesto: producto.ivaTarifaCero
-          ? new Prisma.Decimal(0)
-          : tasaGeneral,
-      }),
-    };
+    return ficha;
+  }
+
+  async obtenerSnapshotsVenta(
+    tx: Prisma.TransactionClient,
+    tenantId: number,
+    productosIds: readonly number[],
+    tasaGeneral?: Prisma.Decimal,
+  ) {
+    const productos = await tx.producto.findMany({
+      where: { tenantId, estado: true, id: { in: [...productosIds] } },
+      select: {
+        id: true,
+        nombre: true,
+        presentacion: true,
+        sku: true,
+        codigoBarras: true,
+        precio: true,
+        unidadVenta: true,
+        ivaTarifaCero: true,
+        categoria: { select: { id: true, nombre: true, modulo: true } },
+      },
+    });
+    const porId = new Map(productos.map((producto) => [producto.id, producto]));
+    return productosIds.map((id) => {
+      const producto = porId.get(id);
+      if (!producto) throw new NotFoundException('Producto no encontrado');
+      const categoria = categoriaStore(producto);
+      return {
+        productoId: producto.id,
+        nombreProducto: producto.nombre,
+        presentacionProducto: producto.presentacion,
+        skuProducto: producto.sku,
+        codigoBarrasProducto: producto.codigoBarras,
+        categoriaId: categoria?.id ?? null,
+        categoriaNombre: categoria?.nombre ?? null,
+        precioUnitario: producto.precio,
+        unidadVenta: producto.unidadVenta,
+        ...(tasaGeneral && {
+          tasaImpuesto: producto.ivaTarifaCero
+            ? new Prisma.Decimal(0)
+            : tasaGeneral,
+        }),
+      };
+    });
   }
 
   async crearProducto(

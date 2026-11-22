@@ -73,6 +73,7 @@ describe('ProductoService', () => {
     expect(prisma.producto.count).toHaveBeenCalledWith({
       where: {
         tenantId: 9,
+        unidadVenta: 'UNIDAD',
         nombre: {
           contains: 'prote',
           mode: 'insensitive',
@@ -125,7 +126,7 @@ describe('ProductoService', () => {
       precio: 2.5,
     });
     expect(prisma.producto.update).toHaveBeenCalledWith({
-      where: { tenantId_id: { tenantId: 9, id: 5 } },
+      where: { tenantId_id: { tenantId: 9, id: 5 }, unidadVenta: 'UNIDAD' },
       data: { precio: 2.5 },
     });
     expect(prisma.producto.updateMany).not.toHaveBeenCalled();
@@ -144,11 +145,16 @@ describe('ProductoService', () => {
     ).resolves.toEqual({ id: 5, precio: 2.5, stock: 3 });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.producto.updateMany).toHaveBeenCalledWith({
-      where: { id: 5, tenantId: 9, modoInventario: ModoInventario.LEGACY },
+      where: {
+        id: 5,
+        tenantId: 9,
+        modoInventario: ModoInventario.LEGACY,
+        unidadVenta: 'UNIDAD',
+      },
       data: { stock: 3 },
     });
     expect(prisma.producto.update).toHaveBeenCalledWith({
-      where: { tenantId_id: { tenantId: 9, id: 5 } },
+      where: { tenantId_id: { tenantId: 9, id: 5 }, unidadVenta: 'UNIDAD' },
       data: { precio: 2.5 },
     });
   });

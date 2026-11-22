@@ -18,6 +18,8 @@ export type ProductoInventario = Pick<
   | 'modoInventario'
 >;
 
+type ProductoBloqueado = ProductoInventario & Pick<Producto, 'unidadVenta'>;
+
 @Injectable()
 export class InventarioService {
   async bloquearProductos(
@@ -26,8 +28,9 @@ export class InventarioService {
     ids: number[],
   ) {
     if (!ids.length) return [];
-    return tx.$queryRaw<ProductoInventario[]>`
+    return tx.$queryRaw<ProductoBloqueado[]>`
       SELECT id, "tenantId", nombre, precio, estado, stock, "stockReservado",
+        "unidadVenta"::text AS "unidadVenta",
         "modoInventario"::text AS "modoInventario" FROM "Producto"
       WHERE "tenantId" = ${tenantId} AND id IN (${Prisma.join(ids)})
       ORDER BY id FOR UPDATE
@@ -58,6 +61,7 @@ export class InventarioService {
         id: producto.id,
         tenantId,
         modoInventario: ModoInventario.LEGACY,
+        unidadVenta: 'UNIDAD',
         stock: { gte: cantidad },
       },
       data: { stock: { decrement: cantidad } },
@@ -79,7 +83,12 @@ export class InventarioService {
       throw new BadRequestException('El stock debe ser un entero no negativo');
     }
     const { count } = await tx.producto.updateMany({
-      where: { id, tenantId, modoInventario: ModoInventario.LEGACY },
+      where: {
+        id,
+        tenantId,
+        modoInventario: ModoInventario.LEGACY,
+        unidadVenta: 'UNIDAD',
+      },
       data: { stock },
     });
     if (count) return;

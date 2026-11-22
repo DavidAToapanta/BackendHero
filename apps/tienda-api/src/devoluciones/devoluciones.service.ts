@@ -122,6 +122,7 @@ export class DevolucionesService {
           orderBy: { id: 'asc' },
           select: {
             nombreProducto: true,
+            unidadVenta: true,
             asignacionLoteVenta_detalleVenta: {
               orderBy: { id: 'asc' },
               select: {
@@ -151,6 +152,7 @@ export class DevolucionesService {
           asignacionVentaId: asignacion.id,
           productoId: asignacion.productoId,
           nombreProducto: detalle.nombreProducto,
+          unidadVenta: detalle.unidadVenta,
           loteId: asignacion.loteId,
           cantidadVendida: asignacion.cantidad,
           cantidadRestante:

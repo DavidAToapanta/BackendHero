@@ -1,7 +1,4 @@
-import {
-  InventarioLotesService,
-  type LineaSalidaValidada,
-} from '@app/inventario';
+import { InventarioLotesService } from '@app/inventario';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ACCIONES_AUDITORIA } from '../auditoria/auditoria-escritura';
@@ -105,29 +102,26 @@ export class VentaMostradorService {
           tenantId,
           lineas,
         );
-        const detalles: {
-          ficha: Awaited<ReturnType<CatalogoService['obtenerSnapshotVenta']>>;
-          linea: LineaSalidaValidada;
-          importes: ReturnType<typeof desglosarIva>;
-        }[] = [];
         const cero = new Prisma.Decimal(0);
         const tasa =
           (await tarifaIvaVigente(tx, tenantId, new Date()))?.porcentaje ??
           cero;
-        for (const linea of seleccion) {
-          const ficha = await this.catalogo.obtenerSnapshotVenta(
-            tx,
-            tenantId,
-            linea.productoId,
-            tasa,
-          );
+        const fichas = await this.catalogo.obtenerSnapshotsVenta(
+          tx,
+          tenantId,
+          productos,
+          tasa,
+        );
+        const detalles = seleccion.map((linea, indice) => {
+          const ficha = fichas[indice];
           const importes = desglosarIva(
             ficha.precioUnitario,
             linea.cantidad,
             ficha.tasaImpuesto ?? cero,
+            ficha.unidadVenta,
           );
-          detalles.push({ ficha, linea, importes });
-        }
+          return { ficha, linea, importes };
+        });
         const totales = totalesConIva(detalles.map(({ importes }) => importes));
         const { total } = totales;
         const financiado = total.minus(pagado);
@@ -152,36 +146,40 @@ export class VentaMostradorService {
             claveIdempotencia: claveRecurso,
           },
         });
-        for (const { ficha, linea, importes } of detalles) {
-          const detalle = await tx.detalleVenta.create({
-            data: {
-              ...ficha,
-              tenantId,
-              ventaId: venta.id,
-              cantidad: linea.cantidad,
-              ...importes,
-            },
-          });
-          await tx.asignacionLoteVenta.createMany({
-            data: linea.lotes.map((lote) => ({
+        const creados = await tx.detalleVenta.createManyAndReturn({
+          data: detalles.map(({ ficha, linea, importes }) => ({
+            ...ficha,
+            tenantId,
+            ventaId: venta.id,
+            cantidad: linea.cantidad,
+            ...importes,
+          })),
+          select: { id: true, productoId: true },
+        });
+        const detallesPorProducto = new Map(
+          creados.map((detalle) => [detalle.productoId, detalle.id]),
+        );
+        await tx.asignacionLoteVenta.createMany({
+          data: seleccion.flatMap((linea) =>
+            linea.lotes.map((lote) => ({
               ...lote,
               tenantId,
               ventaId: venta.id,
-              detalleVentaId: detalle.id,
+              detalleVentaId: detallesPorProducto.get(linea.productoId)!,
               productoId: linea.productoId,
             })),
-          });
-          await this.inventario.retirarVenta(
-            tx,
-            {
-              tenantId,
-              responsableId: membresiaId,
-              clave: claveRecurso,
-              correlacionId,
-            },
-            detalle.id,
-          );
-        }
+          ),
+        });
+        await this.inventario.retirarLineasVenta(
+          tx,
+          {
+            tenantId,
+            responsableId: membresiaId,
+            clave: claveRecurso,
+            correlacionId,
+          },
+          creados.map(({ id }) => id),
+        );
         if (pago && !pagado.isZero()) {
           const cobro = await this.cobros.registrar(tx, contexto, {
             metodo: pago.metodo,

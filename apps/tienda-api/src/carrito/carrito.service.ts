@@ -19,7 +19,9 @@ const vista = {
     select: {
       cantidad: true,
       productoId: true,
-      producto: { select: { nombre: true, precio: true, estado: true } },
+      producto: {
+        select: { nombre: true, precio: true, estado: true, unidadVenta: true },
+      },
     },
   },
 } satisfies Prisma.CarritoSelect;

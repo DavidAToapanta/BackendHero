@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  factorCantidad,
   InventarioLotesService,
   type OperacionInventario,
 } from '@app/inventario';
@@ -51,6 +52,7 @@ const stockSelect = {
   modoInventario: true,
   stock: true,
   stockReservado: true,
+  unidadVenta: true,
 } satisfies Prisma.ProductoSelect;
 
 function resultadoPagina<T>(
@@ -246,6 +248,7 @@ export class InventarioService {
           sku: producto.sku,
           estado: producto.estado,
           modoInventario: producto.modoInventario,
+          unidadVenta: producto.unidadVenta,
           stockFisico: producto.stock,
           stockReservado: producto.stockReservado,
           stockDisponible: disponibles.get(producto.id) ?? 0,
@@ -313,12 +316,15 @@ export class InventarioService {
           loteId: lote.id,
           codigo: lote.codigo,
           vencimiento: lote.vencimiento,
+          unidadVenta: producto.unidadVenta,
           cantidadDisponible:
             lote.vencimiento === null || lote.vencimiento > ahora
               ? Math.min(lote.cantidadFisica, disponible)
               : 0,
           ...(incluirCostos && {
-            costoUnitario: lote.costoUnitario.toFixed(4),
+            costoUnitario: lote.costoUnitario
+              .mul(factorCantidad(producto.unidadVenta))
+              .toFixed(4),
           }),
         })),
         total,
@@ -352,7 +358,7 @@ export class InventarioService {
       fecha: inicio || fin ? { gte: inicio, lt: fin } : undefined,
     };
     return this.consultar(contexto, incluirCostos, async (tx) => {
-      await this.producto(tx, contexto.tenantId, productoId);
+      const producto = await this.producto(tx, contexto.tenantId, productoId);
       const [filas, total] = await Promise.all([
         tx.movimientoInventario.findMany({
           where,
@@ -378,9 +384,13 @@ export class InventarioService {
       return resultadoPagina(
         filas.map(({ id, costoUnitario, costoTotal, ...movimiento }) => ({
           movimientoId: id,
+          unidadVenta: producto.unidadVenta,
           ...movimiento,
           ...(incluirCostos && {
-            costoUnitario: costoUnitario?.toFixed(4) ?? null,
+            costoUnitario:
+              costoUnitario
+                ?.mul(factorCantidad(producto.unidadVenta))
+                .toFixed(4) ?? null,
             costoTotal: costoTotal?.toFixed(4) ?? null,
           }),
         })),

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@app/prisma';
-import { Prisma, type ModuleKey } from '@prisma/client';
+import { Prisma, type ModuleKey, type UnidadVenta } from '@prisma/client';
 import { traducirErrorCatalogo } from './errores-catalogo';
 
 type FichaProducto = {
@@ -18,6 +18,7 @@ type FichaProducto = {
   descripcion?: string | null;
   stockMinimo?: number | null;
   ivaTarifaCero?: boolean;
+  unidadVenta?: UnidadVenta;
 };
 
 type FiltrosFicha = {
@@ -165,7 +166,7 @@ export class CatalogoService {
 
   async findOne(tenantId: number, id: number) {
     const producto = await this.prisma.producto.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, unidadVenta: 'UNIDAD' },
     });
 
     if (!producto) {
@@ -188,6 +189,7 @@ export class CatalogoService {
 
     const where: Prisma.ProductoWhereInput = {
       tenantId,
+      unidadVenta: 'UNIDAD',
       ...(trimmedSearch
         ? { nombre: { contains: trimmedSearch, mode: 'insensitive' } }
         : {}),
@@ -220,10 +222,11 @@ export class CatalogoService {
     id: number,
     ficha: Partial<FichaProducto>,
     tx: Prisma.TransactionClient = this.prisma,
+    unidadVenta?: FichaProducto['unidadVenta'],
   ) {
     try {
       return await tx.producto.update({
-        where: { tenantId_id: { tenantId, id } },
+        where: { tenantId_id: { tenantId, id }, unidadVenta },
         data: this.datosFicha(ficha),
       });
     } catch (error) {
@@ -237,7 +240,7 @@ export class CatalogoService {
   async remove(tenantId: number, id: number) {
     try {
       return await this.prisma.producto.delete({
-        where: { tenantId_id: { tenantId, id } },
+        where: { tenantId_id: { tenantId, id }, unidadVenta: 'UNIDAD' },
       });
     } catch (error) {
       traducirErrorCatalogo(error, {
@@ -259,6 +262,7 @@ export class CatalogoService {
     descripcion,
     stockMinimo,
     ivaTarifaCero,
+    unidadVenta,
   }: Partial<FichaProducto>) {
     return {
       nombre,
@@ -272,6 +276,7 @@ export class CatalogoService {
       descripcion,
       stockMinimo,
       ivaTarifaCero,
+      unidadVenta,
     };
   }
 }

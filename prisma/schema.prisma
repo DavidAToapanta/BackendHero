@@ -910,7 +910,7 @@ model LoteInventario {
   codigo                    String
   fechaEntrada              DateTime               @default(now()) @db.Timestamptz(3)
   vencimiento               DateTime?              @db.Timestamptz(3)
-  costoUnitario             Decimal                @db.Decimal(18, 4)
+  costoUnitario             Decimal                @db.Decimal(21, 7)
   cantidadFisica            Int                    @default(0)
   esApertura                Boolean                @default(false)
   productoId                Int
@@ -937,8 +937,8 @@ model MovimientoInventario {
   fecha                                   DateTime                 @default(now()) @db.Timestamptz(3)
   deltaFisico                             Int
   deltaReservado                          Int
-  costoUnitario                           Decimal?                 @db.Decimal(18, 4)
-  costoTotal                              Decimal?                 @db.Decimal(18, 4)
+  costoUnitario                           Decimal?                 @db.Decimal(21, 7)
+  costoTotal                              Decimal?                 @db.Decimal(21, 7)
   motivo                                  String?
   claveIdempotencia                       String
   correlacionId                           String                   @db.Uuid
@@ -1055,6 +1055,7 @@ model DetallePedido {
   codigoBarrasProducto            String?
   categoriaNombre                 String?
   cantidad                        Int
+  unidadVenta                     UnidadVenta         @default(UNIDAD)
   precioUnitario                  Decimal             @db.Decimal(18, 2)
   descuento                       Decimal             @default(0) @db.Decimal(18, 2)
   tasaImpuesto                    Decimal             @default(0) @db.Decimal(7, 4)
@@ -1175,6 +1176,7 @@ model DetalleVenta {
   codigoBarrasProducto                 String?
   categoriaNombre                      String?
   cantidad                             Int
+  unidadVenta                          UnidadVenta               @default(UNIDAD)
   precioUnitario                       Decimal                   @db.Decimal(18, 2)
   descuento                            Decimal                   @default(0) @db.Decimal(18, 2)
   tasaImpuesto                         Decimal                   @default(0) @db.Decimal(7, 4)
@@ -1205,8 +1207,8 @@ model DetalleVenta {
 model AsignacionLoteVenta {
   id                                             Int                      @id @default(autoincrement())
   cantidad                                       Int
-  costoUnitario                                  Decimal                  @db.Decimal(18, 4)
-  costoTotal                                     Decimal                  @db.Decimal(18, 4)
+  costoUnitario                                  Decimal                  @db.Decimal(21, 7)
+  costoTotal                                     Decimal                  @db.Decimal(21, 7)
   detalleVentaId                                 Int
   loteId                                         Int
   productoId                                     Int
@@ -1445,8 +1447,8 @@ model DetalleDevolucionVenta {
   descuento                                        Decimal                @default(0) @db.Decimal(18, 2)
   impuesto                                         Decimal                @default(0) @db.Decimal(18, 2)
   total                                            Decimal                @db.Decimal(18, 2)
-  costoUnitario                                    Decimal                @db.Decimal(18, 4)
-  costoTotal                                       Decimal                @db.Decimal(18, 4)
+  costoUnitario                                    Decimal                @db.Decimal(21, 7)
+  costoTotal                                       Decimal                @db.Decimal(21, 7)
   devolucionId                                     Int
   asignacionVentaId                                Int
   ventaId                                          Int
@@ -1631,6 +1633,7 @@ model DetalleComprobanteVenta {
   codigoBarrasProducto String?
   categoriaNombre      String?
   cantidad             Int
+  unidadVenta          UnidadVenta      @default(UNIDAD)
   precioUnitario       Decimal          @db.Decimal(18, 2)
   descuento            Decimal          @default(0) @db.Decimal(18, 2)
   tasaImpuesto         Decimal          @default(0) @db.Decimal(7, 4)
@@ -1769,6 +1772,7 @@ enum ModoInventario {
 
 enum UnidadVenta {
   UNIDAD
+  LIBRA
 }
 
 enum MetodoVerificacionCliente {

@@ -85,11 +85,12 @@ export class ExportacionesTiendaService {
       },
       {
         titulo: 'Productos',
-        encabezados: ['Producto', 'Unidades netas', 'Neto'],
+        encabezados: ['Producto', 'Cantidad neta', 'Neto', 'Unidad'],
         filas: datos.productos.map((fila) => [
           fila.productoId,
           fila.unidades,
           moneda(fila.neto),
+          fila.unidadVenta === 'LIBRA' ? 'lb' : 'unidad',
         ]),
       },
       {
