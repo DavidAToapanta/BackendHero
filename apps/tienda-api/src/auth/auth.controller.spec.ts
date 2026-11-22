@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { PermisosService } from '@app/permisos';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import type { ContextoTienda } from './auth.types';
@@ -13,6 +14,12 @@ describe('AuthController de Tienda', () => {
       providers: [
         { provide: AuthService, useValue: { login, selectContext } },
         { provide: RegistroPropietarioService, useValue: {} },
+        {
+          provide: PermisosService,
+          useValue: {
+            accesoTienda: () => ({ esPropietario: false, permisos: [] }),
+          },
+        },
       ],
     }).compile();
     const controller = module.get(AuthController);
@@ -32,6 +39,8 @@ describe('AuthController de Tienda', () => {
     await controller.selectContext(seleccion);
     expect(login).toHaveBeenCalledWith(credenciales);
     expect(selectContext).toHaveBeenCalledWith(seleccion);
-    expect(controller.session(context)).toEqual({ context });
+    await expect(controller.session(context)).resolves.toEqual({
+      context: { ...context, esPropietario: false, permisos: [] },
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { IdentidadModule } from '@app/identidad';
 import { NegociosModule } from '@app/negocios';
+import { PermisosModule } from '@app/permisos';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PreparacionTiendaModule } from '../accesos/preparacion-tienda.module';
@@ -16,6 +17,7 @@ import { TiendaJwtStrategy } from './tienda-jwt.strategy';
   imports: [
     IdentidadModule,
     NegociosModule,
+    PermisosModule,
     PreparacionTiendaModule,
     AuditoriaEscrituraModule,
     PassportModule,

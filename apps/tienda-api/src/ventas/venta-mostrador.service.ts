@@ -13,6 +13,11 @@ import { CobrosOperacionService } from '../cobros/cobros-operacion.service';
 import { fechaComercial, inicioFechaComercial } from '../comun/fecha-comercial';
 import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
 import {
+  desglosarIva,
+  tarifaIvaVigente,
+  totalesConIva,
+} from '../comun/iva-tienda';
+import {
   importeTienda,
   type ContextoOperacionTienda,
 } from '../comun/operacion-tienda';
@@ -103,29 +108,28 @@ export class VentaMostradorService {
         const detalles: {
           ficha: Awaited<ReturnType<CatalogoService['obtenerSnapshotVenta']>>;
           linea: LineaSalidaValidada;
-          subtotal: Prisma.Decimal;
+          importes: ReturnType<typeof desglosarIva>;
         }[] = [];
+        const cero = new Prisma.Decimal(0);
+        const tasa =
+          (await tarifaIvaVigente(tx, tenantId, new Date()))?.porcentaje ??
+          cero;
         for (const linea of seleccion) {
           const ficha = await this.catalogo.obtenerSnapshotVenta(
             tx,
             tenantId,
             linea.productoId,
+            tasa,
           );
-          const subtotal = importeTienda(
-            ficha.precioUnitario
-              .times(linea.cantidad)
-              .toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN),
-            true,
+          const importes = desglosarIva(
+            ficha.precioUnitario,
+            linea.cantidad,
+            ficha.tasaImpuesto ?? cero,
           );
-          detalles.push({ ficha, linea, subtotal });
+          detalles.push({ ficha, linea, importes });
         }
-        const total = importeTienda(
-          detalles.reduce(
-            (suma, detalle) => suma.plus(detalle.subtotal),
-            new Prisma.Decimal(0),
-          ),
-          true,
-        );
+        const totales = totalesConIva(detalles.map(({ importes }) => importes));
+        const { total } = totales;
         const financiado = total.minus(pagado);
         if (credito && financiado.lte(0)) {
           throw new BadRequestException(
@@ -144,20 +148,18 @@ export class VentaMostradorService {
             origen: 'CAJA',
             responsableId: membresiaId,
             clienteComercialId,
-            subtotal: total,
-            total,
+            ...totales,
             claveIdempotencia: claveRecurso,
           },
         });
-        for (const { ficha, linea, subtotal } of detalles) {
+        for (const { ficha, linea, importes } of detalles) {
           const detalle = await tx.detalleVenta.create({
             data: {
               ...ficha,
               tenantId,
               ventaId: venta.id,
               cantidad: linea.cantidad,
-              subtotal,
-              total: subtotal,
+              ...importes,
             },
           });
           await tx.asignacionLoteVenta.createMany({

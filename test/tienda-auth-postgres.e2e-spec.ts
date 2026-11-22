@@ -270,7 +270,13 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     await http()
       .get('/auth/session')
       .auth(accessToken, { type: 'bearer' })
-      .expect(200, { context });
+      .expect(200)
+      .expect(({ body }: { body: { context: unknown } }) => {
+        expect(body.context).toMatchObject({
+          ...context,
+          esPropietario: false,
+        });
+      });
   });
 
   it('invalida una sesión al cambiar versión, modo, membresía o módulo', async () => {
@@ -294,7 +300,9 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
       codigo: 'ADMIN',
       nombre: 'ADMIN',
     });
-    await session(legacy.accessToken).expect(200, { context: legacy.context });
+    await session(legacy.accessToken).expect(200, {
+      context: { ...legacy.context, esPropietario: false, permisos: [] },
+    });
     await prisma.userTenant.update({
       where: { id: membresia.id },
       data: { versionAutorizacion: { increment: 1 } },
@@ -2475,6 +2483,122 @@ suite('Tienda · autenticación y permisos con PostgreSQL', () => {
     await http()
       .get('/' + url)
       .expect(404);
+  }, 20000);
+
+  it('registra el stock inicial una vez y guarda el IVA histórico del comprobante', async () => {
+    const { id: tenantId } = await crearNegocio({
+      autorizacionVersion: 'PERMISOS',
+    });
+    const { accessToken } = await crearPerfilComercial(
+      tenantId,
+      'OWNER',
+      [],
+      'OWNER',
+    );
+    const admin = await crearPerfilComercial(
+      tenantId,
+      'ADMIN',
+      ['store.catalog.read'],
+      'ADMIN',
+    );
+    const bearer = { type: 'bearer' } as const;
+    const tarifa = (token: string, porcentaje: string, fecha?: string) =>
+      http()
+        .put('/configuracion/iva')
+        .auth(token, bearer)
+        .send({ porcentaje, fecha });
+    await tarifa(admin.accessToken, '15').expect(403);
+    await tarifa(accessToken, '15').expect(200);
+    await tarifa(accessToken, '16', '2099-01-01').expect(200);
+    const datos = {
+      nombre: 'Producto de 50',
+      precio: '50',
+      stockMinimo: 2,
+      codigoBarras: '000123',
+      stockInicial: { cantidad: 3, costoUnitario: '20' },
+    };
+    const clave = randomUUID();
+    const alta = (cuerpo: object, llave: string) =>
+      http()
+        .post(rutaProductos)
+        .auth(accessToken, bearer)
+        .set('Idempotency-Key', llave)
+        .send(cuerpo);
+    await alta(
+      {
+        ...datos,
+        nombre: 'Alta fallida',
+        codigoBarras: '000999',
+        stockInicial: { cantidad: 3, costoUnitario: '99999999999999' },
+      },
+      randomUUID(),
+    ).expect(400);
+    expect(
+      await prisma.producto.count({
+        where: { tenantId, nombre: 'Alta fallida' },
+      }),
+    ).toBe(0);
+    const creado = await alta(datos, clave).expect(201);
+    const { productoId } = creado.body as { productoId: number };
+    expect(creado.body).toMatchObject({
+      stockDisponible: 3,
+      stockBajo: false,
+      modoInventario: 'LOTES',
+    });
+    await alta(datos, clave).expect(201, creado.body as object);
+    await alta({ ...datos, stockMinimo: 1 }, clave).expect(409);
+    const caja = await http()
+      .post('/caja')
+      .auth(accessToken, bearer)
+      .send({ codigo: 'IVA', nombre: 'Caja' })
+      .expect(201);
+    const turno = await http()
+      .post('/caja/' + (caja.body as { id: number }).id + '/turnos')
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fondoInicial: '0' })
+      .expect(201);
+    const venta = await http()
+      .post('/ventas')
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        turnoId: (turno.body as { recursoId: number }).recursoId,
+        lineas: [{ productoId, cantidad: 1 }],
+        pago: { metodo: 'EFECTIVO', monto: '50' },
+      })
+      .expect(201);
+    const alerta = await http()
+      .get(rutaProductos + '/stock-bajo')
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(alerta.body).toMatchObject({
+      total: 1,
+      productos: [{ productoId, stockDisponible: 2, stockMinimo: 2 }],
+    });
+    await tarifa(accessToken, '18').expect(200);
+    const emitido = await http()
+      .post('/comprobantes')
+      .auth(accessToken, bearer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ventaId: (venta.body as { recursoId: number }).recursoId })
+      .expect(201);
+    const id = (emitido.body as { recursoId: number }).recursoId;
+    const comprobante = await http()
+      .get('/comprobantes/' + id)
+      .auth(accessToken, bearer)
+      .expect(200);
+    expect(comprobante.body).toMatchObject({
+      subtotal: '43.48',
+      impuesto: '6.52',
+      total: '50',
+      ivaPorTarifa: [{ porcentaje: '15', base: '43.48', importe: '6.52' }],
+    });
+    await http()
+      .get('/comprobantes/' + id + '/pdf')
+      .auth(accessToken, bearer)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
   }, 20000);
 
   it('concilia aperturas y recibe lotes con idempotencia y auditoría atómicas', async () => {

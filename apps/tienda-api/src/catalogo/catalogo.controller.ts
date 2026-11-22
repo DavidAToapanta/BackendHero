@@ -8,6 +8,7 @@ import {
   Delete,
   HttpCode,
   Header,
+  Headers,
   ParseUUIDPipe,
   Put,
   Query,
@@ -124,6 +125,12 @@ export class CatalogoController {
     return this.catalogoService.buscarPorBarras(contexto, codigoBarras);
   }
 
+  @Get('productos/stock-bajo')
+  @RequierePermisoTienda('store.catalog.read')
+  alertasStock(@ContextoTiendaActual() contexto: ContextoTienda) {
+    return this.catalogoService.alertasStock(contexto);
+  }
+
   @Get('productos/:productoId')
   @RequierePermisoTienda('store.catalog.read')
   obtenerProducto(
@@ -138,8 +145,9 @@ export class CatalogoController {
   crearProducto(
     @ContextoTiendaActual() contexto: ContextoTienda,
     @Body() dto: CrearProductoDto,
+    @Headers('idempotency-key') clave?: string,
   ) {
-    return this.catalogoService.crearProducto(contexto, dto);
+    return this.catalogoService.crearProducto(contexto, dto, clave);
   }
 
   @Patch('productos/:productoId')

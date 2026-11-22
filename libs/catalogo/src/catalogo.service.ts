@@ -16,6 +16,8 @@ type FichaProducto = {
   marca?: string | null;
   presentacion?: string | null;
   descripcion?: string | null;
+  stockMinimo?: number | null;
+  ivaTarifaCero?: boolean;
 };
 
 type FiltrosFicha = {
@@ -255,6 +257,8 @@ export class CatalogoService {
     marca,
     presentacion,
     descripcion,
+    stockMinimo,
+    ivaTarifaCero,
   }: Partial<FichaProducto>) {
     return {
       nombre,
@@ -266,6 +270,8 @@ export class CatalogoService {
       marca,
       presentacion,
       descripcion,
+      stockMinimo,
+      ivaTarifaCero,
     };
   }
 }

@@ -26,6 +26,11 @@ import { CatalogoService } from '../catalogo/catalogo.service';
 import { CobrosOperacionService } from '../cobros/cobros-operacion.service';
 import { fechaComercial, inicioFechaComercial } from '../comun/fecha-comercial';
 import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
+import {
+  desglosarIva,
+  tarifaIvaVigente,
+  totalesConIva,
+} from '../comun/iva-tienda';
 import { importeTienda, textoObligatorio } from '../comun/operacion-tienda';
 import { PortalService, type ClientePortal } from '../portal/portal.service';
 import type { EntregarPedidoDto } from './pedidos.dto';
@@ -147,28 +152,31 @@ export class PedidosService {
         );
         if (productos.length !== lineas.length)
           throw new NotFoundException('Producto no encontrado');
-        const detalles: Omit<
+        const cero = new Prisma.Decimal(0);
+        const confirmadoAt = new Date();
+        const tasa =
+          (await tarifaIvaVigente(tx, tenantId, confirmadoAt))?.porcentaje ??
+          cero;
+        const detalles: (Omit<
           Prisma.DetallePedidoCreateManyInput,
           'tenantId' | 'pedidoId'
-        >[] = [];
-        let total = new Prisma.Decimal(0);
+        > &
+          ReturnType<typeof desglosarIva>)[] = [];
         for (const { productoId, cantidad } of lineas) {
           const ficha = await this.catalogo.obtenerSnapshotVenta(
             tx,
             tenantId,
             productoId,
+            tasa,
           );
-          const subtotal = importeTienda(
-            ficha.precioUnitario
-              .mul(cantidad)
-              .toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN),
-            true,
+          const importes = desglosarIva(
+            ficha.precioUnitario,
+            cantidad,
+            ficha.tasaImpuesto ?? cero,
           );
-          total = total.plus(subtotal);
-          detalles.push({ ...ficha, cantidad, subtotal, total: subtotal });
+          detalles.push({ ...ficha, cantidad, ...importes });
         }
-        importeTienda(total, true);
-        const confirmadoAt = new Date();
+        const totales = totalesConIva(detalles);
         const pedido = await tx.pedido.create({
           data: {
             tenantId,
@@ -176,8 +184,7 @@ export class PedidosService {
             carritoId,
             numero: randomUUID(),
             claveIdempotencia: claveRecurso,
-            subtotal: total,
-            total,
+            ...totales,
             confirmadoAt,
             reservaHasta: new Date(confirmadoAt.getTime() + 3_600_000),
           },

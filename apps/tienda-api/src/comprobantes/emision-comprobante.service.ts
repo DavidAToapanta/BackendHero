@@ -1,4 +1,5 @@
 import { PrismaService } from '@app/prisma';
+import type { Prisma } from '@prisma/client';
 import {
   ConflictException,
   Injectable,
@@ -134,7 +135,30 @@ export class EmisionComprobanteService {
       },
     });
     if (!comprobante) throw new NotFoundException('Comprobante no encontrado');
-    return { ...comprobante, consecutivo: comprobante.consecutivo.toString() };
+    const porTarifa = new Map<
+      string,
+      { subtotal: Prisma.Decimal; impuesto: Prisma.Decimal }
+    >();
+    for (const linea of comprobante.detalleComprobanteVenta_comprobante) {
+      const porcentaje = linea.tasaImpuesto.toString();
+      const grupo = porTarifa.get(porcentaje);
+      porTarifa.set(porcentaje, {
+        subtotal: grupo ? grupo.subtotal.plus(linea.subtotal) : linea.subtotal,
+        impuesto: grupo ? grupo.impuesto.plus(linea.impuesto) : linea.impuesto,
+      });
+    }
+    const ivaPorTarifa = [...porTarifa.entries()].map(
+      ([porcentaje, { subtotal, impuesto }]) => ({
+        porcentaje,
+        base: subtotal.toFixed(2),
+        importe: impuesto.toFixed(2),
+      }),
+    );
+    return {
+      ...comprobante,
+      consecutivo: comprobante.consecutivo.toString(),
+      ivaPorTarifa,
+    };
   }
 
   async listar(tenantId: number, pagina?: number, limite?: number) {
@@ -184,9 +208,13 @@ export class EmisionComprobanteService {
       {
         titulo: 'Totales',
         lineas: [
-          'Subtotal · $' + documento.subtotal.toFixed(2),
+          'Subtotal sin IVA · $' + documento.subtotal.toFixed(2),
           'Descuento · $' + documento.descuento.toFixed(2),
-          'Impuesto · $' + documento.impuesto.toFixed(2),
+          ...documento.ivaPorTarifa.map(
+            ({ porcentaje, base, importe }) =>
+              'IVA ' + porcentaje + ' % · Base $' + base + ' · IVA $' + importe,
+          ),
+          'Total IVA · $' + documento.impuesto.toFixed(2),
           'Total · $' + documento.total.toFixed(2),
         ],
       },

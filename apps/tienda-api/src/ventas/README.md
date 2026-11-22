@@ -22,11 +22,17 @@ comercial es opcional y, si se indica, debe estar activo.
 Responde `201` con `{ recursoTipo: "Venta", recursoId }`. El
 `recursoId` identifica la venta guardada.
 
-El precio de catálogo es el precio final. El servidor calcula cada línea
-sin añadir IVA ni aplicar descuentos. Trunca a dos decimales por línea
-y en el importe recibido del pago, de modo que `10.409` se toma como
-`10.40`. El importe del pago debe coincidir con el total. Registra el
-monto aplicado a la venta, una vez descontado cualquier vuelto.
+El precio de catálogo es el precio final. El servidor separa el IVA incluido
+por línea y redondea la base a dos decimales. El total permanece igual al
+precio final multiplicado por la cantidad. El importe aplicado al pago se
+trunca a dos decimales y debe coincidir con el total en ventas al contado.
+
+El dueño puede consultar la tarifa vigente y programadas mediante
+`GET /configuracion/iva` y guardar una con `PUT /configuracion/iva` y
+`{ porcentaje: "15", fecha?: "AAAA-MM-DD" }`. Una fecha futura empieza a
+las 00:00 en la zona comercial usada por Tienda. Omitir la fecha aplica la
+tarifa desde ese momento. Sin tarifa configurada se conserva el cálculo con
+IVA 0 %. La venta conserva su desglose histórico para el comprobante y las devoluciones.
 
 Si se omite `lotes`, el servidor asigna primero los lotes vigentes con el
 vencimiento más próximo, seguido por los lotes sin vencimiento. Para elegir

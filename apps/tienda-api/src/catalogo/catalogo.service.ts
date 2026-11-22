@@ -24,6 +24,7 @@ import {
   type AccionAuditoria,
 } from '../auditoria/auditoria-escritura';
 import type { ContextoTienda } from '../auth';
+import { IdempotenciaService } from '../comun/idempotencia/idempotencia.service';
 import type {
   EditarCategoriaDto,
   ListaCategoriasDto,
@@ -97,6 +98,12 @@ function fichaAdministrativa(producto: FichaCatalogo, stockDisponible: number) {
     stockFisico: stock,
     stockReservado,
     modoInventario,
+    stockMinimo: producto.stockMinimo,
+    stockBajo:
+      estado &&
+      producto.stockMinimo != null &&
+      stockDisponible <= producto.stockMinimo,
+    ivaTarifaCero: producto.ivaTarifaCero,
   };
 }
 
@@ -118,6 +125,7 @@ export class CatalogoService {
     private readonly fichas: CatalogoCompartidoService,
     private readonly inventario: InventarioLotesService,
     private readonly imagenes: ImagenesProductoService,
+    private readonly idempotencia: IdempotenciaService,
   ) {}
 
   listarCategorias(contexto: ContextoTienda, filtros: ListaCategoriasDto) {
@@ -240,6 +248,40 @@ export class CatalogoService {
     return this.listarFichas(contexto, filtros, fichaAdministrativa);
   }
 
+  alertasStock(contexto: ContextoTienda) {
+    return this.leerCatalogo(contexto, async (tx) => {
+      const { tenantId } = contexto;
+      const candidatos = await tx.producto.findMany({
+        where: { tenantId, estado: true, stockMinimo: { not: null } },
+        select: {
+          id: true,
+          tenantId: true,
+          nombre: true,
+          precio: true,
+          stock: true,
+          stockReservado: true,
+          estado: true,
+          modoInventario: true,
+          stockMinimo: true,
+        },
+        orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+      });
+      const disponibles = await this.inventario.consultarDisponibles(
+        tx,
+        tenantId,
+        candidatos,
+        new Date(),
+      );
+      const alertas = candidatos.flatMap(({ id, nombre, stockMinimo }) => {
+        const stockDisponible = disponibles.get(id) ?? 0;
+        return stockMinimo !== null && stockDisponible <= stockMinimo
+          ? [{ productoId: id, nombre, stockMinimo, stockDisponible }]
+          : [];
+      });
+      return { total: alertas.length, productos: alertas.slice(0, 5) };
+    });
+  }
+
   buscarMostrador(contexto: ContextoTienda, filtros: PaginacionCatalogoDto) {
     return this.listarFichas(
       contexto,
@@ -285,6 +327,7 @@ export class CatalogoService {
     tx: Prisma.TransactionClient,
     tenantId: number,
     productoId: number,
+    tasaGeneral?: Prisma.Decimal,
   ) {
     const producto = await this.fichas.obtenerFicha(
       tenantId,
@@ -302,19 +345,37 @@ export class CatalogoService {
       categoriaId: categoria?.id ?? null,
       categoriaNombre: categoria?.nombre ?? null,
       precioUnitario: producto.precio,
+      ...(tasaGeneral && {
+        tasaImpuesto: producto.ivaTarifaCero
+          ? new Prisma.Decimal(0)
+          : tasaGeneral,
+      }),
     };
   }
 
-  crearProducto(contexto: ContextoTienda, dto: CrearProductoDto) {
-    return this.escribirCatalogo(contexto, async (tx) => {
-      const { tenantId } = contexto;
+  async crearProducto(
+    contexto: ContextoTienda,
+    dto: CrearProductoDto,
+    clave?: string,
+  ) {
+    const { tenantId, usuarioId, membresiaId } = contexto;
+    const { stockInicial, ...ficha } = dto;
+    const crear = async (
+      tx: Prisma.TransactionClient,
+      claveRecurso: string,
+    ) => {
+      if (ficha.ivaTarifaCero)
+        await this.permisos.exigirPropietarioTienda(contexto, tx);
+      if (stockInicial)
+        await this.permisos.autorizar(contexto, 'store.inventory.receive', tx);
+      const correlacionId = randomUUID();
       const producto = await this.fichas.create(
         tenantId,
         {
-          ...dto,
-          nombre: dto.nombre.trim(),
-          precio: new Prisma.Decimal(dto.precio),
-          estado: dto.estado ?? true,
+          ...ficha,
+          nombre: ficha.nombre.trim(),
+          precio: new Prisma.Decimal(ficha.precio),
+          estado: ficha.estado ?? true,
         },
         0,
         tx,
@@ -324,11 +385,70 @@ export class CatalogoService {
         entidadTipo: 'Producto',
         entidadId: producto.id,
         productoIds: [producto.id],
-        correlacionId: randomUUID(),
+        correlacionId,
         datos: { nombre: producto.nombre, precio: producto.precio.toFixed(2) },
       });
-      return this.detalleProducto(tx, tenantId, producto.id);
-    });
+      if (stockInicial) {
+        const motivo = 'Existencias iniciales';
+        const { entrada, lotes } = await this.inventario.registrarEntrada(
+          tx,
+          {
+            tenantId,
+            responsableId: membresiaId,
+            clave: claveRecurso,
+            correlacionId,
+          },
+          producto.id,
+          'ENTRADA',
+          motivo,
+          [
+            {
+              ...stockInicial,
+              codigo: 'ALTA-' + producto.id,
+              costoUnitario: new Prisma.Decimal(stockInicial.costoUnitario),
+            },
+          ],
+          { abrirSiVacio: true },
+        );
+        await this.auditoria.registrar(tx, contexto, {
+          accion: ACCIONES_AUDITORIA.INVENTARIO_ENTRADA,
+          entidadTipo: 'EntradaInventario',
+          entidadId: entrada.id,
+          motivo,
+          correlacionId,
+          productoIds: [producto.id],
+          datos: { tipo: 'ENTRADA', loteIds: lotes.map(({ id }) => id) },
+        });
+      }
+      return { recursoTipo: 'Producto', recursoId: producto.id };
+    };
+    if (!stockInicial && clave === undefined) {
+      return this.escribirCatalogo(contexto, async (tx) => {
+        const { recursoId } = await crear(tx, randomUUID());
+        return this.detalleProducto(tx, tenantId, recursoId);
+      });
+    }
+    const { recursoId } = await this.idempotencia.ejecutar(
+      {
+        tenantId,
+        usuarioId,
+        clave,
+        operacion: 'catalogo.producto.alta',
+        datos: {
+          ...Object.fromEntries(
+            Object.entries(ficha).filter(([, valor]) => valor !== undefined),
+          ),
+          stockInicial: stockInicial ? { ...stockInicial } : null,
+        },
+      },
+      async (tx, claveRecurso) => {
+        await this.permisos.autorizar(contexto, 'store.catalog.write', tx);
+        return crear(tx, claveRecurso);
+      },
+    );
+    return this.escribirCatalogo(contexto, (tx) =>
+      this.detalleProducto(tx, tenantId, recursoId),
+    );
   }
 
   editarProducto(
@@ -343,6 +463,9 @@ export class CatalogoService {
       throw new BadRequestException('Indica un campo de la ficha');
     return this.escribirCatalogo(contexto, async (tx) => {
       const { tenantId } = contexto;
+      if (dto.ivaTarifaCero !== undefined) {
+        await this.permisos.exigirPropietarioTienda(contexto, tx);
+      }
       await this.fichas.updateFicha(
         tenantId,
         productoId,

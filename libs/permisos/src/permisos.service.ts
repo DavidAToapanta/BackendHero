@@ -114,6 +114,43 @@ export class PermisosService {
     return acceso;
   }
 
+  async exigirPropietarioTienda(
+    contexto: ContextoPermisos,
+    tx: Prisma.TransactionClient,
+  ) {
+    const acceso = await this.resolver(contexto, tx);
+    if (
+      !acceso.owner ||
+      acceso.modo !== 'PERMISOS' ||
+      !acceso.modulos.has('STORE')
+    ) {
+      throw new ForbiddenException(
+        'Solo el dueño de la tienda puede cambiar la configuración de IVA',
+      );
+    }
+  }
+
+  accesoTienda(contexto: ContextoPermisos) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const acceso = await this.resolver(contexto, tx);
+        const habilitado =
+          acceso.modo === 'PERMISOS' && acceso.modulos.has('STORE');
+        return {
+          esPropietario: habilitado && acceso.owner,
+          permisos: habilitado
+            ? CATALOGO_PERMISOS.filter(
+                ({ modulo, codigo }) =>
+                  modulo === 'STORE' &&
+                  (acceso.owner || acceso.permisos.has(codigo)),
+              ).map(({ codigo }) => codigo)
+            : [],
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   async buscarPermisos(
     codigos: readonly CodigoPermiso[],
     tx: Prisma.TransactionClient,

@@ -68,6 +68,7 @@ model Tenant {
   clienteMedidas            ClienteMedida[]
   novedades                 Novedad[]
   productos                 Producto[]
+  tarifasIvaTienda          TarifaIvaTienda[]
   compras                   Compra[]
   planes                    Plan[]
   clientesPlan              ClientePlan[]
@@ -295,6 +296,16 @@ model Novedad {
   @@index([tenantId])
 }
 
+model TarifaIvaTienda {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  porcentaje   Decimal  @db.Decimal(5, 2)
+  vigenteDesde DateTime @db.Timestamptz(3)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, vigenteDesde])
+}
+
 model Producto {
   id       Int     @id @default(autoincrement())
   tenantId Int
@@ -302,6 +313,8 @@ model Producto {
   precio   Decimal @db.Decimal(18, 2)
   stock    Int
   estado   Boolean
+  stockMinimo Int?
+  ivaTarifaCero Boolean @default(false)
 
   tenant                        Tenant                 @relation(fields: [tenantId], references: [id])
   compras                       Compra[]

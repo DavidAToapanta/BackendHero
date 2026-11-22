@@ -1,8 +1,9 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { Transform } from 'class-transformer';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -11,6 +12,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { MAX_PRISMA_INT } from '../../auth/auth.types';
 import {
@@ -33,6 +35,16 @@ export class CodigoBarrasDto {
   @Matches(/\S/)
   @MaxLength(120)
   codigoBarras: string;
+}
+
+class StockInicialDto {
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRISMA_INT)
+  cantidad: number;
+
+  @Matches(/^\d{1,14}(?:\.\d{1,4})?$/)
+  costoUnitario: string;
 }
 
 export class CrearProductoDto {
@@ -71,11 +83,30 @@ export class CrearProductoDto {
   @IsString()
   @MaxLength(2000)
   descripcion?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_PRISMA_INT)
+  stockMinimo?: number | null;
+
+  @ValidateIf(presente)
+  @IsBoolean()
+  ivaTarifaCero?: boolean;
+
+  @ValidateIf(presente)
+  @IsObject()
+  @ValidateNested()
+  @Type(() => StockInicialDto)
+  stockInicial?: StockInicialDto;
 }
 
-export class EditarProductoDto extends PartialType(CrearProductoDto, {
-  skipNullProperties: false,
-}) {}
+export class EditarProductoDto extends PartialType(
+  OmitType(CrearProductoDto, ['stockInicial']),
+  {
+    skipNullProperties: false,
+  },
+) {}
 
 export class ImagenParamDto extends ProductoCategoriaParamDto {
   @Transform(enteroHttp)

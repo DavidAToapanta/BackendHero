@@ -17,6 +17,7 @@ import { RegistroPropietarioDto } from './dto/registro-propietario.dto';
 import { SelectContextDto } from './dto/select-context.dto';
 import { RegistroPropietarioService } from './registro-propietario.service';
 import { TiendaJwtGuard } from './tienda-jwt.guard';
+import { PermisosService } from '@app/permisos';
 
 @Controller('auth')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
@@ -24,6 +25,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly registro: RegistroPropietarioService,
+    private readonly permisos: PermisosService,
   ) {}
 
   @Post('register-owner')
@@ -45,7 +47,9 @@ export class AuthController {
 
   @Get('session')
   @UseGuards(TiendaJwtGuard)
-  session(@ContextoTiendaActual() context: ContextoTienda) {
-    return { context };
+  async session(@ContextoTiendaActual() context: ContextoTienda) {
+    return {
+      context: { ...context, ...(await this.permisos.accesoTienda(context)) },
+    };
   }
 }

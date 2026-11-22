@@ -125,7 +125,8 @@ el acceso al negocio y devuelve `200` con `requiresContextSelection: false`,
 
 `GET /auth/session` recibe `Authorization: Bearer <token-de-acceso>` y devuelve
 `200` con `{ "context": { ... } }`. La sesión usa únicamente el negocio del JWT
-verificado y devuelve el contexto actual.
+verificado y devuelve el contexto actual con `permisos` efectivos de Tienda y
+`esPropietario` para presentar el menú.
 
 - `400` indica un cuerpo inválido o campos adicionales.
 - `401` indica credenciales incorrectas, un token inválido, vencido o de otro

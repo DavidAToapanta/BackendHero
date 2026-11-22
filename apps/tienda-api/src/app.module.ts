@@ -18,6 +18,7 @@ import { PanelModule } from './panel/panel.module';
 import { FinanzasModule } from './finanzas/finanzas.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
 import { ExportacionesModule } from './exportaciones/exportaciones.module';
+import { ConfiguracionIvaModule } from './configuracion/configuracion-iva';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ExportacionesModule } from './exportaciones/exportaciones.module';
     FinanzasModule,
     AuditoriaModule,
     ExportacionesModule,
+    ConfiguracionIvaModule,
   ],
 })
 export class AppModule {}

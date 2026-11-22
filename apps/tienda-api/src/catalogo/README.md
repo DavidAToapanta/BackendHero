@@ -61,16 +61,22 @@ requieren `store.catalog.read` y las escrituras `store.catalog.write`.
 - **`GET /catalogo/productos/:productoId`** devuelve la ficha administrativa
   con todas sus imágenes ordenadas. La lista y el detalle incluyen
   `estado`, `marca`, `descripcion`, `modoInventario`, `stockFisico`,
-  `stockReservado`, `stockDisponible` y la imagen principal.
+  `stockReservado`, `stockDisponible`, `stockMinimo`, `stockBajo`,
+  `ivaTarifaCero` y la imagen principal.
 - **`POST /catalogo/productos`** y **`PATCH /catalogo/productos/:productoId`**
   reciben los campos de ficha `nombre`, `precio`, `presentacion`, `estado`,
-  `sku`, `codigoBarras`, `marca` y `descripcion`. Para el alta se requieren
-  nombre y precio. El alta responde `201`, con estado activo por defecto y
-  stock cero. El parche acepta uno o más campos y responde `200`. Ambas
+  `sku`, `codigoBarras`, `marca`, `descripcion` y `stockMinimo` opcional.
+  Solo el dueño administra `ivaTarifaCero`. Para el alta se requieren
+  nombre y precio. El alta responde `201`, con estado activo por defecto.
+  El parche acepta uno o más campos y responde `200`. Ambas
   respuestas incluyen el detalle. Precio es una cadena decimal no negativa
   con hasta dos decimales. SKU o barras duplicados en el tenant devuelven
-  `409`. Los campos de inventario se rechazan con `400`. La categoría se
-  asigna mediante A06.
+  `409`. La categoría se asigna mediante A06.
+- El alta admite `stockInicial: { cantidad, costoUnitario }` y en ese caso
+  exige `Idempotency-Key` y `store.inventory.receive`. Guarda la ficha, la
+  apertura y la entrada juntas. Al omitirlo, el producto nace con stock cero.
+- **`GET /catalogo/productos/stock-bajo`** devuelve el total y hasta cinco
+  productos activos cuyo disponible para vender es igual o inferior al mínimo.
 - **`GET /catalogo/productos/mostrador?q=BEB-1`** lista fichas activas en el
   mismo formato paginado. **`GET /catalogo/productos/mostrador/por-barras?codigoBarras=001234`**
   devuelve una ficha igual por coincidencia exacta. Un código sin producto

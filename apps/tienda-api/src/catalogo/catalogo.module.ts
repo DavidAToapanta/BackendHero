@@ -6,6 +6,7 @@ import { AccesosModule } from '../accesos/accesos.module';
 import { AuditoriaEscrituraModule } from '../auditoria/auditoria-escritura';
 import { CatalogoService } from './catalogo.service';
 import { CatalogoController } from './catalogo.controller';
+import { IdempotenciaModule } from '../comun/idempotencia/idempotencia.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { CatalogoController } from './catalogo.controller';
     PrismaModule,
     AccesosModule,
     AuditoriaEscrituraModule,
+    IdempotenciaModule,
   ],
   controllers: [CatalogoController],
   providers: [CatalogoService],

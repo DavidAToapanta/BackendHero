@@ -123,9 +123,17 @@ export class CalculoDevolucionesService {
           .times(linea.cantidad)
           .div(restantes)
           .toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN);
-      const subtotal = detalle.precioUnitario.times(linea.cantidad);
       const descuento = prorratear(detalle.descuento, anterior.descuento);
       const impuesto = prorratear(detalle.impuesto, anterior.impuesto);
+      const bruto = detalle.precioUnitario.times(linea.cantidad);
+      const incluyeIva =
+        detalle.impuesto.gt(0) &&
+        detalle.subtotal?.eq(
+          detalle.precioUnitario
+            .times(detalle.cantidad)
+            .minus(detalle.impuesto),
+        );
+      const subtotal = incluyeIva ? bruto.minus(impuesto) : bruto;
       if (descuento.gt(subtotal) || descuento.lt(0) || impuesto.lt(0))
         throw new ConflictException(
           'Los importes históricos de devolución no concilian',
