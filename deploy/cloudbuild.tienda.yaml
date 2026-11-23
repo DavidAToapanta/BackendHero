@@ -1,0 +1,10 @@
+# Construye y publica una imagen de Tienda. No despliega ni migra la base.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '--target', 'tienda', '-t', '${_IMAGE}', '.']
+images:
+  - '${_IMAGE}'
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/gym-prod-492501/cloud-run-source-deploy/backendhero-tienda-prod:manual
+options:
+  logging: CLOUD_LOGGING_ONLY

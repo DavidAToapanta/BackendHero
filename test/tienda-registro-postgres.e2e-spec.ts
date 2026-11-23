@@ -141,7 +141,19 @@ suite('Registro de propietarios de Tienda con PostgreSQL', () => {
     await http()
       .get('/auth/session')
       .auth(primera.accessToken, { type: 'bearer' })
-      .expect(200, { context: primera.context });
+      .expect(200)
+      .expect(({ body }: { body: unknown }) => {
+        expect(body).toEqual({
+          context: {
+            ...primera.context,
+            esPropietario: true,
+            permisos: expect.arrayContaining([
+              'store.roles.manage',
+              'store.catalog.read',
+            ]),
+          },
+        });
+      });
     const categoria = await http()
       .post('/catalogo/categorias')
       .auth(primera.accessToken, { type: 'bearer' })
